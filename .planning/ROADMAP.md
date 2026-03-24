@@ -28,7 +28,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. The directory contains discrete files for HTML, CSS, and JS modules (no inline megafile), plus a `wasm/` directory ready to receive `rubberband.wasm`
 **Plans**: 2 plans
 Plans:
-- [ ] 01-01-PLAN.md — Create directory structure, extract CSS/HTML shell, and independent JS modules (audio-engine, library-manager, phaze-worklet, waveform)
+- [x] 01-01-PLAN.md — Create directory structure, extract CSS/HTML shell, and independent JS modules (audio-engine, library-manager, phaze-worklet, waveform)
 - [ ] 01-02-PLAN.md — Extract track-player and metronome modules, create ui-controller.js entry point, verify full app
 **UI hint**: yes
 
@@ -51,5 +51,5 @@ Phases execute in numeric order: 1 → 2
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. File Restructure | 0/2 | Planning complete | - |
+| 1. File Restructure | 1/2 | In Progress|  |
 | 2. Rubber Band Integration | 0/? | Not started | - |

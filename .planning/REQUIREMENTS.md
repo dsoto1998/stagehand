@@ -19,9 +19,9 @@
 
 ### File Structure
 
-- [ ] **STRUCT-01**: App loads and runs from a multi-file directory (index.html + css + js modules + rubberband.wasm)
+- [x] **STRUCT-01**: App loads and runs from a multi-file directory (index.html + css + js modules + rubberband.wasm)
 - [ ] **STRUCT-02**: All existing features work after restructure: audio library, waveform display, playback, volume, metronome
-- [ ] **STRUCT-03**: Existing IndexedDB audio track data is preserved (database name and schema unchanged)
+- [x] **STRUCT-03**: Existing IndexedDB audio track data is preserved (database name and schema unchanged)
 
 ## v2 Requirements
 
@@ -49,9 +49,9 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| STRUCT-01 | Phase 1 | Pending |
+| STRUCT-01 | Phase 1 | Complete |
 | STRUCT-02 | Phase 1 | Pending |
-| STRUCT-03 | Phase 1 | Pending |
+| STRUCT-03 | Phase 1 | Complete |
 | INT-01 | Phase 2 | Pending |
 | INT-02 | Phase 2 | Pending |
 | INT-03 | Phase 2 | Pending |
