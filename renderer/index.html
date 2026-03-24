@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>STAGEHAND — Rehearsal Tool</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- TOPBAR -->
+  <div id="topbar">
+    <div class="logo">Stage<span>hand</span></div>
+    <div class="tagline">Rehearsal Tool v1.0</div>
+    <div id="topbar-right">
+      <div id="topbar-status" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);letter-spacing:1px;">READY</div>
+      <div class="status-dot"></div>
+    </div>
+  </div>
+
+  <div id="body">
+    <!-- SIDEBAR -->
+    <div id="sidebar">
+      <div class="nav-section-label">Navigation</div>
+
+      <div class="nav-item active" data-panel="library">
+        <span class="nav-icon">◈</span>
+        <span>Library</span>
+        <span class="nav-badge" id="lib-badge">0</span>
+      </div>
+      <div class="nav-item" data-panel="metronome">
+        <span class="nav-icon">◎</span>
+        <span>Metronome</span>
+      </div>
+
+      <div class="nav-section-label" style="margin-top:8px;">Coming Soon</div>
+      <div class="nav-item" style="opacity:0.4;pointer-events:none;">
+        <span class="nav-icon">⬡</span>
+        <span>VST Plugins</span>
+      </div>
+      <div class="nav-item" style="opacity:0.4;pointer-events:none;">
+        <span class="nav-icon">⊕</span>
+        <span>Live Input</span>
+      </div>
+      <div class="nav-item" style="opacity:0.4;pointer-events:none;">
+        <span class="nav-icon">♩</span>
+        <span>Chord Charts</span>
+      </div>
+
+      <div id="sidebar-bottom">
+        <div class="master-vol-label">
+          <span>Master</span>
+          <span id="master-vol-val">100%</span>
+        </div>
+        <div class="vol-row">
+          <span class="vol-icon">▸</span>
+          <input type="range" id="master-vol" min="0" max="100" value="100">
+          <span class="vol-icon">◼</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MAIN -->
+    <div id="main">
+
+      <!-- LIBRARY PANEL -->
+      <div class="panel active" id="panel-library">
+        <div class="panel-header">
+          <div class="panel-title">Library</div>
+          <div class="panel-subtitle">// Audio Files</div>
+        </div>
+
+        <div id="drop-zone">
+          <div class="dz-icon">⊕</div>
+          <div class="dz-text">Drop Audio Files Here</div>
+          <div class="dz-sub">WAV · MP3 · FLAC · OGG — or click to browse</div>
+          <input type="file" id="file-input" accept=".wav,.mp3,.flac,.ogg,.opus" multiple>
+        </div>
+
+        <div class="library-toolbar">
+          <button class="btn btn-sm" id="import-btn">⊕ Import</button>
+          <span class="library-count" id="lib-count-label">0 tracks</span>
+        </div>
+
+        <div id="track-list">
+          <div class="empty-state" id="empty-state">
+            <div class="es-icon">◈</div>
+            <div class="es-text">No tracks yet</div>
+            <div class="es-sub">Import audio files to get started</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- METRONOME PANEL -->
+      <div class="panel" id="panel-metronome">
+        <div class="panel-header">
+          <div class="panel-title">Metronome</div>
+          <div class="panel-subtitle">// Tempo Control</div>
+        </div>
+
+        <div class="metro-layout">
+
+          <!-- BPM Card -->
+          <div class="metro-card">
+            <div class="metro-card-title">Tempo</div>
+            <div class="bpm-display-row">
+              <button class="bpm-adjust-btn" id="bpm-minus">−</button>
+              <div style="text-align:center;flex:1;">
+                <input type="number" id="bpm-input" value="120" min="20" max="300">
+                <div class="bpm-label-unit">BPM</div>
+              </div>
+              <button class="bpm-adjust-btn" id="bpm-plus">+</button>
+            </div>
+          </div>
+
+          <!-- Tap Tempo Card -->
+          <div class="metro-card">
+            <div class="metro-card-title">Tap Tempo</div>
+            <button id="tap-btn">TAP</button>
+            <div class="tap-count" id="tap-count">tap at least 2×</div>
+          </div>
+
+          <!-- Play Card -->
+          <div class="metro-card full">
+            <div class="metro-card-title">Transport</div>
+            <div id="beat-grid"></div>
+            <button id="metro-play-btn">▶ Start</button>
+          </div>
+
+          <!-- Subdivision Card -->
+          <div class="metro-card">
+            <div class="metro-card-title">Subdivision</div>
+            <div class="subdiv-grid">
+              <button class="subdiv-btn active" data-subdiv="1" data-label="Quarter">♩<br><span style="font-size:10px">1/4</span></button>
+              <button class="subdiv-btn" data-subdiv="2" data-label="Eighth">♪<br><span style="font-size:10px">1/8</span></button>
+              <button class="subdiv-btn" data-subdiv="3" data-label="Triplet">♪♪♪<br><span style="font-size:10px">Trip</span></button>
+              <button class="subdiv-btn" data-subdiv="4" data-label="Sixteenth"><span style="font-size:9px">𝅘𝅥𝅯</span><br><span style="font-size:10px">1/16</span></button>
+            </div>
+          </div>
+
+          <!-- Volume + Sound Card -->
+          <div class="metro-card">
+            <div class="metro-card-title">Sound</div>
+            <div class="ctrl-label" style="margin-bottom:6px;">
+              <span>Volume</span>
+              <span class="ctrl-val" id="metro-vol-val">80%</span>
+            </div>
+            <div class="vol-row" style="margin-bottom:14px;">
+              <span class="vol-icon">▸</span>
+              <input type="range" id="metro-vol" min="0" max="100" value="80">
+            </div>
+            <div class="metro-card-title">Click Sound</div>
+            <div class="custom-sound-area">
+              <span class="custom-sound-name" id="click-sound-name">Default (Synthesized)</span>
+              <button class="btn btn-sm" id="load-click-btn">Load</button>
+              <button class="btn btn-sm btn-danger" id="clear-click-btn" style="display:none">✕</button>
+            </div>
+            <input type="file" id="click-file-input" accept=".wav,.mp3,.ogg" style="display:none">
+          </div>
+
+        </div>
+      </div>
+
+    </div><!-- /main -->
+  </div><!-- /body -->
+</div><!-- /app -->
+
+<!-- Notification -->
+<div id="notif"></div>
+
+<!-- Confirm dialog -->
+<div id="confirm-overlay">
+  <div id="confirm-box">
+    <div class="conf-title" id="conf-title">Confirm</div>
+    <div class="conf-msg" id="conf-msg"></div>
+    <div class="conf-actions">
+      <button class="btn" id="conf-cancel">Cancel</button>
+      <button class="btn btn-danger" id="conf-ok">Delete</button>
+    </div>
+  </div>
+</div>
+
+<script type="module" src="./js/ui-controller.js"></script>
+</body>
+</html>
