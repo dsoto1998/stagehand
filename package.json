@@ -1,0 +1,11 @@
+{
+  "name": "stagehand",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "setup": "npm install && cp node_modules/rubberband-web/public/rubberband-processor.js renderer/js/"
+  },
+  "dependencies": {
+    "rubberband-web": "0.2.1"
+  }
+}

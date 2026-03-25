@@ -1,16 +1,16 @@
 // ─── TRACK PLAYER ────────────────────────────────────────────
 import { getCtx, resume, getMaster } from './audio-engine.js';
 
-let phazeWorkletLoaded = false;
-export async function ensurePhazeWorklet() {
-  if (phazeWorkletLoaded) return;
+let rubberbandWorkletLoaded = false;
+export async function ensureRubberbandWorklet() {
+  if (rubberbandWorkletLoaded) return;
   const ctx = resume();
   // Must wait for context to be running before adding worklet module
   if (ctx.state === 'suspended') {
     await ctx.resume();
   }
-  await ctx.audioWorklet.addModule('./js/phaze-worklet.js');
-  phazeWorkletLoaded = true;
+  await ctx.audioWorklet.addModule('./js/rubberband-processor.js');
+  rubberbandWorkletLoaded = true;
 }
 
 
@@ -53,7 +53,7 @@ export class TrackPlayer {
   async play(offset) {
     if (!this.buffer) return;
     const ctx = resume();
-    await ensurePhazeWorklet();
+    await ensureRubberbandWorklet();
     this.stop(false);
 
     this.gainNode = ctx.createGain();
@@ -63,13 +63,12 @@ export class TrackPlayer {
     const factor = Math.pow(2, this.semitones / 12);
     if (this.semitones !== 0) {
       try {
-        this.pitchNode = new AudioWorkletNode(ctx, 'phaze-processor', {
+        this.pitchNode = new AudioWorkletNode(ctx, 'rubberband-processor', {
           numberOfInputs: 1,
           numberOfOutputs: 1,
-          outputChannelCount: [this.buffer.numberOfChannels],
-          processorOptions: { numChannels: this.buffer.numberOfChannels }
+          outputChannelCount: [this.buffer.numberOfChannels]
         });
-        this.pitchNode.parameters.get('pitchFactor').value = factor;
+        this.pitchNode.port.postMessage(JSON.stringify(["pitch", factor]));
         this.pitchNode.connect(this.gainNode);
       } catch(e) {
         this.pitchNode = null;
