@@ -90,29 +90,29 @@
 | PITCH-01 | Phase 2 | Complete |
 | PITCH-02 | Phase 2 | Complete |
 | PITCH-03 | Phase 2 | Complete |
-| TRANS-01 | TBD | Pending |
-| TRANS-02 | TBD | Pending |
-| TRANS-03 | TBD | Pending |
-| TRANS-04 | TBD | Pending |
-| META-01 | TBD | Pending |
-| META-02 | TBD | Pending |
-| LIB-01 | TBD | Pending |
-| LIB-02 | TBD | Pending |
-| LIB-03 | TBD | Pending |
-| LIB-04 | TBD | Pending |
-| PL-01 | TBD | Pending |
-| PL-02 | TBD | Pending |
-| PL-03 | TBD | Pending |
-| PL-04 | TBD | Pending |
-| PL-05 | TBD | Pending |
-| PL-06 | TBD | Pending |
+| TRANS-01 | Phase 3 | Pending |
+| TRANS-02 | Phase 3 | Pending |
+| TRANS-03 | Phase 3 | Pending |
+| TRANS-04 | Phase 3 | Pending |
+| META-01 | Phase 3 | Pending |
+| META-02 | Phase 3 | Pending |
+| LIB-01 | Phase 4 | Pending |
+| LIB-02 | Phase 4 | Pending |
+| LIB-03 | Phase 4 | Pending |
+| LIB-04 | Phase 4 | Pending |
+| PL-01 | Phase 5 | Pending |
+| PL-02 | Phase 5 | Pending |
+| PL-03 | Phase 5 | Pending |
+| PL-04 | Phase 5 | Pending |
+| PL-05 | Phase 5 | Pending |
+| PL-06 | Phase 5 | Pending |
 
 **Coverage:**
 - v2.0 requirements: 16 total
-- Mapped to phases: TBD (roadmap pending)
+- Mapped to phases: 16/16 ✓
 - Unmapped: 0 ✓
 
 ---
 *v1.0 requirements defined: 2026-03-23*
 *v2.0 requirements defined: 2026-03-25*
-*Last updated: 2026-03-25 after milestone v2.0 start*
+*Last updated: 2026-03-25 — v2.0 roadmap complete, all 16 requirements mapped*
