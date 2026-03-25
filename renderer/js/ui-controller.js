@@ -68,12 +68,16 @@ function showMiniplayer(trackId) {
   mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
   mpStVal.style.color = st === 0 ? 'var(--text-dim)' : 'var(--cyan)';
   document.getElementById('mp-play').textContent = '⏸';
-  document.getElementById('miniplayer').classList.add('visible');
 }
 
 function hideMiniplayer() {
   currentPlayingId = null;
-  document.getElementById('miniplayer').classList.remove('visible');
+  document.getElementById('mp-track-name').textContent = '—';
+  document.getElementById('mp-play').textContent = '▶';
+  document.getElementById('mp-semitones').value = 0;
+  const mpStVal = document.getElementById('mp-semitones-val');
+  mpStVal.textContent = '0st';
+  mpStVal.style.color = 'var(--text-dim)';
 }
 
 function syncMiniplayerPlayBtn(isPlaying) {
@@ -133,8 +137,6 @@ document.getElementById('mp-semitones').addEventListener('input', function() {
 document.getElementById('mp-vol').addEventListener('input', function() {
   setMasterVolume(this.value / 100);
   document.getElementById('mp-vol-val').textContent = this.value + '%';
-  document.getElementById('master-vol').value = this.value;
-  document.getElementById('master-vol-val').textContent = this.value + '%';
 });
 
 
@@ -497,15 +499,6 @@ dropZone.addEventListener('drop', e => {
   const files = Array.from(e.dataTransfer.files);
   importFiles(files);
 });
-
-// Master volume
-document.getElementById('master-vol').addEventListener('input', function() {
-  setMasterVolume(this.value / 100);
-  document.getElementById('master-vol-val').textContent = this.value + '%';
-  document.getElementById('mp-vol').value = this.value;
-  document.getElementById('mp-vol-val').textContent = this.value + '%';
-});
-
 
 // ─── METRONOME EVENT BINDINGS ─────────────────────────────────
 document.getElementById('bpm-minus').addEventListener('click', () => {

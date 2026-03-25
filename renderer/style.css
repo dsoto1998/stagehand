@@ -140,15 +140,6 @@
     padding: 12px;
   }
 
-  .master-vol-label {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 9px;
-    letter-spacing: 2px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    margin-bottom: 8px;
-    display: flex; justify-content: space-between;
-  }
 
   /* ── MAIN PANEL ──────────────────────────────────────── */
   #main {
@@ -682,28 +673,7 @@
     letter-spacing: 2px;
   }
 
-  /* ── MINIPLAYER ──────────────────────────────────────── */
-  #miniplayer {
-    position: fixed;
-    bottom: 16px; left: 16px;
-    width: 240px;
-    background: var(--bg-panel);
-    border: 1px solid var(--border-bright);
-    border-radius: 6px;
-    padding: 12px 14px;
-    z-index: 50;
-    opacity: 0;
-    transform: translateY(10px);
-    pointer-events: none;
-    transition: opacity 0.2s, transform 0.2s;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
-  }
-  #miniplayer.visible {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: all;
-  }
-
+  /* ── MINIPLAYER (sidebar-bottom) ────────────────────── */
   #mp-track-name {
     font-family: 'Rajdhani', sans-serif;
     font-size: 14px;
