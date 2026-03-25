@@ -71,7 +71,10 @@ Plans:
   3. Dragging or clicking the progress bar and releasing seeks playback to that position
   4. Pressing Play in the miniplayer when no track is loaded starts the first track alphabetically
   5. Importing an audio file with embedded ID3 tags stores artist, album, title, and duration alongside the track in IndexedDB
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 03-01-PLAN.md — Scrub bar, time display, and play-with-no-track in miniplayer
+- [ ] 03-02-PLAN.md — ID3 metadata parsing, IndexedDB v2 migration, track card subtitle
 **UI hint**: yes
 
 ### Phase 4: Library Tabs & Virtual Scrolling
@@ -107,6 +110,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 |-------|-----------|----------------|--------|-----------|
 | 1. File Restructure | v1.0 | 2/2 | Complete | 2026-03-25 |
 | 2. Rubber Band Integration | v1.0 | 2/2 | Complete | 2026-03-25 |
-| 3. Transport & Metadata Foundation | v2.0 | 0/TBD | Not started | - |
+| 3. Transport & Metadata Foundation | v2.0 | 0/2 | Not started | - |
 | 4. Library Tabs & Virtual Scrolling | v2.0 | 0/TBD | Not started | - |
 | 5. Playlists | v2.0 | 0/TBD | Not started | - |
