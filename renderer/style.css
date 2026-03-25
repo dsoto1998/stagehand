@@ -682,6 +682,98 @@
     letter-spacing: 2px;
   }
 
+  /* ── MINIPLAYER ──────────────────────────────────────── */
+  #miniplayer {
+    position: fixed;
+    bottom: 16px; left: 16px;
+    width: 240px;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-bright);
+    border-radius: 6px;
+    padding: 12px 14px;
+    z-index: 50;
+    opacity: 0;
+    transform: translateY(10px);
+    pointer-events: none;
+    transition: opacity 0.2s, transform 0.2s;
+    box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  }
+  #miniplayer.visible {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: all;
+  }
+
+  #mp-track-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 14px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: var(--accent);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 10px;
+  }
+
+  #mp-transport {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  #mp-transport button {
+    width: 34px; height: 34px;
+    border-radius: 50%;
+    border: 1px solid var(--border-bright);
+    background: var(--bg-base);
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.15s;
+    flex-shrink: 0;
+  }
+  #mp-transport button:hover { border-color: var(--accent); color: var(--accent); }
+  #mp-play {
+    width: 40px !important; height: 40px !important;
+    background: var(--accent) !important;
+    border-color: var(--accent) !important;
+    color: #0a0a0c !important;
+    font-size: 14px !important;
+  }
+  #mp-play:hover { background: var(--accent-dim) !important; border-color: var(--accent-dim) !important; }
+
+  .mp-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .mp-row:last-child { margin-bottom: 0; }
+
+  .mp-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    width: 60px;
+    flex-shrink: 0;
+  }
+
+  .mp-row input[type=range] { flex: 1; }
+
+  .mp-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-secondary);
+    min-width: 32px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
   /* ── CONFIRM DIALOG ──────────────────────────────────── */
   #confirm-overlay {
     display: none;

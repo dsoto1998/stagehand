@@ -54,6 +54,90 @@ function escHtml(s) {
 }
 
 
+// ─── MINIPLAYER ───────────────────────────────────────────────
+let currentPlayingId = null;
+
+function showMiniplayer(trackId) {
+  const track = tracks.find(t => t.id === trackId);
+  if (!track) return;
+  currentPlayingId = trackId;
+  document.getElementById('mp-track-name').textContent = track.name;
+  const st = track.semitones || 0;
+  document.getElementById('mp-semitones').value = st;
+  const mpStVal = document.getElementById('mp-semitones-val');
+  mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
+  mpStVal.style.color = st === 0 ? 'var(--text-dim)' : 'var(--cyan)';
+  document.getElementById('mp-play').textContent = '⏸';
+  document.getElementById('miniplayer').classList.add('visible');
+}
+
+function hideMiniplayer() {
+  currentPlayingId = null;
+  document.getElementById('miniplayer').classList.remove('visible');
+}
+
+function syncMiniplayerPlayBtn(isPlaying) {
+  document.getElementById('mp-play').textContent = isPlaying ? '⏸' : '▶';
+}
+
+document.getElementById('mp-play').addEventListener('click', () => {
+  if (!currentPlayingId) return;
+  const player = players[currentPlayingId];
+  const card = document.getElementById('card-' + currentPlayingId);
+  if (!player || !card) return;
+  if (player.isPlaying) {
+    player.pause();
+    card.classList.remove('playing');
+    card.querySelector('.track-play-btn').textContent = '▶';
+    syncMiniplayerPlayBtn(false);
+  } else {
+    card.querySelector('.track-play-btn').click();
+  }
+});
+
+document.getElementById('mp-prev').addEventListener('click', () => {
+  if (!currentPlayingId || tracks.length < 2) return;
+  const idx = tracks.findIndex(t => t.id === currentPlayingId);
+  const prev = tracks[(idx - 1 + tracks.length) % tracks.length];
+  const card = document.getElementById('card-' + prev.id);
+  if (card) card.querySelector('.track-play-btn').click();
+});
+
+document.getElementById('mp-next').addEventListener('click', () => {
+  if (!currentPlayingId || tracks.length < 2) return;
+  const idx = tracks.findIndex(t => t.id === currentPlayingId);
+  const next = tracks[(idx + 1) % tracks.length];
+  const card = document.getElementById('card-' + next.id);
+  if (card) card.querySelector('.track-play-btn').click();
+});
+
+document.getElementById('mp-semitones').addEventListener('input', function() {
+  if (!currentPlayingId) return;
+  const s = parseInt(this.value);
+  const player = players[currentPlayingId];
+  const track = tracks.find(t => t.id === currentPlayingId);
+  if (player) player.setSemitones(s);
+  if (track) { track.semitones = s; saveTrackMeta(track); }
+  const mpVal = document.getElementById('mp-semitones-val');
+  mpVal.textContent = (s > 0 ? '+' : '') + s + 'st';
+  mpVal.style.color = s === 0 ? 'var(--text-dim)' : 'var(--cyan)';
+  const card = document.getElementById('card-' + currentPlayingId);
+  if (card) {
+    const cardSt = card.querySelector('.track-semitones');
+    const cardStVal = card.querySelector('.semitone-display');
+    if (cardSt) cardSt.value = s;
+    if (cardStVal) { cardStVal.textContent = (s > 0 ? '+' : '') + s + 'st'; cardStVal.style.color = s === 0 ? 'var(--text-dim)' : 'var(--cyan)'; }
+  }
+});
+
+document.getElementById('mp-vol').addEventListener('input', function() {
+  setMasterVolume(this.value / 100);
+  document.getElementById('mp-vol-val').textContent = this.value + '%';
+  document.getElementById('master-vol').value = this.value;
+  document.getElementById('master-vol-val').textContent = this.value + '%';
+});
+
+
 // ─── LIBRARY STATE ───────────────────────────────────────────
 let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, duration}]
 
@@ -182,6 +266,7 @@ function buildTrackCard(track) {
     playBtn.textContent = '▶';
     progress.style.width = '0%';
     curTimeEl.textContent = '0:00';
+    if (currentPlayingId === track.id) hideMiniplayer();
   };
 
   // Play / Pause
@@ -191,6 +276,7 @@ function buildTrackCard(track) {
       player.pause();
       card.classList.remove('playing');
       playBtn.textContent = '▶';
+      if (currentPlayingId === track.id) syncMiniplayerPlayBtn(false);
       return;
     }
 
@@ -235,6 +321,7 @@ function buildTrackCard(track) {
       await player.play();
       card.classList.add('playing');
       playBtn.textContent = '⏸';
+      showMiniplayer(track.id);
     } catch(e) {
       console.error('Playback failed:', e);
       notify('Playback error: ' + (e.message || 'unknown'), 'error');
@@ -269,6 +356,12 @@ function buildTrackCard(track) {
     stValEl.style.color = s === 0 ? 'var(--text-dim)' : 'var(--cyan)';
     const t = tracks.find(t => t.id === track.id);
     if (t) { t.semitones = s; saveTrackMeta(t); }
+    if (currentPlayingId === track.id) {
+      document.getElementById('mp-semitones').value = s;
+      const mpVal = document.getElementById('mp-semitones-val');
+      mpVal.textContent = (s > 0 ? '+' : '') + s + 'st';
+      mpVal.style.color = s === 0 ? 'var(--text-dim)' : 'var(--cyan)';
+    }
   });
   stValEl.style.color = (track.semitones||0) === 0 ? 'var(--text-dim)' : 'var(--cyan)';
 
@@ -304,6 +397,7 @@ function buildTrackCard(track) {
     const yes = await confirm('Delete Track', `Remove "${track.name}" from your library? This cannot be undone.`);
     if (!yes) return;
     player.stop();
+    if (currentPlayingId === track.id) hideMiniplayer();
     delete players[track.id];
     await LibraryManager.remove(track.id);
     tracks = tracks.filter(t => t.id !== track.id);
@@ -408,6 +502,8 @@ dropZone.addEventListener('drop', e => {
 document.getElementById('master-vol').addEventListener('input', function() {
   setMasterVolume(this.value / 100);
   document.getElementById('master-vol-val').textContent = this.value + '%';
+  document.getElementById('mp-vol').value = this.value;
+  document.getElementById('mp-vol-val').textContent = this.value + '%';
 });
 
 
