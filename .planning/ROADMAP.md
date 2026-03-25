@@ -42,7 +42,10 @@ Plans:
   3. Moving the transpose slider while a track is playing updates the pitch in real time without interrupting playback
   4. Setting the transpose slider to 0 bypasses the pitch shifter node entirely (same bypass behavior as before)
   5. The OLA phase vocoder AudioWorklet is fully removed from the codebase and `rubberband.wasm` handles all pitch shifting
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [ ] 02-01-PLAN.md — Setup rubberband-web npm package, copy processor file, rewire track-player.js, delete old vocoder
+- [ ] 02-02-PLAN.md — Verify pitch shifting quality at ±7 semitones (human listening test)
 
 ## Progress
 
@@ -52,4 +55,4 @@ Phases execute in numeric order: 1 → 2
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. File Restructure | 1/2 | In Progress|  |
-| 2. Rubber Band Integration | 0/? | Not started | - |
+| 2. Rubber Band Integration | 0/2 | Not started | - |
