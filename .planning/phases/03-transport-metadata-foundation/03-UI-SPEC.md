@@ -54,15 +54,19 @@ Exceptions:
 | Role | Font | Size | Weight | Line Height | Usage |
 |------|------|------|--------|-------------|-------|
 | Body | Barlow Condensed | 14px | 400 | 1.5 | General text, button labels |
-| Label | JetBrains Mono | 9–11px | 300–400 | 1.4 | Control labels, metadata values, time display |
-| Heading | Rajdhani | 17–28px | 600–700 | 1.2 | Track names, panel titles |
+| Label | JetBrains Mono | 9–11px | 400 | 1.4 | Control labels, metadata values, time display |
+| Heading | Rajdhani | 17–28px | 700 | 1.2 | Track names, panel titles |
 | Display | Rajdhani | 48px | 700 | 1.0 | BPM display only |
+
+**Declared weights for this phase: 400 (body, labels) and 700 (headings, display).**
+
+Note: The CSS loads JetBrains Mono at 300/400/500 and Barlow Condensed at 300–600 for historical reasons. The spec declares only the two active design choices for Phase 3 elements — additional loaded weights are not in scope.
 
 **Phase 3 specifics:**
 
 - Scrub bar time display (elapsed / total): JetBrains Mono, 10px, weight 400, color `--text-secondary` (#8888a8) — matches existing `.mp-val` class (style.css line 739)
-- Track subtitle (Artist · Album): JetBrains Mono, 10px, weight 300, color `--text-dim` (#55556a) — matches existing `.track-meta` class (style.css line 336)
-- Miniplayer track name `#mp-track-name`: Rajdhani, 14px, weight 600 — existing, no change
+- Track subtitle (Artist · Album): JetBrains Mono, 10px, weight 400, color `--text-dim` (#55556a), margin-top 2px — reuses `.track-meta` visual language
+- Miniplayer track name `#mp-track-name`: Rajdhani, 14px, weight 700 — existing, no change
 
 ---
 
@@ -162,7 +166,7 @@ Exceptions:
 - Album only: `Album`
 - Neither: element hidden (`display: none` or omitted from DOM)
 
-**Typography:** JetBrains Mono, 10px, weight 300, color `--text-dim` (#55556a), margin-top 2px — reuses `.track-meta` visual language.
+**Typography:** JetBrains Mono, 10px, weight 400, color `--text-dim` (#55556a), margin-top 2px — reuses `.track-meta` visual language.
 
 **No change to:** track name, track meta (format + size), waveform, controls row. The subtitle slots in without altering existing card geometry meaningfully — it adds approximately 14px to card height when visible.
 
