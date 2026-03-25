@@ -1,87 +1,64 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.0
-milestone_name: milestone
-status: Milestone complete
-stopped_at: Completed 02-rubber-band-integration/02-01-PLAN.md
+milestone: v2.0
+milestone_name: Library & Player Enhancement
+status: Defining requirements
+stopped_at: —
 last_updated: "2026-03-24T00:00:00.000Z"
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-03-23)
+See: .planning/PROJECT.md (updated 2026-03-24)
 
-**Core value:** Musicians can transpose any track ±7 semitones and have it sound good enough to play along with in a real rehearsal.
-**Current focus:** Phase 02 — rubber-band-integration
+**Core value:** Musicians can import their rehearsal tracks, browse and organize them, transpose any track ±12 semitones with professional quality, and play along — all from a fast, well-organized interface that scales to large libraries.
+**Current focus:** Milestone v2.0 — defining requirements
 
 ## Current Position
 
-Phase: 02
-Plan: Not started
-
-## Performance Metrics
-
-**Velocity:**
-
-- Total plans completed: 0
-- Average duration: —
-- Total execution time: —
-
-**By Phase:**
-
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| - | - | - | - |
-
-**Recent Trend:**
-
-- Last 5 plans: —
-- Trend: —
-
-*Updated after each plan completion*
-| Phase 01-file-restructure P01 | 4 | 2 tasks | 7 files |
-| Phase 02-rubber-band-integration P01 | 12 | 2 tasks | 4 files |
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-03-24 — Milestone v2.0 started
 
 ## Accumulated Context
 
 ### Decisions
 
 Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
+Carried forward from v1.0:
 
-- Milestone start: Rubber Band chosen over SoundTouch.js for full-band mix quality at ±7 semitones
-- Milestone start: Multi-file structure chosen over embedded WASM for Electron compatibility and cleaner deployment
-- [Phase 01-file-restructure]: phaze-worklet.js has no import/export — AudioWorklet scope requires standalone file loaded via addModule path
-- [Phase 01-file-restructure]: Three phaze bug fixes preserved verbatim: parameters['pitchFactor'], _outWritePtr=frameSize-1, nCh=_numChannels
-- [Phase 02-rubber-band-integration]: rubberband-web@0.2.1 places processor in public/ (not dist/) with WASM embedded in JS — no separate .wasm file to copy
-- [Phase 02-rubber-band-integration]: Pitch control uses postMessage(JSON.stringify(['pitch', ratio])) — not AudioParams — matches rubberband-web API
+- Rubber Band WASM (rubberband-web@0.2.1) handles all pitch shifting; processor in public/ with WASM embedded
+- Pitch control via postMessage(JSON.stringify(['pitch', ratio])) — not AudioParams
+- Active entry point: http://localhost:8080/renderer/index.html — rehearsal-tool-v1.html is orphaned
+- ArrayBuffer must be .slice(0)'d before IndexedDB put to preserve in-memory copy
 
 ### Pending Todos
 
-None yet.
+None.
 
-### Quick Tasks Completed
+### Quick Tasks Completed (v1.0)
 
-| # | Description | Date | Commit | Directory |
-|---|-------------|------|--------|-----------|
-| 260324-wa4 | Fix 5 renderer bugs: rename repeatability, meta-only save, seek time display, transpose debounce, prev/next reset | 2026-03-25 | 5b04a08 | [260324-wa4-fix-5-renderer-bugs-rename-after-first-u](.planning/quick/260324-wa4-fix-5-renderer-bugs-rename-after-first-u/) |
-| 260324-vas | Add miniplayer to renderer app (bottom-left) with transport, transpose, master vol | 2026-03-25 | 062167b | [260324-vas-add-miniplayer-bottom-left](.planning/quick/260324-vas-add-miniplayer-bottom-left/) |
-| 240324-mps | Integrate miniplayer as persistent sidebar bottom panel — replaces floating overlay + master vol box | 2026-03-24 | a0ac950 | — |
+| # | Description | Date | Commit |
+|---|-------------|------|--------|
+| 260324-wa4 | Fix 5 renderer bugs: rename repeatability, meta-only save, seek time display, transpose debounce, prev/next reset | 2026-03-25 | 5b04a08 |
+| 260324-vas | Add miniplayer to renderer app (bottom-left) with transport, transpose, master vol | 2026-03-25 | 062167b |
+| 240324-mps | Integrate miniplayer as persistent sidebar bottom panel — replaces floating overlay + master vol box | 2026-03-24 | a0ac950 |
 
 ### Blockers/Concerns
 
-- Phase 2: rubberband-web (mmckegg/rubberband-web) must be confirmed buildable/available as a WASM binary before Phase 2 execution begins. Verify the binary exists and can be loaded via AudioWorklet before committing to the integration approach.
+None.
 
 ## Session Continuity
 
-Last session: 2026-03-25
-Last activity: 2026-03-25 - Fixed 5 renderer bugs: rename repeatability, meta-only IndexedDB save, seek time display, transpose debounce, prev/next miniplayer reset
-Stopped at: Completed quick/260324-wa4-PLAN.md
+Last session: 2026-03-24
+Last activity: 2026-03-24 - Milestone v2.0 started
+Stopped at: —
 Resume file: None
