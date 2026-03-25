@@ -44,7 +44,7 @@ Declared values (multiples of 4):
 
 Exceptions:
 - Miniplayer `#sidebar-bottom` padding is 12px (existing, preserve as-is — source: style.css line 141)
-- Transport button circular targets: 34px (prev/next) and 40px (play) — existing, preserve as-is
+- Transport button circular targets: prev/next button existing size, unchanged — see style.css; play button existing size, unchanged — see style.css
 - Scrub bar height: 4px tall hit area with 3px rendered track (matches existing `input[type=range]` height token — style.css line 207)
 
 ---
@@ -169,6 +169,18 @@ Note: The CSS loads JetBrains Mono at 300/400/500 and Barlow Condensed at 300–
 **Typography:** JetBrains Mono, 10px, weight 400, color `--text-dim` (#55556a), margin-top 2px — reuses `.track-meta` visual language.
 
 **No change to:** track name, track meta (format + size), waveform, controls row. The subtitle slots in without altering existing card geometry meaningfully — it adds approximately 14px to card height when visible.
+
+---
+
+### Existing: Transport Buttons — Accessibility Labels
+
+The three transport buttons in `#mp-transport` require `aria-label` attributes. Phase 3 adds these where missing; values are:
+
+| Element | `aria-label` | Notes |
+|---------|-------------|-------|
+| `#mp-prev` | `"Previous track"` | Static |
+| `#mp-play-pause` | `"Play"` / `"Pause"` | Toggles with play state — JS sets attribute on each state change |
+| `#mp-next` | `"Next track"` | Static |
 
 ---
 
