@@ -774,3 +774,52 @@
     line-height: 1.5;
   }
   #confirm-box .conf-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* ── SCRUB BAR ──────────────────────────────────────── */
+#mp-scrub-bar {
+  position: relative;
+  height: 20px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  margin-bottom: 4px;
+}
+#mp-scrub-bar::before {
+  content: '';
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+}
+#mp-scrub-fill {
+  position: absolute;
+  left: 0;
+  height: 3px;
+  background: var(--accent);
+  border-radius: 2px;
+  width: 0%;
+  pointer-events: none;
+}
+#mp-scrub-fill::after {
+  content: '';
+  position: absolute;
+  right: -6px;
+  top: -5px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 6px var(--accent-glow);
+}
+
+/* ── TIME DISPLAY ───────────────────────────────────── */
+#mp-time-display {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  font-weight: 400;
+  color: var(--text-secondary);
+  letter-spacing: 1px;
+  text-align: center;
+  margin-bottom: 10px;
+}

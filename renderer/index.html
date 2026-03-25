@@ -50,10 +50,14 @@
 
       <div id="sidebar-bottom">
         <div id="mp-track-name">—</div>
+        <div id="mp-scrub-bar" aria-label="Playback position">
+          <div id="mp-scrub-fill"></div>
+        </div>
+        <div id="mp-time-display">0:00 / --:--</div>
         <div id="mp-transport">
-          <button id="mp-prev" title="Previous track">⏮</button>
-          <button id="mp-play" title="Play / Pause">▶</button>
-          <button id="mp-next" title="Next track">⏭</button>
+          <button id="mp-prev" title="Previous track" aria-label="Previous track">⏮</button>
+          <button id="mp-play" title="Play / Pause" aria-label="Play">▶</button>
+          <button id="mp-next" title="Next track" aria-label="Next track">⏭</button>
         </div>
         <div class="mp-row">
           <span class="mp-label">Transpose</span>
