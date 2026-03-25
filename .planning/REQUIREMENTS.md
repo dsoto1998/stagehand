@@ -1,29 +1,59 @@
-# Requirements: Stagehand — Transpose Quality Improvement
+# Requirements: Stagehand
 
 **Defined:** 2026-03-23
-**Core Value:** Musicians can transpose any track ±7 semitones and have it sound good enough to play along with in a real rehearsal.
+**Core Value:** Musicians can import their rehearsal tracks, browse and organize them, transpose any track ±12 semitones with professional quality, and play along — all from a fast, well-organized interface that scales to large libraries.
 
-## v1 Requirements
+## v2.0 Requirements (Milestone: Library & Player Enhancement)
+
+### Transport (Miniplayer)
+
+- [ ] **TRANS-01**: User can see a progress bar in the miniplayer showing current playback position
+- [ ] **TRANS-02**: Progress bar displays elapsed time and total track duration
+- [ ] **TRANS-03**: User can scrub the progress bar to seek; seek applies on mouse-up
+- [ ] **TRANS-04**: Pressing Play with no track loaded starts the first alphabetical track
+
+### Metadata
+
+- [ ] **META-01**: Artist, album, title, and duration are parsed from audio file tags on import
+- [ ] **META-02**: Parsed metadata is stored in IndexedDB alongside the track
+
+### Library
+
+- [ ] **LIB-01**: Library has a Songs tab listing all tracks
+- [ ] **LIB-02**: Library has an Artists tab grouping tracks by parsed artist
+- [ ] **LIB-03**: Library has a Playlists tab for managing playlists
+- [ ] **LIB-04**: Library renders without performance degradation at hundreds or thousands of tracks (virtual scrolling)
+
+### Playlists
+
+- [ ] **PL-01**: User can create a named playlist
+- [ ] **PL-02**: User can rename a playlist
+- [ ] **PL-03**: User can delete a playlist
+- [ ] **PL-04**: User can add tracks to a playlist
+- [ ] **PL-05**: User can reorder tracks within a playlist
+- [ ] **PL-06**: Playing a playlist plays through tracks in order
+
+## v1.0 Requirements (Milestone: Transpose Quality Improvement) — Validated
 
 ### Pitch Shifting Quality
 
-- [ ] **PITCH-01**: Transpose produces no robotic/metallic artifacts at ±7 semitones on full band mixes
-- [ ] **PITCH-02**: Transpose produces no smeared transients at ±7 semitones on full band mixes
-- [ ] **PITCH-03**: Pitch is stable (no wavering/drift) throughout playback at ±7 semitones
+- [x] **PITCH-01**: Transpose produces no robotic/metallic artifacts at ±7 semitones on full band mixes
+- [x] **PITCH-02**: Transpose produces no smeared transients at ±7 semitones on full band mixes
+- [x] **PITCH-03**: Pitch is stable (no wavering/drift) throughout playback at ±7 semitones
 
 ### Integration
 
 - [x] **INT-01**: Rubber Band WASM replaces the existing OLA phase vocoder AudioWorklet
-- [x] **INT-02**: Transpose slider (−12 to +12 semitones) continues to work in real time, updating pitch without interrupting playback
-- [x] **INT-03**: Pitch shifting node is bypassed when semitones = 0 (same behavior as before)
+- [x] **INT-02**: Transpose slider (−12 to +12 semitones) works in real time without interrupting playback
+- [x] **INT-03**: Pitch shifting node is bypassed when semitones = 0
 
 ### File Structure
 
-- [x] **STRUCT-01**: App loads and runs from a multi-file directory (index.html + css + js modules + rubberband.wasm)
-- [ ] **STRUCT-02**: All existing features work after restructure: audio library, waveform display, playback, volume, metronome
+- [x] **STRUCT-01**: App loads and runs from a multi-file directory (renderer/index.html + css + js modules)
+- [x] **STRUCT-02**: All existing features work after restructure: audio library, waveform display, playback, volume, metronome
 - [x] **STRUCT-03**: Existing IndexedDB audio track data is preserved (database name and schema unchanged)
 
-## v2 Requirements
+## Future Requirements
 
 ### Future Milestone — Electron Migration
 
@@ -40,30 +70,49 @@
 
 | Feature | Reason |
 |---------|--------|
-| Time stretching (tempo-independent pitch) | Not requested; Rubber Band supports it but adds complexity |
-| Other audio processing (EQ, compression, noise reduction) | Not requested this milestone |
-| Safari / mobile browser support | AudioWorklet + WASM not fully supported; Chrome/Firefox only per existing constraint |
+| Time stretching (tempo-independent pitch) | Not requested |
+| Audio processing (EQ, compression, noise reduction) | Not requested |
+| Safari / mobile browser support | AudioWorklet + WASM not fully supported; Chrome/Firefox only |
 | Bundler / build pipeline | Keep deployable as plain files, no webpack/vite |
+| Album art display | Not requested this milestone |
+| Last.fm / streaming integration | Not requested |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
 | STRUCT-01 | Phase 1 | Complete |
-| STRUCT-02 | Phase 1 | Pending |
+| STRUCT-02 | Phase 1 | Complete |
 | STRUCT-03 | Phase 1 | Complete |
 | INT-01 | Phase 2 | Complete |
 | INT-02 | Phase 2 | Complete |
 | INT-03 | Phase 2 | Complete |
-| PITCH-01 | Phase 2 | Pending |
-| PITCH-02 | Phase 2 | Pending |
-| PITCH-03 | Phase 2 | Pending |
+| PITCH-01 | Phase 2 | Complete |
+| PITCH-02 | Phase 2 | Complete |
+| PITCH-03 | Phase 2 | Complete |
+| TRANS-01 | TBD | Pending |
+| TRANS-02 | TBD | Pending |
+| TRANS-03 | TBD | Pending |
+| TRANS-04 | TBD | Pending |
+| META-01 | TBD | Pending |
+| META-02 | TBD | Pending |
+| LIB-01 | TBD | Pending |
+| LIB-02 | TBD | Pending |
+| LIB-03 | TBD | Pending |
+| LIB-04 | TBD | Pending |
+| PL-01 | TBD | Pending |
+| PL-02 | TBD | Pending |
+| PL-03 | TBD | Pending |
+| PL-04 | TBD | Pending |
+| PL-05 | TBD | Pending |
+| PL-06 | TBD | Pending |
 
 **Coverage:**
-- v1 requirements: 9 total
-- Mapped to phases: 9
+- v2.0 requirements: 16 total
+- Mapped to phases: TBD (roadmap pending)
 - Unmapped: 0 ✓
 
 ---
-*Requirements defined: 2026-03-23*
-*Last updated: 2026-03-23 after roadmap creation*
+*v1.0 requirements defined: 2026-03-23*
+*v2.0 requirements defined: 2026-03-25*
+*Last updated: 2026-03-25 after milestone v2.0 start*
