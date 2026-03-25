@@ -21,9 +21,12 @@ Musicians can transpose any track ±7 semitones and have it sound good enough to
 
 ### Active
 
-- [ ] Transpose audio quality is acceptable on full band mixes at ±7 semitones (no robotic/smeared artifacts)
 - [ ] App loads and runs from a multi-file directory (index.html + separate assets + rubberband.wasm)
 - [ ] All existing features continue to work after the restructure
+
+### Validated in Phase 02: rubber-band-integration
+
+- ✓ Transpose audio quality is acceptable on full band mixes at ±7 semitones (no robotic/smeared artifacts) — Rubber Band WASM replaces OLA vocoder, human-verified 2026-03-24
 
 ### Out of Scope
 
