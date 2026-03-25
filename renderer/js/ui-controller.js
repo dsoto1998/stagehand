@@ -103,6 +103,8 @@ document.getElementById('mp-prev').addEventListener('click', () => {
   if (!currentPlayingId || tracks.length < 2) return;
   const idx = tracks.findIndex(t => t.id === currentPlayingId);
   const prev = tracks[(idx - 1 + tracks.length) % tracks.length];
+  const targetPlayer = players[prev.id];
+  if (targetPlayer) targetPlayer.pauseOffset = 0;
   const card = document.getElementById('card-' + prev.id);
   if (card) card.querySelector('.track-play-btn').click();
 });
@@ -111,6 +113,8 @@ document.getElementById('mp-next').addEventListener('click', () => {
   if (!currentPlayingId || tracks.length < 2) return;
   const idx = tracks.findIndex(t => t.id === currentPlayingId);
   const next = tracks[(idx + 1) % tracks.length];
+  const targetPlayer = players[next.id];
+  if (targetPlayer) targetPlayer.pauseOffset = 0;
   const card = document.getElementById('card-' + next.id);
   if (card) card.querySelector('.track-play-btn').click();
 });
@@ -368,11 +372,12 @@ function buildTrackCard(track) {
   stValEl.style.color = (track.semitones||0) === 0 ? 'var(--text-dim)' : 'var(--cyan)';
 
   // Rename (click name)
-  nameEl.addEventListener('click', () => {
+  function startRename() {
     const input = document.createElement('input');
     input.className = 'track-name-input';
     input.value = track.name;
-    nameEl.replaceWith(input);
+    const currentNameEl = card.querySelector('.track-name');
+    currentNameEl.replaceWith(input);
     input.focus();
     input.select();
     function commit() {
@@ -383,7 +388,7 @@ function buildTrackCard(track) {
       nameNew.title = 'Click to rename';
       nameNew.textContent = newName;
       input.replaceWith(nameNew);
-      nameNew.addEventListener('click', arguments.callee);
+      nameNew.addEventListener('click', startRename);
       saveTrackMeta(track);
       notify('Renamed to "' + newName + '"', 'success');
     }
@@ -392,7 +397,8 @@ function buildTrackCard(track) {
       if (e.key === 'Enter') input.blur();
       if (e.key === 'Escape') { input.value = track.name; input.blur(); }
     });
-  });
+  }
+  nameEl.addEventListener('click', startRename);
 
   // Delete
   delBtn.addEventListener('click', async () => {
@@ -412,7 +418,8 @@ function buildTrackCard(track) {
 
 async function saveTrackMeta(track) {
   try {
-    await LibraryManager.save(track);
+    const { arrayBuffer, ...meta } = track;
+    await LibraryManager.saveMeta(meta);
   } catch(e) { console.warn('Save failed:', e); }
 }
 

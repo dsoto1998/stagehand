@@ -38,6 +38,23 @@ export function save(track) {
   }));
 }
 
+export function saveMeta(meta) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const req = store.get(meta.id);
+    req.onsuccess = () => {
+      const existing = req.result;
+      if (!existing) { rej(new Error('Record not found: ' + meta.id)); return; }
+      Object.assign(existing, meta);
+      const putReq = store.put(existing);
+      putReq.onsuccess = () => res();
+      putReq.onerror = e => rej(e.target.error);
+    };
+    req.onerror = e => rej(e.target.error);
+  }));
+}
+
 export function remove(id) {
   return open().then(d => new Promise((res, rej) => {
     const tx = d.transaction(STORE, 'readwrite');
