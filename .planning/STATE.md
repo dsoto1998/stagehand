@@ -71,6 +71,7 @@ None yet.
 
 | # | Description | Date | Commit | Directory |
 |---|-------------|------|--------|-----------|
+| 260324-wa4 | Fix 5 renderer bugs: rename repeatability, meta-only save, seek time display, transpose debounce, prev/next reset | 2026-03-25 | 5b04a08 | [260324-wa4-fix-5-renderer-bugs-rename-after-first-u](.planning/quick/260324-wa4-fix-5-renderer-bugs-rename-after-first-u/) |
 | 260324-vas | Add miniplayer to renderer app (bottom-left) with transport, transpose, master vol | 2026-03-25 | 062167b | [260324-vas-add-miniplayer-bottom-left](.planning/quick/260324-vas-add-miniplayer-bottom-left/) |
 
 ### Blockers/Concerns
@@ -80,6 +81,6 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-25
-Last activity: 2026-03-25 - Completed quick task 260324-vas: Add miniplayer to renderer app
-Stopped at: Completed 02-rubber-band-integration/02-01-PLAN.md
+Last activity: 2026-03-25 - Fixed 5 renderer bugs: rename repeatability, meta-only IndexedDB save, seek time display, transpose debounce, prev/next miniplayer reset
+Stopped at: Completed quick/260324-wa4-PLAN.md
 Resume file: None
