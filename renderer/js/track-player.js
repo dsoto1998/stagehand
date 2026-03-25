@@ -134,7 +134,7 @@ export class TrackPlayer {
     const t = fraction * this.duration;
     this.pauseOffset = t;
     if (wasPlaying) this.play(t);
-    else if (this.onProgress) this.onProgress(fraction);
+    else if (this.onProgress) this.onProgress(fraction, t);
   }
 
   get currentTime() {
@@ -152,7 +152,12 @@ export class TrackPlayer {
 
   setSemitones(s) {
     this.semitones = s;
-    if (this.isPlaying) { this.play(this.currentTime); }
+    if (this.isPlaying) {
+      clearTimeout(this._semitoneDebounce);
+      this._semitoneDebounce = setTimeout(() => {
+        if (this.isPlaying) this.play(this.currentTime);
+      }, 150);
+    }
   }
 
   _tick() {
