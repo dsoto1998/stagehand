@@ -4,7 +4,7 @@ milestone: v1.0
 milestone_name: milestone
 status: Milestone complete
 stopped_at: Completed 02-rubber-band-integration/02-01-PLAN.md
-last_updated: "2026-03-25T03:15:45.720Z"
+last_updated: "2026-03-24T00:00:00.000Z"
 progress:
   total_phases: 2
   completed_phases: 2
@@ -73,6 +73,7 @@ None yet.
 |---|-------------|------|--------|-----------|
 | 260324-wa4 | Fix 5 renderer bugs: rename repeatability, meta-only save, seek time display, transpose debounce, prev/next reset | 2026-03-25 | 5b04a08 | [260324-wa4-fix-5-renderer-bugs-rename-after-first-u](.planning/quick/260324-wa4-fix-5-renderer-bugs-rename-after-first-u/) |
 | 260324-vas | Add miniplayer to renderer app (bottom-left) with transport, transpose, master vol | 2026-03-25 | 062167b | [260324-vas-add-miniplayer-bottom-left](.planning/quick/260324-vas-add-miniplayer-bottom-left/) |
+| 240324-mps | Integrate miniplayer as persistent sidebar bottom panel — replaces floating overlay + master vol box | 2026-03-24 | a0ac950 | — |
 
 ### Blockers/Concerns
 

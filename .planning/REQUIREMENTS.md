@@ -13,9 +13,9 @@
 
 ### Integration
 
-- [ ] **INT-01**: Rubber Band WASM replaces the existing OLA phase vocoder AudioWorklet
-- [ ] **INT-02**: Transpose slider (−12 to +12 semitones) continues to work in real time, updating pitch without interrupting playback
-- [ ] **INT-03**: Pitch shifting node is bypassed when semitones = 0 (same behavior as before)
+- [x] **INT-01**: Rubber Band WASM replaces the existing OLA phase vocoder AudioWorklet
+- [x] **INT-02**: Transpose slider (−12 to +12 semitones) continues to work in real time, updating pitch without interrupting playback
+- [x] **INT-03**: Pitch shifting node is bypassed when semitones = 0 (same behavior as before)
 
 ### File Structure
 
@@ -52,9 +52,9 @@
 | STRUCT-01 | Phase 1 | Complete |
 | STRUCT-02 | Phase 1 | Pending |
 | STRUCT-03 | Phase 1 | Complete |
-| INT-01 | Phase 2 | Pending |
-| INT-02 | Phase 2 | Pending |
-| INT-03 | Phase 2 | Pending |
+| INT-01 | Phase 2 | Complete |
+| INT-02 | Phase 2 | Complete |
+| INT-03 | Phase 2 | Complete |
 | PITCH-01 | Phase 2 | Pending |
 | PITCH-02 | Phase 2 | Pending |
 | PITCH-03 | Phase 2 | Pending |

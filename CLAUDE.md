@@ -5,22 +5,25 @@
 
 ## Project Overview
 
-**Stagehand** is a cross-platform musician's rehearsal tool. It is currently a single self-contained HTML file (`rehearsal-tool-v1.html`) built with vanilla JS and the Web Audio API. The long-term target is an **Electron app** (Windows + Mac) with native VST3 plugin hosting.
+**Stagehand** is a cross-platform musician's rehearsal tool. The app runs from a multi-file `renderer/` directory (HTML + CSS + ES modules) serving as the pre-Electron browser target. The long-term target is an **Electron app** (Windows + Mac) with native VST3 plugin hosting.
+
+The legacy monolith (`rehearsal-tool-v1.html`) still exists at the project root but is orphaned — `renderer/index.html` is the active entry point.
 
 ---
 
-## Current Status: v1.0 (HTML prototype)
+## Current Status: v1.0 (multi-file browser app)
 
 ### Working Features
 - **Audio Library** — Import WAV, MP3, FLAC, OGG/Opus. Rename, delete, persist across sessions via IndexedDB.
 - **Waveform display** — Canvas-rendered from decoded AudioBuffer, amplitude-colored.
 - **Playback** — Play/pause, seek by clicking waveform, per-track volume slider.
-- **Transpose** — Per-track semitone slider (−12 to +12) using an inline phase-vocoder pitch shifter (Phaze architecture).
+- **Transpose** — Per-track semitone slider (−12 to +12) using **Rubber Band WASM** (`rubberband-web@0.2.1`) via AudioWorkletNode. Node is bypassed at 0 semitones. Slider changes debounced 150ms to avoid audio glitch on every tick.
 - **Metronome** — BPM input (typable + ±1 buttons), tap tempo, subdivisions (1/4, 1/8, triplet, 1/16), beat flash visualizer, custom click sound loader, volume control.
 - **Master volume** — GainNode on AudioContext destination.
+- **Miniplayer** — Persistent panel at sidebar bottom: track name, play/pause, prev/next (always starts from 0:00), transpose slider, master volume slider.
 
 ### Known Issues / In Progress
-- None currently. Transpose pitch shifter is working.
+- None currently.
 
 ---
 
@@ -28,29 +31,33 @@
 
 ### File Structure (current)
 ```
-rehearsal-tool-v1.html   ← entire app, single file (CSS + HTML + JS inlined)
-```
-
-### Target File Structure (Electron migration)
-```
 stagehand/
-├── package.json
-├── main.js                  ← Electron main process
-├── preload.js               ← Electron preload (context bridge)
+├── package.json                 ← rubberband-web@0.2.1 dep + npm run setup script
+├── rehearsal-tool-v1.html       ← ORPHANED monolith, do not edit
 ├── renderer/
-│   ├── index.html
+│   ├── index.html               ← active entry point
 │   ├── style.css
 │   └── js/
 │       ├── audio-engine.js      ← AudioContext, master gain, routing
-│       ├── library-manager.js   ← IndexedDB CRUD
-│       ├── track-player.js      ← AudioBufferSourceNode + pitch routing
-│       ├── phaze-worklet.js     ← AudioWorkletProcessor (pitch shifter)
+│       ├── library-manager.js   ← IndexedDB CRUD + saveMeta() for metadata-only updates
+│       ├── track-player.js      ← AudioBufferSourceNode + Rubber Band pitch routing
+│       ├── rubberband-processor.js  ← rubberband-web AudioWorkletProcessor (612KB, WASM embedded)
 │       ├── metronome.js         ← Lookahead scheduler + tap tempo
 │       ├── waveform.js          ← Canvas waveform renderer
-│       └── ui-controller.js     ← DOM bindings, panel routing
+│       └── ui-controller.js     ← DOM bindings, panel routing, miniplayer
 ├── native/
 │   └── vst-bridge/              ← Future: node-addon-api + JUCE VST host
 └── CLAUDE.md
+```
+
+### Target File Structure (Electron migration — future)
+```
+stagehand/
+├── main.js                  ← Electron main process
+├── preload.js               ← Electron preload (context bridge)
+├── renderer/                ← existing renderer/ moves in as-is
+└── native/
+    └── vst-bridge/          ← node-addon-api + JUCE VST host
 ```
 
 ---
@@ -61,7 +68,7 @@ stagehand/
 ```
 [AudioBufferSourceNode]
         │
-[AudioWorkletNode]     ← PhaseVocoderProcessor (Phaze), only inserted when semitones !== 0
+[AudioWorkletNode]     ← rubberband-processor, only inserted when semitones !== 0
         │
 [GainNode]             ← per-track volume
         │
@@ -77,34 +84,15 @@ stagehand/
 
 ---
 
-## Pitch Shifter (Phaze Worklet)
+## Pitch Shifter (Rubber Band WASM)
 
-### Architecture
-Two-class OLA phase vocoder, inlined as a Blob URL loaded via `audioWorklet.addModule()`.
+### Implementation
+`renderer/js/rubberband-processor.js` — `rubberband-web@0.2.1` AudioWorkletProcessor with WASM embedded (612KB). Registered as `'rubberband-processor'`, loaded via `ctx.audioWorklet.addModule('./js/rubberband-processor.js')`.
 
-**`OLAProcessor`** (base class, extends `AudioWorkletProcessor`):
-- Manages three independent ring buffer pointers:
-  - `_inWritePtr` — advances 1/sample as input is written
-  - `_outReadPtr` — advances 1/sample as output is consumed
-  - `_outWritePtr` — advances by `hopSize` each time a frame is OLA-accumulated
-- Ring buffer size: `frameSize * 8` (prevents read/write head collision)
-- Fires `processFrame()` every `hopSize` input samples once `_inputFill >= frameSize`
-- Applies Hann window + normalisation (`2 * hopSize / frameSize`) during OLA accumulation
-- **`processFrame` must NOT re-window its output** — the OLA layer owns windowing
-
-**`PhaseVocoderProcessor`** (extends `OLAProcessor`):
-- `frameSize = 2048`, `overlap = 4`, `hopSize = 512`
-- Analysis: windowed FFT → magnitude + true frequency (principal-value phase difference)
-- Synthesis: scatter bin `k` → bin `round(k * pitchFactor)`, accumulate with updated synthesis phase
-- Inverse FFT → return raw real part (no synthesis window)
-- `pitchFactor` = `2^(semitones/12)`, passed as AudioWorklet k-rate parameter
-
-### Key bugs already fixed
-1. `nCh` was derived from `inp.length` which is 0 on silent blocks → fixed to use `this._numChannels`
-2. Double-windowing (analysis window applied in processFrame AND OLA layer) → removed from processFrame
-3. `parameters.get('pitchFactor')` — `parameters` in AudioWorkletProcessor.process() is a plain object, not a Map; `.get()` threw TypeError every frame, crashing process() and silencing the node → fixed to `parameters['pitchFactor']`
-4. Input ring base calculation used raw negative subtraction → fixed with `(ptr - fs + BUF*8) % BUF`
-5. `_outWritePtr` initialised to `0` — OLA output was written into already-consumed ring positions; read pointer was always `frameSize` ahead of write pointer, producing one Hann-edge sample (≈0) per hop → fixed to `this._frameSize - 1` so the first frame's output lands at the current read position
+- Pitch ratio set via `port.postMessage(JSON.stringify(["pitch", factor]))` where `factor = 2^(semitones/12)`
+- Node is instantiated only when `semitones !== 0`; at 0 the source connects directly to the gain node (bypass)
+- `setSemitones()` debounces the graph restart by 150ms to avoid tearing down audio on every slider tick
+- `rubberbandWorkletLoaded` flag prevents double-registration across play calls
 
 ---
 
@@ -132,6 +120,8 @@ const abForMemory = ab.slice(0);
 await LibraryManager.save({ ...track, arrayBuffer: ab }); // ab gets transferred/detached
 tracks.push({ ...track, arrayBuffer: abForMemory });       // keep live copy
 ```
+
+**`saveMeta(meta)`** — metadata-only update that reads the existing record, merges scalar fields via `Object.assign`, and puts it back without touching the stored `arrayBuffer`. Use this for volume/semitones/name changes. `saveTrackMeta()` in ui-controller.js strips `arrayBuffer` before calling it.
 
 ---
 
@@ -187,24 +177,27 @@ tracks.push({ ...track, arrayBuffer: abForMemory });       // keep live copy
 
 ## Development Notes
 
-- Browser support: **Chrome and Firefox only** (AudioWorklet requirement)
-- The single HTML file is intentional for portability during prototyping — split into modules when migrating to Electron
+- Browser support: **Chrome and Firefox only** (AudioWorklet + WASM requirement)
+- Serve `renderer/` from a local HTTP server (e.g. `npx serve renderer/`) — ES modules require HTTP, not `file://`
 - Metronome lookahead pattern: `setInterval(scheduler, 25ms)` + schedule notes up to `currentTime + 0.1s` ahead using Web Audio time
 - Waveform canvas re-renders on each `buildTrackCard()` call; peaks sampled at 1px resolution from `AudioBuffer.getChannelData(0)`
-- `phazeWorkletLoaded` flag prevents double-registration across play calls; worklet module is loaded from a Blob URL created at play time
+- `rubberbandWorkletLoaded` flag prevents double-registration across play calls
 
 ---
 
 ## Session History Summary
 
-Built iteratively in Claude.ai (claude.ai chat):
+Built iteratively in Claude.ai then Claude Code:
 1. Full architecture planning session — layout, modules, audio routing graph, VST strategy, roadmap
 2. v1 build — single HTML file, all modules inlined
 3. Bug fix: IndexedDB ArrayBuffer transfer/detach → kept `abForMemory = ab.slice(0)` before store
 4. Bug fix: AudioContext suspended on play → `ctx.resume()` before worklet load and decode
 5. Pitch shifter v1 → broken (shared `_inPtr`/`_outPtr`, wrong window read, silent output)
-6. Pitch shifter v2 → rewritten with correct OLA two-class architecture
-7. Pitch shifter v2 bug fix (Claude Code session) → two bugs caused silence: `parameters.get()` TypeError (fix #3 above) + `_outWritePtr` init at wrong ring position (fix #5 above)
+6. Pitch shifter v2 → rewritten with correct OLA two-class architecture (phaze-worklet.js)
+7. Pitch shifter v2 bug fix → `parameters.get()` TypeError + `_outWritePtr` init wrong
+8. **Phase 01 (Claude Code)** — split monolith into multi-file `renderer/` structure
+9. **Phase 02 (Claude Code)** — replaced phaze-worklet.js with Rubber Band WASM (`rubberband-web@0.2.1`); human listening test passed at ±7 semitones
+10. **Quick tasks (Claude Code)** — miniplayer added to sidebar bottom; 5 renderer bugs fixed (rename repeatability, meta-only IDB save, seek time display, transpose debounce, prev/next reset)
 
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
