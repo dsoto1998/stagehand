@@ -357,6 +357,29 @@ function renderVirtualList(container, items, renderRowFn) {
   container.appendChild(spacerBot);
 }
 
+// ─── ARTIST GROUPING ─────────────────────────────────────────
+function getArtistGroups() {
+  const map = new Map();
+  tracks.forEach(t => {
+    const key = (t.artist && t.artist.trim()) ? t.artist.trim() : 'Unknown Artist';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(t);
+  });
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function buildArtistRow(artistName, trackCount) {
+  const row = document.createElement('div');
+  row.className = 'artist-row';
+  row.dataset.artist = artistName;
+  row.style.height = ROW_H + 'px';
+  row.innerHTML = `
+    <div class="artist-row-name">${escHtml(artistName)}</div>
+    <div class="artist-row-count">${trackCount} track${trackCount !== 1 ? 's' : ''}</div>
+  `;
+  return row;
+}
+
 // ─── TAB RENDERERS ───────────────────────────────────────────
 function renderSongsTab() {
   const trackList = document.getElementById('track-list');
@@ -371,13 +394,78 @@ function renderSongsTab() {
   renderVirtualList(trackList, tracks, buildTrackRow);
 }
 
-function renderArtistsTab() {
+function renderArtistList() {
   const trackList = document.getElementById('track-list');
-  trackList.innerHTML = `<div class="lib-empty-state">
-    <div class="es-icon">\u25C8</div>
-    <div class="es-text">Artists</div>
-    <div class="es-sub">Loading...</div>
-  </div>`;
+  const groups = getArtistGroups();
+
+  if (groups.length === 0) {
+    trackList.innerHTML = `<div class="lib-empty-state">
+      <div class="es-icon">\u25C8</div>
+      <div class="es-text">No artists</div>
+      <div class="es-sub">Import tracks with artist tags</div>
+    </div>`;
+    return;
+  }
+
+  const artistItems = groups.map(([name, trks]) => ({ name, count: trks.length }));
+  renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count));
+}
+
+function renderArtistDrillDown(artistName) {
+  const trackList = document.getElementById('track-list');
+  const groups = getArtistGroups();
+  const entry = groups.find(([name]) => name === artistName);
+  const artistTracks = entry ? entry[1] : [];
+
+  // Build header with back button
+  const header = document.createElement('div');
+  header.className = 'artist-drill-header';
+  header.innerHTML = `
+    <button class="artist-back-btn">\u2190</button>
+    <div class="artist-drill-title">${escHtml(artistName)}</div>
+    <div class="artist-drill-count">${artistTracks.length} track${artistTracks.length !== 1 ? 's' : ''}</div>
+  `;
+
+  trackList.innerHTML = '';
+  trackList.appendChild(header);
+
+  if (artistTracks.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'lib-empty-state';
+    empty.innerHTML = `<div class="es-text">No tracks</div>`;
+    trackList.appendChild(empty);
+    return;
+  }
+
+  // Sub-container for virtual list so header stays fixed at top
+  const listContainer = document.createElement('div');
+  listContainer.className = 'artist-track-list';
+  trackList.appendChild(listContainer);
+
+  // Make trackList flex so header + scrollable list stack
+  trackList.style.display = 'flex';
+  trackList.style.flexDirection = 'column';
+
+  renderVirtualList(listContainer, artistTracks, buildTrackRow);
+
+  // Scroll listener for the drill-down sub-container
+  let drillRafPending = false;
+  listContainer.addEventListener('scroll', () => {
+    if (drillRafPending) return;
+    drillRafPending = true;
+    requestAnimationFrame(() => {
+      drillRafPending = false;
+      renderVirtualList(listContainer, artistTracks, buildTrackRow);
+    });
+  });
+}
+
+function renderArtistsTab() {
+  if (currentArtistView === null) {
+    renderArtistList();
+  } else {
+    renderArtistDrillDown(currentArtistView);
+  }
 }
 
 function renderPlaylistsTab() {
@@ -390,6 +478,11 @@ function renderPlaylistsTab() {
 }
 
 function renderCurrentTab() {
+  const trackList = document.getElementById('track-list');
+  // Reset any inline flex from artist drill-down before re-rendering
+  trackList.style.display = '';
+  trackList.style.flexDirection = '';
+
   const badge = document.getElementById('lib-badge');
   const countLabel = document.getElementById('lib-count-label');
   badge.textContent = tracks.length;
@@ -559,13 +652,36 @@ trackList.addEventListener('scroll', () => {
   rafPending = true;
   requestAnimationFrame(() => {
     rafPending = false;
-    if (activeTab === 'songs') renderVirtualList(trackList, tracks, buildTrackRow);
-    // artists drill-down handled in Plan 02
+    if (activeTab === 'songs') {
+      renderVirtualList(trackList, tracks, buildTrackRow);
+    } else if (activeTab === 'artists' && currentArtistView === null) {
+      const groups = getArtistGroups();
+      const artistItems = groups.map(([name, trks]) => ({ name, count: trks.length }));
+      renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count));
+    }
+    // artist drill-down has its own scroll listener on the sub-container
   });
 });
 
 // ─── EVENT DELEGATION: ROW CLICK + CONTEXT MENU ──────────────
 trackList.addEventListener('click', e => {
+  // Artist row click -> drill down
+  const artistRow = e.target.closest('.artist-row[data-artist]');
+  if (artistRow) {
+    currentArtistView = artistRow.dataset.artist;
+    renderCurrentTab();
+    return;
+  }
+
+  // Back button in artist drill-down -> return to artist list
+  const backBtn = e.target.closest('.artist-back-btn');
+  if (backBtn) {
+    currentArtistView = null;
+    renderCurrentTab();
+    return;
+  }
+
+  // Track row click -> play
   const row = e.target.closest('.track-row[data-id]');
   if (!row) return;
   playTrack(row.dataset.id);

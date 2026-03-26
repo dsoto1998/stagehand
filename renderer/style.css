@@ -998,3 +998,86 @@
   text-align: center;
   margin-bottom: 10px;
 }
+
+/* ── ARTIST ROWS ─────────────────────────────────────── */
+.artist-row {
+  display: flex;
+  align-items: center;
+  height: 50px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+  padding: 0 12px;
+  cursor: pointer;
+  gap: 10px;
+  transition: background 0.1s;
+}
+.artist-row:hover { background: var(--bg-hover); }
+
+.artist-row-name {
+  flex: 1;
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.artist-row-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* ── ARTIST DRILL-DOWN HEADER ────────────────────────── */
+.artist-drill-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.artist-back-btn {
+  border: 1px solid var(--border-bright);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  border-radius: 3px;
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.artist-back-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.artist-drill-title {
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.artist-drill-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* ── ARTIST TRACK LIST (drill-down sub-container) ────── */
+.artist-track-list {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+}
