@@ -1,6 +1,6 @@
 // ─── INDEXEDDB LIBRARY ───────────────────────────────────────
 const DB_NAME = 'stagehand_db';
-const DB_VER  = 1;
+const DB_VER  = 2;
 const STORE   = 'tracks';
 let db = null;
 
@@ -13,6 +13,11 @@ function open() {
       if (!d.objectStoreNames.contains(STORE)) {
         const s = d.createObjectStore(STORE, { keyPath: 'id' });
         s.createIndex('name', 'name', { unique: false });
+      }
+      // New fields (artist, album, title, duration) are added lazily:
+      // existing records have undefined; read-time || '' / || 0 handles them.
+      if (!d.objectStoreNames.contains('playlists')) {
+        d.createObjectStore('playlists', { keyPath: 'id' });
       }
     };
     req.onsuccess = e => { db = e.target.result; res(db); };
