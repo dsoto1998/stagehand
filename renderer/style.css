@@ -747,6 +747,39 @@
     text-align: right;
   }
 
+  /* ── TRANSPOSE INLINE CONTROLS ───────────────────────── */
+  .row-xpose {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-shrink: 0;
+    margin-right: 8px;
+  }
+  .xpose-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 18px;
+    height: 22px;
+    font-size: 13px;
+    cursor: pointer;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    line-height: 1;
+  }
+  .xpose-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .xpose-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    min-width: 24px;
+    text-align: center;
+  }
+  .xpose-val.xpose-active { color: var(--cyan); }
+
   /* ── CONTEXT MENU ────────────────────────────────────── */
   #ctx-menu {
     position: fixed;

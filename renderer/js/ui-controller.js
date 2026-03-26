@@ -302,6 +302,7 @@ async function playTrack(id) {
   };
 
   try {
+    player.pauseOffset = 0; // always start from beginning on row click
     await player.play();
     showMiniplayer(id);
     renderCurrentTab(); // add playing highlight
@@ -322,6 +323,8 @@ function buildTrackRow(track) {
   const album  = track.album  || '';
   const sub    = [artist, album].filter(Boolean).join(' \u00B7 ');
   const dur    = track.duration ? formatTime(track.duration) : '--:--';
+  const st     = track.semitones || 0;
+  const stLabel = st > 0 ? `+${st}` : `${st}`;
 
   row.innerHTML = `
     <div class="row-play-indicator"></div>
@@ -329,9 +332,29 @@ function buildTrackRow(track) {
       <div class="row-name">${escHtml(track.name)}</div>
       ${sub ? `<div class="row-sub">${escHtml(sub)}</div>` : ''}
     </div>
+    <div class="row-xpose">
+      <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
+      <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
+      <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
+    </div>
     <div class="row-dur">${escHtml(dur)}</div>
   `;
   return row;
+}
+
+function applyTranspose(id, newSemitones) {
+  const track = tracks.find(t => t.id === id);
+  if (!track) return;
+  track.semitones = Math.max(-12, Math.min(12, newSemitones));
+  players[id]?.setSemitones(track.semitones);
+  saveTrackMeta(track);
+  if (id === currentPlayingId) {
+    const slider = document.getElementById('mp-semitones');
+    const valEl  = document.getElementById('mp-semitones-val');
+    if (slider) slider.value = track.semitones;
+    if (valEl)  valEl.textContent = (track.semitones > 0 ? '+' : '') + track.semitones + 'st';
+  }
+  renderCurrentTab();
 }
 
 // ─── VIRTUAL SCROLL ENGINE ────────────────────────────────────
@@ -555,22 +578,20 @@ async function saveTrackMeta(track) {
 
 // File import
 async function importFiles(files) {
+  const validFiles = [...files].filter(f =>
+    ['wav','mp3','flac','ogg','opus'].includes(f.name.split('.').pop().toLowerCase())
+  );
+  if (validFiles.length === 0) return;
+
   let added = 0;
-  for (const file of files) {
+  // Read all files in parallel — each track appears as soon as its data is ready
+  await Promise.all(validFiles.map(async file => {
     const ext = file.name.split('.').pop().toLowerCase();
-    const allowed = ['wav','mp3','flac','ogg','opus'];
-    if (!allowed.includes(ext)) continue;
-
-    // Parse tags from File object BEFORE reading ArrayBuffer
-    const tags = await readTags(file);
-
+    // Tags and ArrayBuffer read concurrently per file
+    const [tags, ab] = await Promise.all([readTags(file), file.arrayBuffer()]);
     const id = LibraryManager.genId();
-    const ab = await file.arrayBuffer();
-
-    // IndexedDB structured clone TRANSFERS the ArrayBuffer, detaching our reference.
-    // Keep a separate copy for in-memory use so the stored reference isn't zeroed out.
+    // IndexedDB structured clone TRANSFERS the ArrayBuffer — keep a separate copy
     const abForMemory = ab.slice(0);
-
     const trackForDB = {
       id,
       name: file.name.replace(/\.[^.]+$/, ''),
@@ -585,37 +606,33 @@ async function importFiles(files) {
       arrayBuffer: ab,
       addedAt: Date.now()
     };
+    const trackForMemory = { ...trackForDB, arrayBuffer: abForMemory };
 
-    const trackForMemory = {
-      ...trackForDB,
-      arrayBuffer: abForMemory
-    };
-
-    try {
-      await LibraryManager.save(trackForDB);
-      tracks.push(trackForMemory);
-      added++;
-      // Initialize player for imported track
-      players[id] = new TrackPlayer(id);
-      players[id].semitones = 0;
-      players[id].volume = 1.0;
-      // Start background buffer load
-      const abForDecode = abForMemory.slice(0);
-      players[id].loadBuffer(abForDecode).then(() => {
-        if (!trackForMemory.duration) {
-          trackForMemory.duration = players[id].duration;
-          saveTrackMeta(trackForMemory);
-        }
-      }).catch(e => console.warn('Background load failed:', trackForMemory.name, e));
-    } catch(e) {
+    // IDB save is fire-and-forget — don't await it
+    LibraryManager.save(trackForDB).catch(e => {
       console.warn('Error saving track:', e);
       notify('Failed to save "' + trackForDB.name + '"', 'error');
-    }
-  }
-  if (added > 0) {
-    renderTrackList();
-    notify(`Imported ${added} track${added > 1 ? 's' : ''}`, 'success');
-  }
+    });
+
+    tracks.push(trackForMemory);
+    players[id] = new TrackPlayer(id);
+    players[id].semitones = 0;
+    players[id].volume = 1.0;
+
+    // Background decode to populate duration
+    players[id].loadBuffer(abForMemory.slice(0)).then(() => {
+      if (!trackForMemory.duration) {
+        trackForMemory.duration = players[id].duration;
+        saveTrackMeta(trackForMemory);
+        renderTrackList(); // refresh to show duration
+      }
+    }).catch(e => console.warn('Background load failed:', trackForMemory.name, e));
+
+    added++;
+    renderTrackList(); // show track immediately
+  }));
+
+  if (added > 0) notify(`Imported ${added} track${added > 1 ? 's' : ''}`, 'success');
 }
 
 
@@ -678,6 +695,22 @@ trackList.addEventListener('click', e => {
   if (backBtn) {
     currentArtistView = null;
     renderCurrentTab();
+    return;
+  }
+
+  // Transpose dec/inc buttons — must check before track-row click
+  const xdec = e.target.closest('.xpose-dec');
+  if (xdec) {
+    e.stopPropagation();
+    const t = tracks.find(x => x.id === xdec.dataset.id);
+    if (t) applyTranspose(t.id, (t.semitones || 0) - 1);
+    return;
+  }
+  const xinc = e.target.closest('.xpose-inc');
+  if (xinc) {
+    e.stopPropagation();
+    const t = tracks.find(x => x.id === xinc.dataset.id);
+    if (t) applyTranspose(t.id, (t.semitones || 0) + 1);
     return;
   }
 
