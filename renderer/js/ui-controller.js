@@ -137,7 +137,13 @@ document.getElementById('mp-play').addEventListener('click', () => {
 });
 
 document.getElementById('mp-prev').addEventListener('click', () => {
-  if (!currentPlayingId || tracks.length < 2) return;
+  if (!currentPlayingId) return;
+  const currentPlayer = players[currentPlayingId];
+  if (currentPlayer && currentPlayer.currentTime >= 3) {
+    currentPlayer.seek(0);
+    return;
+  }
+  if (tracks.length < 2) return;
   const idx = tracks.findIndex(t => t.id === currentPlayingId);
   const prev = tracks[(idx - 1 + tracks.length) % tracks.length];
   const targetPlayer = players[prev.id];
