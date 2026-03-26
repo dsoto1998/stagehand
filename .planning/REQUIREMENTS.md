@@ -7,15 +7,15 @@
 
 ### Transport (Miniplayer)
 
-- [ ] **TRANS-01**: User can see a progress bar in the miniplayer showing current playback position
-- [ ] **TRANS-02**: Progress bar displays elapsed time and total track duration
-- [ ] **TRANS-03**: User can scrub the progress bar to seek; seek applies on mouse-up
-- [ ] **TRANS-04**: Pressing Play with no track loaded starts the first alphabetical track
+- [x] **TRANS-01**: User can see a progress bar in the miniplayer showing current playback position
+- [x] **TRANS-02**: Progress bar displays elapsed time and total track duration
+- [x] **TRANS-03**: User can scrub the progress bar to seek; seek applies on mouse-up
+- [x] **TRANS-04**: Pressing Play with no track loaded starts the first alphabetical track
 
 ### Metadata
 
-- [ ] **META-01**: Artist, album, title, and duration are parsed from audio file tags on import
-- [ ] **META-02**: Parsed metadata is stored in IndexedDB alongside the track
+- [x] **META-01**: Artist, album, title, and duration are parsed from audio file tags on import
+- [x] **META-02**: Parsed metadata is stored in IndexedDB alongside the track
 
 ### Library
 
@@ -90,12 +90,12 @@
 | PITCH-01 | Phase 2 | Complete |
 | PITCH-02 | Phase 2 | Complete |
 | PITCH-03 | Phase 2 | Complete |
-| TRANS-01 | Phase 3 | Pending |
-| TRANS-02 | Phase 3 | Pending |
-| TRANS-03 | Phase 3 | Pending |
-| TRANS-04 | Phase 3 | Pending |
-| META-01 | Phase 3 | Pending |
-| META-02 | Phase 3 | Pending |
+| TRANS-01 | Phase 3 | Complete |
+| TRANS-02 | Phase 3 | Complete |
+| TRANS-03 | Phase 3 | Complete |
+| TRANS-04 | Phase 3 | Complete |
+| META-01 | Phase 3 | Complete |
+| META-02 | Phase 3 | Complete |
 | LIB-01 | Phase 4 | Pending |
 | LIB-02 | Phase 4 | Pending |
 | LIB-03 | Phase 4 | Pending |
