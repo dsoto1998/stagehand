@@ -5,6 +5,12 @@ import { TrackPlayer, players } from './track-player.js';
 import { Metronome, TapTempo } from './metronome.js';
 import { renderWaveform } from './waveform.js';
 
+// ─── VIRTUAL SCROLL STATE ─────────────────────────────────────
+const ROW_H = 50;       // px — must match CSS .track-row height
+const OVERSCAN = 5;     // extra rows above/below viewport
+let activeTab = 'songs'; // 'songs' | 'artists' | 'playlists'
+let currentArtistView = null; // null = artist list, string = drill-down artist name
+let renamingActive = false;   // guards scroll re-renders during inline rename
 
 // ─── UTILITY ─────────────────────────────────────────────────
 function formatTime(sec) {
@@ -118,21 +124,17 @@ document.getElementById('mp-play').addEventListener('click', () => {
   if (!currentPlayingId) {
     if (tracks.length === 0) return;
     const sorted = [...tracks].sort((a, b) => a.name.localeCompare(b.name));
-    const first = sorted[0];
-    const card = document.getElementById('card-' + first.id);
-    if (card) card.querySelector('.track-play-btn').click();
+    playTrack(sorted[0].id);
     return;
   }
   const player = players[currentPlayingId];
-  const card = document.getElementById('card-' + currentPlayingId);
-  if (!player || !card) return;
+  if (!player) return;
   if (player.isPlaying) {
     player.pause();
-    card.classList.remove('playing');
-    card.querySelector('.track-play-btn').textContent = '▶';
     syncMiniplayerPlayBtn(false);
+    renderCurrentTab();
   } else {
-    card.querySelector('.track-play-btn').click();
+    playTrack(currentPlayingId);
   }
 });
 
@@ -148,8 +150,7 @@ document.getElementById('mp-prev').addEventListener('click', () => {
   const prev = tracks[(idx - 1 + tracks.length) % tracks.length];
   const targetPlayer = players[prev.id];
   if (targetPlayer) targetPlayer.pauseOffset = 0;
-  const card = document.getElementById('card-' + prev.id);
-  if (card) card.querySelector('.track-play-btn').click();
+  playTrack(prev.id);
 });
 
 document.getElementById('mp-next').addEventListener('click', () => {
@@ -158,8 +159,7 @@ document.getElementById('mp-next').addEventListener('click', () => {
   const next = tracks[(idx + 1) % tracks.length];
   const targetPlayer = players[next.id];
   if (targetPlayer) targetPlayer.pauseOffset = 0;
-  const card = document.getElementById('card-' + next.id);
-  if (card) card.querySelector('.track-play-btn').click();
+  playTrack(next.id);
 });
 
 document.getElementById('mp-semitones').addEventListener('input', function() {
@@ -172,13 +172,6 @@ document.getElementById('mp-semitones').addEventListener('input', function() {
   const mpVal = document.getElementById('mp-semitones-val');
   mpVal.textContent = (s > 0 ? '+' : '') + s + 'st';
   mpVal.style.color = s === 0 ? 'var(--text-dim)' : 'var(--cyan)';
-  const card = document.getElementById('card-' + currentPlayingId);
-  if (card) {
-    const cardSt = card.querySelector('.track-semitones');
-    const cardStVal = card.querySelector('.semitone-display');
-    if (cardSt) cardSt.value = s;
-    if (cardStVal) { cardStVal.textContent = (s > 0 ? '+' : '') + s + 'st'; cardStVal.style.color = s === 0 ? 'var(--text-dim)' : 'var(--cyan)'; }
-  }
 });
 
 document.getElementById('mp-vol').addEventListener('input', function() {
@@ -217,287 +210,247 @@ mpScrubBar.addEventListener('mousedown', e => {
 
 
 // ─── LIBRARY STATE ───────────────────────────────────────────
-let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, duration}]
+let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, duration, artist, album, title}]
 
 async function loadLibrary() {
   try {
     const stored = await LibraryManager.all();
     tracks = stored;
-    renderTrackList();
+    // Initialize players eagerly for all loaded tracks
+    tracks.forEach(t => {
+      if (!players[t.id]) {
+        players[t.id] = new TrackPlayer(t.id);
+        players[t.id].semitones = t.semitones || 0;
+        players[t.id].volume = t.volume !== undefined ? t.volume : 1.0;
+      }
+    });
+    // Start background buffer loads (non-blocking)
+    tracks.forEach(t => {
+      const player = players[t.id];
+      if (!player.buffer && t.arrayBuffer) {
+        const abCopy = t.arrayBuffer.slice ? t.arrayBuffer.slice(0) : t.arrayBuffer;
+        player.loadBuffer(abCopy).then(() => {
+          if (!t.duration) {
+            t.duration = player.duration;
+            saveTrackMeta(t);
+          }
+        }).catch(e => console.warn('Background load failed:', t.name, e));
+      }
+    });
+    renderCurrentTab();
   } catch(e) {
     console.warn('IndexedDB load failed:', e);
     tracks = [];
-    renderTrackList();
+    renderCurrentTab();
   }
 }
 
-function renderTrackList() {
-  const list = document.getElementById('track-list');
-  const badge = document.getElementById('lib-badge');
-  const countLabel = document.getElementById('lib-count-label');
-  const empty = document.getElementById('empty-state');
+// ─── PLAY TRACK ───────────────────────────────────────────────
+async function playTrack(id) {
+  resume();
+  const track = tracks.find(t => t.id === id);
+  if (!track) return;
 
-  badge.textContent = tracks.length;
-  countLabel.textContent = tracks.length + ' track' + (tracks.length !== 1 ? 's' : '');
+  if (!players[id]) {
+    players[id] = new TrackPlayer(id);
+    players[id].semitones = track.semitones || 0;
+    players[id].volume = track.volume !== undefined ? track.volume : 1.0;
+  }
+  const player = players[id];
 
-  // Remove old track cards
-  list.querySelectorAll('.track-card').forEach(el => el.remove());
-
-  if (tracks.length === 0) {
-    empty.style.display = '';
+  // If already playing this track, toggle pause
+  if (player.isPlaying) {
+    player.pause();
+    syncMiniplayerPlayBtn(false);
+    renderCurrentTab(); // update row highlight
     return;
   }
-  empty.style.display = 'none';
 
-  tracks.forEach(track => {
-    const card = buildTrackCard(track);
-    list.appendChild(card);
-  });
-}
-
-function buildTrackCard(track) {
-  const card = document.createElement('div');
-  card.className = 'track-card';
-  card.id = 'card-' + track.id;
-
-  if (!players[track.id]) {
-    players[track.id] = new TrackPlayer(track.id);
-  }
-  const player = players[track.id];
-  player.semitones = track.semitones || 0;
-  player.volume = track.volume !== undefined ? track.volume : 1.0;
-
-  card.innerHTML = `
-    <div class="track-top">
-      <button class="track-play-btn" title="Play/Pause">▶</button>
-      <div class="track-info">
-        <div class="track-name" title="Click to rename">${escHtml(track.name)}</div>
-        ${(() => { const sub = [track.artist, track.album].filter(Boolean).join(' \u00B7 '); return sub ? `<div class="track-subtitle">${escHtml(sub)}</div>` : ''; })()}
-        <div class="track-meta">${track.format || ''} · ${formatSize(track.size || 0)} · <span class="dur-val">--:--</span></div>
-      </div>
-      <div class="track-actions">
-        <button class="btn btn-sm btn-danger" title="Delete">✕</button>
-      </div>
-    </div>
-    <div class="waveform-container">
-      <canvas class="waveform-canvas"></canvas>
-      <div class="waveform-progress"></div>
-    </div>
-    <div class="track-controls">
-      <div class="ctrl-group wide">
-        <div class="ctrl-label"><span>Volume</span><span class="ctrl-val">${Math.round((track.volume||1)*100)}%</span></div>
-        <input type="range" class="track-vol" min="0" max="100" value="${Math.round((track.volume||1)*100)}">
-      </div>
-      <div class="ctrl-group">
-        <div class="ctrl-label"><span>Transpose</span><span class="semitone-display">${(track.semitones||0) > 0 ? '+' : ''}${track.semitones||0}st</span></div>
-        <input type="range" class="track-semitones" min="-12" max="12" value="${track.semitones||0}">
-      </div>
-      <div class="time-display">
-        <span class="cur-time">0:00</span> / <span class="tot-time">--:--</span>
-      </div>
-    </div>
-  `;
-
-  const playBtn   = card.querySelector('.track-play-btn');
-  const delBtn    = card.querySelector('.btn-danger');
-  const nameEl    = card.querySelector('.track-name');
-  const volSlider = card.querySelector('.track-vol');
-  const stSlider  = card.querySelector('.track-semitones');
-  const progress  = card.querySelector('.waveform-progress');
-  const canvas    = card.querySelector('.waveform-canvas');
-  const waveformC = card.querySelector('.waveform-container');
-  const curTimeEl = card.querySelector('.cur-time');
-  const totTimeEl = card.querySelector('.tot-time');
-  const durValEl  = card.querySelector('.dur-val');
-  const volValEl  = card.querySelector('.ctrl-val');
-  const stValEl   = card.querySelector('.semitone-display');
-
-  // Load buffer eagerly in background if arrayBuffer is available
-  if (!player.buffer && track.arrayBuffer) {
-    // Use a fresh slice so we don't detach the stored reference
-    const abCopy = track.arrayBuffer.slice ? track.arrayBuffer.slice(0) : track.arrayBuffer;
-    player.loadBuffer(abCopy).then(() => {
-      renderWaveform(canvas, player.buffer);
-      const d = formatTime(player.duration);
-      totTimeEl.textContent = d;
-      durValEl.textContent  = d;
+  // Load buffer if needed
+  if (!player.buffer) {
+    if (!track.arrayBuffer) {
+      notify('Audio data missing — try re-importing the file', 'error');
+      return;
+    }
+    try {
+      await player.loadBuffer(track.arrayBuffer.slice(0));
       if (!track.duration) {
         track.duration = player.duration;
         saveTrackMeta(track);
       }
-    }).catch(e => {
-      console.warn('Background buffer load failed for', track.name, e);
-      // Not fatal — will retry on play
-    });
-  } else if (player.buffer) {
-    requestAnimationFrame(() => {
-      renderWaveform(canvas, player.buffer);
-      const d = formatTime(player.duration);
-      totTimeEl.textContent = d;
-      durValEl.textContent  = d;
-    });
+    } catch(e) {
+      console.error('Buffer decode failed:', e);
+      notify('Could not decode audio: ' + (e.message || 'unsupported format'), 'error');
+      return;
+    }
   }
 
-  // Progress callback
+  // Stop other players
+  Object.entries(players).forEach(([pid, p]) => {
+    if (pid !== id && p.isPlaying) p.pause();
+  });
+
+  // Wire progress and end callbacks
   player.onProgress = (frac, t) => {
-    progress.style.width = (frac * 100) + '%';
-    curTimeEl.textContent = formatTime(t);
-    if (currentPlayingId === track.id) {
+    if (currentPlayingId === id) {
       updateMiniplayerProgress(frac, t, player.duration);
     }
   };
-
   player.onEnd = () => {
-    card.classList.remove('playing');
-    playBtn.textContent = '▶';
-    progress.style.width = '0%';
-    curTimeEl.textContent = '0:00';
-    if (currentPlayingId === track.id) hideMiniplayer();
+    if (currentPlayingId === id) hideMiniplayer();
+    renderCurrentTab(); // remove playing highlight
   };
 
-  // Play / Pause
-  playBtn.addEventListener('click', async () => {
-    resume();
-    if (player.isPlaying) {
-      player.pause();
-      card.classList.remove('playing');
-      playBtn.textContent = '▶';
-      if (currentPlayingId === track.id) syncMiniplayerPlayBtn(false);
-      return;
-    }
-
-    // If buffer isn't loaded yet, load it now (happens on first play after cold start)
-    if (!player.buffer) {
-      const t = tracks.find(t => t.id === track.id);
-      if (!t || !t.arrayBuffer) {
-        notify('Audio data missing — try re-importing the file', 'error');
-        return;
-      }
-      playBtn.textContent = '…';
-      playBtn.disabled = true;
-      try {
-        await player.loadBuffer(t.arrayBuffer);
-        renderWaveform(canvas, player.buffer);
-        const d = formatTime(player.duration);
-        totTimeEl.textContent = d;
-        durValEl.textContent  = d;
-        if (!track.duration) {
-          track.duration = player.duration;
-          saveTrackMeta(track);
-        }
-      } catch(e) {
-        console.error('Buffer decode failed:', e);
-        notify('Could not decode audio: ' + (e.message || 'unsupported format'), 'error');
-        playBtn.textContent = '▶';
-        playBtn.disabled = false;
-        return;
-      }
-      playBtn.disabled = false;
-    }
-
-    // Stop other players
-    Object.entries(players).forEach(([id, p]) => {
-      if (id !== track.id && p.isPlaying) {
-        p.pause();
-        const c = document.getElementById('card-' + id);
-        if (c) {
-          c.classList.remove('playing');
-          c.querySelector('.track-play-btn').textContent = '▶';
-        }
-      }
-    });
-
-    try {
-      await player.play();
-      card.classList.add('playing');
-      playBtn.textContent = '⏸';
-      showMiniplayer(track.id);
-    } catch(e) {
-      console.error('Playback failed:', e);
-      notify('Playback error: ' + (e.message || 'unknown'), 'error');
-      playBtn.textContent = '▶';
-    }
-  });
-
-  // Seek on waveform click
-  waveformC.addEventListener('click', e => {
-    const rect = waveformC.getBoundingClientRect();
-    const frac = (e.clientX - rect.left) / rect.width;
-    player.seek(Math.max(0, Math.min(1, frac)));
-    if (player.isPlaying) {
-      progress.style.width = (frac * 100) + '%';
-    }
-  });
-
-  // Volume
-  volSlider.addEventListener('input', () => {
-    const v = volSlider.value / 100;
-    player.setVolume(v);
-    volValEl.textContent = volSlider.value + '%';
-    const t = tracks.find(t => t.id === track.id);
-    if (t) { t.volume = v; saveTrackMeta(t); }
-  });
-
-  // Semitones
-  stSlider.addEventListener('input', () => {
-    const s = parseInt(stSlider.value);
-    player.setSemitones(s);
-    stValEl.textContent = (s > 0 ? '+' : '') + s + 'st';
-    stValEl.style.color = s === 0 ? 'var(--text-dim)' : 'var(--cyan)';
-    const t = tracks.find(t => t.id === track.id);
-    if (t) { t.semitones = s; saveTrackMeta(t); }
-    if (currentPlayingId === track.id) {
-      document.getElementById('mp-semitones').value = s;
-      const mpVal = document.getElementById('mp-semitones-val');
-      mpVal.textContent = (s > 0 ? '+' : '') + s + 'st';
-      mpVal.style.color = s === 0 ? 'var(--text-dim)' : 'var(--cyan)';
-    }
-  });
-  stValEl.style.color = (track.semitones||0) === 0 ? 'var(--text-dim)' : 'var(--cyan)';
-
-  // Rename (click name)
-  function startRename() {
-    const input = document.createElement('input');
-    input.className = 'track-name-input';
-    input.value = track.name;
-    const currentNameEl = card.querySelector('.track-name');
-    currentNameEl.replaceWith(input);
-    input.focus();
-    input.select();
-    function commit() {
-      const newName = input.value.trim() || track.name;
-      track.name = newName;
-      const nameNew = document.createElement('div');
-      nameNew.className = 'track-name';
-      nameNew.title = 'Click to rename';
-      nameNew.textContent = newName;
-      input.replaceWith(nameNew);
-      nameNew.addEventListener('click', startRename);
-      saveTrackMeta(track);
-      notify('Renamed to "' + newName + '"', 'success');
-    }
-    input.addEventListener('blur', commit);
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') input.blur();
-      if (e.key === 'Escape') { input.value = track.name; input.blur(); }
-    });
+  try {
+    await player.play();
+    showMiniplayer(id);
+    renderCurrentTab(); // add playing highlight
+  } catch(e) {
+    console.error('Playback failed:', e);
+    notify('Playback error: ' + (e.message || 'unknown'), 'error');
   }
-  nameEl.addEventListener('click', startRename);
+}
 
-  // Delete
-  delBtn.addEventListener('click', async () => {
-    const yes = await confirm('Delete Track', `Remove "${track.name}" from your library? This cannot be undone.`);
-    if (!yes) return;
-    player.stop();
-    if (currentPlayingId === track.id) hideMiniplayer();
-    delete players[track.id];
-    await LibraryManager.remove(track.id);
-    tracks = tracks.filter(t => t.id !== track.id);
-    renderTrackList();
-    notify('Track deleted', '');
+// ─── ROW BUILDER ─────────────────────────────────────────────
+function buildTrackRow(track) {
+  const row = document.createElement('div');
+  row.className = 'track-row' + (track.id === currentPlayingId ? ' playing' : '');
+  row.dataset.id = track.id;
+  row.style.height = ROW_H + 'px';
+
+  const artist = track.artist || '';
+  const album  = track.album  || '';
+  const sub    = [artist, album].filter(Boolean).join(' \u00B7 ');
+  const dur    = track.duration ? formatTime(track.duration) : '--:--';
+
+  row.innerHTML = `
+    <div class="row-play-indicator"></div>
+    <div class="row-info">
+      <div class="row-name">${escHtml(track.name)}</div>
+      ${sub ? `<div class="row-sub">${escHtml(sub)}</div>` : ''}
+    </div>
+    <div class="row-dur">${escHtml(dur)}</div>
+  `;
+  return row;
+}
+
+// ─── VIRTUAL SCROLL ENGINE ────────────────────────────────────
+function renderVirtualList(container, items, renderRowFn) {
+  if (renamingActive) return; // don't destroy DOM during rename
+  const viewportH = container.clientHeight;
+  const scrollTop = container.scrollTop;
+
+  const firstIdx = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
+  const lastIdx  = Math.min(items.length - 1, Math.ceil((scrollTop + viewportH) / ROW_H) + OVERSCAN);
+
+  const spacerTop = document.createElement('div');
+  spacerTop.style.height = (firstIdx * ROW_H) + 'px';
+
+  const spacerBot = document.createElement('div');
+  spacerBot.style.height = (Math.max(0, items.length - 1 - lastIdx) * ROW_H) + 'px';
+
+  container.innerHTML = '';
+  container.appendChild(spacerTop);
+  for (let i = firstIdx; i <= lastIdx; i++) {
+    container.appendChild(renderRowFn(items[i], i));
+  }
+  container.appendChild(spacerBot);
+}
+
+// ─── TAB RENDERERS ───────────────────────────────────────────
+function renderSongsTab() {
+  const trackList = document.getElementById('track-list');
+  if (tracks.length === 0) {
+    trackList.innerHTML = `<div class="lib-empty-state">
+      <div class="es-icon">\u25C8</div>
+      <div class="es-text">No tracks yet</div>
+      <div class="es-sub">Import audio files to get started</div>
+    </div>`;
+    return;
+  }
+  renderVirtualList(trackList, tracks, buildTrackRow);
+}
+
+function renderArtistsTab() {
+  const trackList = document.getElementById('track-list');
+  trackList.innerHTML = `<div class="lib-empty-state">
+    <div class="es-icon">\u25C8</div>
+    <div class="es-text">Artists</div>
+    <div class="es-sub">Loading...</div>
+  </div>`;
+}
+
+function renderPlaylistsTab() {
+  const trackList = document.getElementById('track-list');
+  trackList.innerHTML = `<div class="lib-empty-state">
+    <div class="es-icon">\u266B</div>
+    <div class="es-text">No playlists yet</div>
+    <div class="es-sub">Playlists coming soon</div>
+  </div>`;
+}
+
+function renderCurrentTab() {
+  const badge = document.getElementById('lib-badge');
+  const countLabel = document.getElementById('lib-count-label');
+  badge.textContent = tracks.length;
+  countLabel.textContent = tracks.length + ' track' + (tracks.length !== 1 ? 's' : '');
+
+  if (activeTab === 'songs') renderSongsTab();
+  else if (activeTab === 'artists') renderArtistsTab();
+  else if (activeTab === 'playlists') renderPlaylistsTab();
+}
+
+function renderTrackList() {
+  renderCurrentTab();
+}
+
+// ─── RENAME & DELETE ─────────────────────────────────────────
+function startRenameById(trackId) {
+  const row = trackList.querySelector(`.track-row[data-id="${trackId}"]`);
+  if (!row) return;
+  const track = tracks.find(t => t.id === trackId);
+  if (!track) return;
+
+  renamingActive = true;
+  const nameEl = row.querySelector('.row-name');
+  const input = document.createElement('input');
+  input.className = 'row-name-input';
+  input.value = track.name;
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function commit() {
+    renamingActive = false;
+    const newName = input.value.trim() || track.name;
+    track.name = newName;
+    saveTrackMeta(track);
+    renderCurrentTab();
+    if (currentPlayingId === trackId) {
+      document.getElementById('mp-track-name').textContent = newName;
+    }
+    notify('Renamed to "' + newName + '"', 'success');
+  }
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') input.blur();
+    if (e.key === 'Escape') { input.value = track.name; input.blur(); }
   });
+}
 
-  return card;
+async function deleteTrackById(trackId) {
+  const track = tracks.find(t => t.id === trackId);
+  if (!track) return;
+  const yes = await confirm('Delete Track', `Remove "${track.name}" from your library? This cannot be undone.`);
+  if (!yes) return;
+  const player = players[trackId];
+  if (player) player.stop();
+  if (currentPlayingId === trackId) hideMiniplayer();
+  delete players[trackId];
+  await LibraryManager.remove(trackId);
+  tracks = tracks.filter(t => t.id !== trackId);
+  renderCurrentTab();
+  notify('Track deleted', '');
 }
 
 async function saveTrackMeta(track) {
@@ -549,6 +502,18 @@ async function importFiles(files) {
       await LibraryManager.save(trackForDB);
       tracks.push(trackForMemory);
       added++;
+      // Initialize player for imported track
+      players[id] = new TrackPlayer(id);
+      players[id].semitones = 0;
+      players[id].volume = 1.0;
+      // Start background buffer load
+      const abForDecode = abForMemory.slice(0);
+      players[id].loadBuffer(abForDecode).then(() => {
+        if (!trackForMemory.duration) {
+          trackForMemory.duration = players[id].duration;
+          saveTrackMeta(trackForMemory);
+        }
+      }).catch(e => console.warn('Background load failed:', trackForMemory.name, e));
     } catch(e) {
       console.warn('Error saving track:', e);
       notify('Failed to save "' + trackForDB.name + '"', 'error');
@@ -570,6 +535,74 @@ document.querySelectorAll('.nav-item[data-panel]').forEach(item => {
     const panelId = 'panel-' + item.dataset.panel;
     document.getElementById(panelId).classList.add('active');
   });
+});
+
+
+// ─── TAB SWITCHING ───────────────────────────────────────────
+document.querySelectorAll('.lib-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    activeTab = btn.dataset.tab;
+    if (activeTab !== 'artists') currentArtistView = null;
+    renderCurrentTab();
+  });
+});
+
+// ─── TRACK LIST (declared here for use in startRenameById) ───
+const trackList = document.getElementById('track-list');
+
+// ─── VIRTUAL SCROLL LISTENER ─────────────────────────────────
+let rafPending = false;
+trackList.addEventListener('scroll', () => {
+  if (rafPending) return;
+  rafPending = true;
+  requestAnimationFrame(() => {
+    rafPending = false;
+    if (activeTab === 'songs') renderVirtualList(trackList, tracks, buildTrackRow);
+    // artists drill-down handled in Plan 02
+  });
+});
+
+// ─── EVENT DELEGATION: ROW CLICK + CONTEXT MENU ──────────────
+trackList.addEventListener('click', e => {
+  const row = e.target.closest('.track-row[data-id]');
+  if (!row) return;
+  playTrack(row.dataset.id);
+});
+
+trackList.addEventListener('contextmenu', e => {
+  const row = e.target.closest('.track-row[data-id]');
+  if (!row) return;
+  showCtxMenu(e, row.dataset.id);
+});
+
+// ─── CONTEXT MENU ────────────────────────────────────────────
+let ctxMenuTrackId = null;
+const ctxMenu = document.getElementById('ctx-menu');
+
+function showCtxMenu(e, trackId) {
+  e.preventDefault();
+  ctxMenuTrackId = trackId;
+  const x = Math.min(e.clientX, window.innerWidth - 140);
+  const y = Math.min(e.clientY, window.innerHeight - 70);
+  ctxMenu.style.left = x + 'px';
+  ctxMenu.style.top  = y + 'px';
+  ctxMenu.classList.add('show');
+}
+
+document.addEventListener('click', () => ctxMenu.classList.remove('show'));
+document.addEventListener('contextmenu', e => {
+  if (!e.target.closest('.track-row')) ctxMenu.classList.remove('show');
+});
+trackList.addEventListener('scroll', () => ctxMenu.classList.remove('show'));
+
+ctxMenu.addEventListener('click', e => {
+  const action = e.target.closest('[data-action]')?.dataset.action;
+  if (!action || !ctxMenuTrackId) return;
+  ctxMenu.classList.remove('show');
+  if (action === 'rename') startRenameById(ctxMenuTrackId);
+  if (action === 'delete') deleteTrackById(ctxMenuTrackId);
 });
 
 
