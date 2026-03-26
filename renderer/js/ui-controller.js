@@ -138,6 +138,23 @@ document.getElementById('mp-play').addEventListener('click', () => {
   }
 });
 
+// Returns the next track to auto-play when the current track ends,
+// based on the active tab context at the time of the call.
+function getAutoNextTrack(currentId) {
+  let list = [];
+  if (activeTab === 'songs') {
+    list = tracks;
+  } else if (activeTab === 'artists' && currentArtistView !== null) {
+    const groups = getArtistGroups();
+    const entry = groups.find(([name]) => name === currentArtistView);
+    list = entry ? entry[1] : [];
+  }
+  if (list.length === 0) return null;
+  const idx = list.findIndex(t => t.id === currentId);
+  if (idx === -1 || idx === list.length - 1) return null;
+  return list[idx + 1];
+}
+
 document.getElementById('mp-prev').addEventListener('click', () => {
   if (!currentPlayingId) return;
   const currentPlayer = players[currentPlayingId];
@@ -297,8 +314,14 @@ async function playTrack(id) {
     }
   };
   player.onEnd = () => {
-    if (currentPlayingId === id) hideMiniplayer();
-    renderCurrentTab(); // remove playing highlight
+    if (currentPlayingId !== id) return;
+    const next = getAutoNextTrack(id);
+    if (next) {
+      playTrack(next.id);
+    } else {
+      hideMiniplayer();
+      renderCurrentTab();
+    }
   };
 
   try {
@@ -578,59 +601,67 @@ async function saveTrackMeta(track) {
 
 // File import
 async function importFiles(files) {
+  const allowed = ['wav','mp3','flac','ogg','opus'];
   const validFiles = [...files].filter(f =>
-    ['wav','mp3','flac','ogg','opus'].includes(f.name.split('.').pop().toLowerCase())
+    allowed.includes(f.name.split('.').pop().toLowerCase())
   );
   if (validFiles.length === 0) return;
 
-  let added = 0;
-  // Read all files in parallel — each track appears as soon as its data is ready
-  await Promise.all(validFiles.map(async file => {
+  // Step 1: add all skeleton tracks from filename alone — zero I/O, instant appearance
+  const workItems = validFiles.map(file => {
     const ext = file.name.split('.').pop().toLowerCase();
-    // Tags and ArrayBuffer read concurrently per file
-    const [tags, ab] = await Promise.all([readTags(file), file.arrayBuffer()]);
-    const id = LibraryManager.genId();
-    // IndexedDB structured clone TRANSFERS the ArrayBuffer — keep a separate copy
-    const abForMemory = ab.slice(0);
-    const trackForDB = {
+    const id  = LibraryManager.genId();
+    const track = {
       id,
       name: file.name.replace(/\.[^.]+$/, ''),
       format: ext.toUpperCase(),
       size: file.size,
-      semitones: 0,
-      volume: 1.0,
-      artist: tags.artist || '',
-      album: tags.album || '',
-      title: tags.title || '',
-      duration: 0,
-      arrayBuffer: ab,
+      semitones: 0, volume: 1.0,
+      artist: '', album: '', title: '',
+      duration: 0, arrayBuffer: null,
       addedAt: Date.now()
     };
-    const trackForMemory = { ...trackForDB, arrayBuffer: abForMemory };
-
-    // IDB save is fire-and-forget — don't await it
-    LibraryManager.save(trackForDB).catch(e => {
-      console.warn('Error saving track:', e);
-      notify('Failed to save "' + trackForDB.name + '"', 'error');
-    });
-
-    tracks.push(trackForMemory);
+    tracks.push(track);
     players[id] = new TrackPlayer(id);
     players[id].semitones = 0;
     players[id].volume = 1.0;
+    return { file, track };
+  });
+  renderTrackList(); // all names appear at once before any I/O
 
-    // Background decode to populate duration
-    players[id].loadBuffer(abForMemory.slice(0)).then(() => {
-      if (!trackForMemory.duration) {
-        trackForMemory.duration = players[id].duration;
-        saveTrackMeta(trackForMemory);
-        renderTrackList(); // refresh to show duration
-      }
-    }).catch(e => console.warn('Background load failed:', trackForMemory.name, e));
+  // Step 2: process one file at a time to avoid memory spikes in Firefox
+  let added = 0;
+  for (const { file, track } of workItems) {
+    try {
+      // Read tags + raw bytes concurrently for this single file
+      const [tags, ab] = await Promise.all([readTags(file), file.arrayBuffer()]);
 
-    added++;
-    renderTrackList(); // show track immediately
-  }));
+      // Update skeleton with real metadata
+      track.artist = tags.artist || '';
+      track.album  = tags.album  || '';
+      track.title  = tags.title  || '';
+      const abMem  = ab.slice(0); // keep live copy; ab will be transferred to IDB
+      track.arrayBuffer = abMem;
+
+      // IDB save — fire and forget (ab is transferred/detached here)
+      LibraryManager.save({ ...track, arrayBuffer: ab })
+        .catch(e => console.warn('IDB save failed:', e));
+
+      // Decode for duration — fire and forget
+      players[track.id].loadBuffer(abMem.slice(0)).then(() => {
+        if (!track.duration) {
+          track.duration = players[track.id].duration;
+          saveTrackMeta(track);
+          renderTrackList(); // refresh duration column
+        }
+      }).catch(e => console.warn('Decode failed:', track.name, e));
+
+      added++;
+      renderTrackList(); // refresh metadata (artist/album) for this row
+    } catch(e) {
+      console.warn('Import failed for', file.name, e);
+    }
+  }
 
   if (added > 0) notify(`Imported ${added} track${added > 1 ? 's' : ''}`, 'success');
 }
