@@ -53,6 +53,16 @@ function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function readTags(file) {
+  return new Promise(resolve => {
+    if (typeof jsmediatags === 'undefined') { resolve({}); return; }
+    jsmediatags.read(file, {
+      onSuccess(result) { resolve(result.tags || {}); },
+      onError()         { resolve({}); }
+    });
+  });
+}
+
 
 // ─── MINIPLAYER ───────────────────────────────────────────────
 let currentPlayingId = null;
@@ -200,6 +210,7 @@ function buildTrackCard(track) {
       <button class="track-play-btn" title="Play/Pause">▶</button>
       <div class="track-info">
         <div class="track-name" title="Click to rename">${escHtml(track.name)}</div>
+        ${(() => { const sub = [track.artist, track.album].filter(Boolean).join(' \u00B7 '); return sub ? `<div class="track-subtitle">${escHtml(sub)}</div>` : ''; })()}
         <div class="track-meta">${track.format || ''} · ${formatSize(track.size || 0)} · <span class="dur-val">--:--</span></div>
       </div>
       <div class="track-actions">
@@ -248,6 +259,10 @@ function buildTrackCard(track) {
       const d = formatTime(player.duration);
       totTimeEl.textContent = d;
       durValEl.textContent  = d;
+      if (!track.duration) {
+        track.duration = player.duration;
+        saveTrackMeta(track);
+      }
     }).catch(e => {
       console.warn('Background buffer load failed for', track.name, e);
       // Not fatal — will retry on play
@@ -301,6 +316,10 @@ function buildTrackCard(track) {
         const d = formatTime(player.duration);
         totTimeEl.textContent = d;
         durValEl.textContent  = d;
+        if (!track.duration) {
+          track.duration = player.duration;
+          saveTrackMeta(track);
+        }
       } catch(e) {
         console.error('Buffer decode failed:', e);
         notify('Could not decode audio: ' + (e.message || 'unsupported format'), 'error');
@@ -431,6 +450,9 @@ async function importFiles(files) {
     const allowed = ['wav','mp3','flac','ogg','opus'];
     if (!allowed.includes(ext)) continue;
 
+    // Parse tags from File object BEFORE reading ArrayBuffer
+    const tags = await readTags(file);
+
     const id = LibraryManager.genId();
     const ab = await file.arrayBuffer();
 
@@ -445,13 +467,17 @@ async function importFiles(files) {
       size: file.size,
       semitones: 0,
       volume: 1.0,
-      arrayBuffer: ab,       // this gets transferred/detached by IndexedDB put
+      artist: tags.artist || '',
+      album: tags.album || '',
+      title: tags.title || '',
+      duration: 0,
+      arrayBuffer: ab,
       addedAt: Date.now()
     };
 
     const trackForMemory = {
       ...trackForDB,
-      arrayBuffer: abForMemory  // fresh copy we keep in our tracks[] array
+      arrayBuffer: abForMemory
     };
 
     try {

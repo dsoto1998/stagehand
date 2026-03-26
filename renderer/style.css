@@ -318,6 +318,19 @@
   }
   .track-name:hover { color: var(--accent); }
 
+  /* ── TRACK SUBTITLE ─────────────────────────────────── */
+  .track-subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--text-dim);
+    margin-top: 2px;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
   .track-name-input {
     background: var(--bg-base);
     border: 1px solid var(--accent);
