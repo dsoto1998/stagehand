@@ -66,6 +66,8 @@ function readTags(file) {
 
 // ─── MINIPLAYER ───────────────────────────────────────────────
 let currentPlayingId = null;
+let seeking = false;
+let seekFrac = 0;
 
 function showMiniplayer(trackId) {
   const track = tracks.find(t => t.id === trackId);
@@ -78,24 +80,49 @@ function showMiniplayer(trackId) {
   mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
   mpStVal.style.color = st === 0 ? 'var(--text-dim)' : 'var(--cyan)';
   document.getElementById('mp-play').textContent = '⏸';
+  document.getElementById('mp-play').setAttribute('aria-label', 'Pause');
+  const player = players[trackId];
+  const totalStr = player && player.duration ? formatTime(player.duration) : '--:--';
+  document.getElementById('mp-time-display').textContent = '0:00 / ' + totalStr;
+  document.getElementById('mp-scrub-fill').style.width = '0%';
 }
 
 function hideMiniplayer() {
   currentPlayingId = null;
   document.getElementById('mp-track-name').textContent = '—';
   document.getElementById('mp-play').textContent = '▶';
+  document.getElementById('mp-play').setAttribute('aria-label', 'Play');
   document.getElementById('mp-semitones').value = 0;
   const mpStVal = document.getElementById('mp-semitones-val');
   mpStVal.textContent = '0st';
   mpStVal.style.color = 'var(--text-dim)';
+  document.getElementById('mp-time-display').textContent = '0:00 / --:--';
+  document.getElementById('mp-scrub-fill').style.width = '0%';
 }
 
 function syncMiniplayerPlayBtn(isPlaying) {
-  document.getElementById('mp-play').textContent = isPlaying ? '⏸' : '▶';
+  const btn = document.getElementById('mp-play');
+  btn.textContent = isPlaying ? '⏸' : '▶';
+  btn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+}
+
+function updateMiniplayerProgress(frac, t, duration) {
+  if (!seeking) {
+    document.getElementById('mp-scrub-fill').style.width = (frac * 100).toFixed(2) + '%';
+  }
+  document.getElementById('mp-time-display').textContent =
+    formatTime(t) + ' / ' + formatTime(duration);
 }
 
 document.getElementById('mp-play').addEventListener('click', () => {
-  if (!currentPlayingId) return;
+  if (!currentPlayingId) {
+    if (tracks.length === 0) return;
+    const sorted = [...tracks].sort((a, b) => a.name.localeCompare(b.name));
+    const first = sorted[0];
+    const card = document.getElementById('card-' + first.id);
+    if (card) card.querySelector('.track-play-btn').click();
+    return;
+  }
   const player = players[currentPlayingId];
   const card = document.getElementById('card-' + currentPlayingId);
   if (!player || !card) return;
@@ -151,6 +178,35 @@ document.getElementById('mp-semitones').addEventListener('input', function() {
 document.getElementById('mp-vol').addEventListener('input', function() {
   setMasterVolume(this.value / 100);
   document.getElementById('mp-vol-val').textContent = this.value + '%';
+});
+
+// ─── SCRUB BAR ──────────────────────────────────────────────
+const mpScrubBar = document.getElementById('mp-scrub-bar');
+const mpScrubFill = document.getElementById('mp-scrub-fill');
+
+function onScrubMove(e) {
+  const rect = mpScrubBar.getBoundingClientRect();
+  seekFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  mpScrubFill.style.width = (seekFrac * 100).toFixed(2) + '%';
+}
+
+function onScrubUp() {
+  document.removeEventListener('mousemove', onScrubMove);
+  document.removeEventListener('mouseup', onScrubUp);
+  seeking = false;
+  if (currentPlayingId && players[currentPlayingId]) {
+    players[currentPlayingId].seek(seekFrac);
+  }
+}
+
+mpScrubBar.addEventListener('mousedown', e => {
+  if (!currentPlayingId) return;
+  seeking = true;
+  const rect = mpScrubBar.getBoundingClientRect();
+  seekFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+  mpScrubFill.style.width = (seekFrac * 100).toFixed(2) + '%';
+  document.addEventListener('mousemove', onScrubMove);
+  document.addEventListener('mouseup', onScrubUp);
 });
 
 
@@ -280,6 +336,9 @@ function buildTrackCard(track) {
   player.onProgress = (frac, t) => {
     progress.style.width = (frac * 100) + '%';
     curTimeEl.textContent = formatTime(t);
+    if (currentPlayingId === track.id) {
+      updateMiniplayerProgress(frac, t, player.duration);
+    }
   };
 
   player.onEnd = () => {
