@@ -19,10 +19,10 @@
 
 ### Library
 
-- [ ] **LIB-01**: Library has a Songs tab listing all tracks
+- [x] **LIB-01**: Library has a Songs tab listing all tracks
 - [ ] **LIB-02**: Library has an Artists tab grouping tracks by parsed artist
 - [ ] **LIB-03**: Library has a Playlists tab for managing playlists
-- [ ] **LIB-04**: Library renders without performance degradation at hundreds or thousands of tracks (virtual scrolling)
+- [x] **LIB-04**: Library renders without performance degradation at hundreds or thousands of tracks (virtual scrolling)
 
 ### Playlists
 
@@ -96,10 +96,10 @@
 | TRANS-04 | Phase 3 | Complete |
 | META-01 | Phase 3 | Complete |
 | META-02 | Phase 3 | Complete |
-| LIB-01 | Phase 4 | Pending |
+| LIB-01 | Phase 4 | Complete |
 | LIB-02 | Phase 4 | Pending |
 | LIB-03 | Phase 4 | Pending |
-| LIB-04 | Phase 4 | Pending |
+| LIB-04 | Phase 4 | Complete |
 | PL-01 | Phase 5 | Pending |
 | PL-02 | Phase 5 | Pending |
 | PL-03 | Phase 5 | Pending |
