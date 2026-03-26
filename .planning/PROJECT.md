@@ -35,9 +35,9 @@ Musicians can import their rehearsal tracks, browse and organize them, transpose
 
 ### Active (v2.0)
 
-- [ ] Miniplayer shows scrubbable progress bar with elapsed/total time
-- [ ] Play with nothing loaded starts first track alphabetically
-- [ ] ID3 tags (artist, album, title, duration) parsed on import and stored
+- ✓ Miniplayer shows scrubbable progress bar with elapsed/total time — Validated in Phase 03
+- ✓ Play with nothing loaded starts first track alphabetically — Validated in Phase 03
+- ✓ ID3 tags (artist, album, title, duration) parsed on import and stored — Validated in Phase 03
 - [ ] Library has Songs, Artists, Playlists tabs
 - [ ] Library handles hundreds/thousands of tracks without performance degradation
 - [ ] User can create, rename, and delete playlists
@@ -55,7 +55,7 @@ Musicians can import their rehearsal tracks, browse and organize them, transpose
 
 - **Active entry point:** `http://localhost:8080/renderer/index.html` — `rehearsal-tool-v1.html` is orphaned
 - **Audio engine:** Rubber Band WASM via `rubberband-web@0.2.1`; pitch control via `postMessage(JSON.stringify(['pitch', ratio]))`; node bypassed at 0 semitones
-- **Storage:** IndexedDB `stagehand_db` (version 1), object store `tracks`; ArrayBuffer must be `.slice(0)`'d before IDB put
+- **Storage:** IndexedDB `stagehand_db` (version 2), stores `tracks` + `playlists`; tracks have `artist`, `album`, `title`, `duration` fields; ArrayBuffer must be `.slice(0)`'d before IDB put
 - **Browser support:** Chrome and Firefox only (AudioWorklet + WASM)
 - **No build step:** Vanilla JS modules, no bundler
 
@@ -75,7 +75,7 @@ Musicians can import their rehearsal tracks, browse and organize them, transpose
 | rubberband-web@0.2.1 processor in public/ | WASM embedded in JS — no separate .wasm file needed | Validated — Phase 02 complete |
 
 ---
-*Last updated: 2026-03-24 — Milestone v2.0 started*
+*Last updated: 2026-03-25 — Phase 03 complete (transport + metadata)*
 
 ## Evolution
 
