@@ -94,12 +94,13 @@
           <span class="library-count" id="lib-count-label">0 tracks</span>
         </div>
 
+        <div class="lib-tab-bar">
+          <button class="lib-tab active" data-tab="songs">Songs</button>
+          <button class="lib-tab" data-tab="artists">Artists</button>
+          <button class="lib-tab" data-tab="playlists">Playlists</button>
+        </div>
+
         <div id="track-list">
-          <div class="empty-state" id="empty-state">
-            <div class="es-icon">◈</div>
-            <div class="es-text">No tracks yet</div>
-            <div class="es-sub">Import audio files to get started</div>
-          </div>
         </div>
       </div>
 
@@ -190,6 +191,11 @@
       <button class="btn btn-danger" id="conf-ok">Delete</button>
     </div>
   </div>
+</div>
+
+<div id="ctx-menu">
+  <div class="ctx-item" data-action="rename">Rename</div>
+  <div class="ctx-item ctx-danger" data-action="delete">Delete</div>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>

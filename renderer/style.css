@@ -144,13 +144,26 @@
   /* ── MAIN PANEL ──────────────────────────────────────── */
   #main {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
+    overflow: hidden;
     background: var(--bg-base);
   }
 
-  .panel { display: none; padding: 28px; }
+  .panel { display: none; padding: 28px; overflow-y: auto; height: 100%; box-sizing: border-box; }
   .panel.active { display: block; }
+
+  #panel-library.active {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow: hidden;
+    padding-bottom: 0;
+  }
+
+  #panel-metronome.active {
+    display: block;
+    overflow-y: auto;
+    height: 100%;
+  }
 
   .panel-header {
     display: flex; align-items: baseline; gap: 12px;
@@ -265,7 +278,13 @@
     letter-spacing: 1px;
   }
 
-  #track-list { display: flex; flex-direction: column; gap: 2px; }
+  #track-list {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    position: relative;
+    min-height: 0;
+  }
 
   .track-card {
     background: var(--bg-card);
@@ -644,6 +663,149 @@
     font-size: 10px;
     margin-top: 6px;
     letter-spacing: 1px;
+  }
+
+  /* ── LIBRARY TABS ────────────────────────────────────── */
+  .lib-tab-bar {
+    display: flex;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 0;
+    flex-shrink: 0;
+  }
+  .lib-tab {
+    padding: 8px 16px;
+    border: none;
+    background: none;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+  }
+  .lib-tab:hover { color: var(--text-primary); }
+  .lib-tab.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  /* ── COMPACT TRACK ROWS ──────────────────────────────── */
+  .track-row {
+    display: flex;
+    align-items: center;
+    height: 50px;
+    box-sizing: border-box;
+    border-bottom: 1px solid var(--border);
+    padding: 0 12px;
+    cursor: pointer;
+    gap: 10px;
+    transition: background 0.1s;
+  }
+  .track-row:hover { background: var(--bg-hover); }
+  .track-row.playing { background: var(--bg-active); }
+  .track-row.playing .row-name { color: var(--accent); }
+
+  .row-play-indicator {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: transparent;
+    flex-shrink: 0;
+  }
+  .track-row.playing .row-play-indicator {
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+  }
+
+  .row-info { flex: 1; min-width: 0; }
+  .row-name {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-top: 1px;
+  }
+  .row-dur {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    flex-shrink: 0;
+    min-width: 36px;
+    text-align: right;
+  }
+
+  /* ── CONTEXT MENU ────────────────────────────────────── */
+  #ctx-menu {
+    position: fixed;
+    display: none;
+    z-index: 300;
+    background: var(--bg-panel);
+    border: 1px solid var(--border-bright);
+    border-radius: 3px;
+    min-width: 130px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+  }
+  #ctx-menu.show { display: block; }
+  .ctx-item {
+    padding: 8px 14px;
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    color: var(--text-primary);
+    transition: background 0.1s;
+  }
+  .ctx-item:hover { background: var(--bg-hover); }
+  .ctx-danger { color: var(--red); }
+  .ctx-danger:hover { background: rgba(255,71,87,0.1); }
+
+  /* ── LIBRARY EMPTY STATE ─────────────────────────────── */
+  .lib-empty-state {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-dim);
+  }
+  .lib-empty-state .es-icon { font-size: 40px; margin-bottom: 12px; }
+  .lib-empty-state .es-text {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: 2px;
+    color: var(--text-secondary);
+  }
+  .lib-empty-state .es-sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    margin-top: 6px;
+    letter-spacing: 1px;
+  }
+
+  /* ── ROW RENAME INPUT ────────────────────────────────── */
+  .row-name-input {
+    background: var(--bg-base);
+    border: 1px solid var(--accent);
+    color: var(--text-primary);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 15px;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    padding: 2px 6px;
+    border-radius: 2px;
+    width: 100%;
+    outline: none;
   }
 
   /* ── SCROLLBAR ───────────────────────────────────────── */
