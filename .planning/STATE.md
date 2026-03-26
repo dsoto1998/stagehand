@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Library & Player Enhancement
-status: Executing Phase 04
-stopped_at: "Checkpoint: Task 3 human-verify in 04-01-PLAN.md"
-last_updated: "2026-03-26T03:08:11.747Z"
+status: Ready to execute
+stopped_at: Completed 04-01-PLAN.md — ready for 04-02
+last_updated: "2026-03-26T03:22:50.192Z"
 last_activity: 2026-03-26
 progress:
   total_phases: 3
@@ -25,7 +25,7 @@ See: .planning/PROJECT.md (updated 2026-03-25)
 ## Current Position
 
 Phase: 04 (library-tabs-virtual-scrolling) — EXECUTING
-Plan: 1 of 2
+Plan: 2 of 2
 
 ## Accumulated Context
 
@@ -52,6 +52,9 @@ v2.0 technical context:
 - [Phase 04-library-tabs-virtual-scrolling]: Virtual scroll uses vanilla JS with fixed ROW_H=50 and spacer divs — no library
 - [Phase 04-library-tabs-virtual-scrolling]: playTrack() replaces all card DOM coupling; mp-prev/mp-next/mp-play use it directly
 - [Phase 04-library-tabs-virtual-scrolling]: renamingActive flag guards renderVirtualList from destroying active rename input
+- [Phase 04-library-tabs-virtual-scrolling]: playTrack() always resets pauseOffset=0 — never resumes previous position on fresh play
+- [Phase 04-library-tabs-virtual-scrolling]: Transpose exposed via context menu +/- buttons; menu stays open (stopPropagation) for rapid multi-step changes
+- [Phase 04-library-tabs-virtual-scrolling]: Fast import pattern: push track to list and render immediately, then async IDB save + decode + ID3 tag parse
 
 ### Pending Todos
 
@@ -71,7 +74,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-03-26T03:07:56.964Z
+Last session: 2026-03-26T03:22:50.187Z
 Last activity: 2026-03-26
-Stopped at: Checkpoint: Task 3 human-verify in 04-01-PLAN.md
+Stopped at: Completed 04-01-PLAN.md — ready for 04-02
 Resume file: None
