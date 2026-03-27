@@ -1426,8 +1426,8 @@
 }
 
 .pl-row {
-  height: 44px;
-  padding: 0 10px 0 12px;
+  min-height: 44px;
+  padding: 6px 10px 6px 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -1449,8 +1449,6 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  flex: 1;
-  min-width: 0;
 }
 
 .pl-row-count {
@@ -1474,6 +1472,54 @@
   outline: none;
 }
 
+/* ── Playlist sort bar ──────────────────────────────── */
+.pl-sort-bar {
+  display: flex;
+  gap: 3px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.pl-sort-btn {
+  flex: 1;
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-dim);
+  font-family: 'Barlow Condensed', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 2px 0;
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.pl-sort-btn:hover { color: var(--text-secondary); border-color: var(--border-bright); }
+.pl-sort-btn.active {
+  background: var(--bg-active);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── Playlist row info stack ───────────────────────── */
+.pl-row-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.pl-row-date {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* ── Playlist detail (right pane) ──────────────────── */
 .pl-detail-header {
   display: flex;
@@ -1484,6 +1530,35 @@
   flex-shrink: 0;
   gap: 10px;
 }
+
+/* ── Playlist detail date field ────────────────────── */
+.pl-detail-date-wrap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+}
+
+.pl-detail-date-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.pl-detail-date {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+  color-scheme: dark;
+}
+.pl-detail-date:hover { border-color: var(--border-bright); }
+.pl-detail-date:focus { outline: none; border-color: var(--accent); color: var(--text-primary); }
 
 .pl-detail-title {
   font-family: 'Rajdhani', sans-serif;
@@ -1579,6 +1654,8 @@
 /* Drag-over indicator */
 .track-row.drag-above { box-shadow: inset 0 2px 0 var(--accent); }
 .track-row.drag-below { box-shadow: inset 0 -2px 0 var(--accent); }
+.pl-row.drag-above { box-shadow: inset 0 2px 0 var(--accent); }
+.pl-row.drag-below { box-shadow: inset 0 -2px 0 var(--accent); }
 
 /* Empty right pane */
 .pl-empty-right {
@@ -2006,7 +2083,6 @@
 
   .mm-timesig-row {
     display: flex;
-    margin-top: 5px;
   }
   #mm-timesig-select {
     flex: 1;
@@ -2026,7 +2102,6 @@
 
   .mm-accent-row {
     display: flex;
-    margin-top: 5px;
   }
   .mm-accent-btn {
     flex: 1;
