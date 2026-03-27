@@ -540,28 +540,6 @@ function buildArtistRow(artistName, trackCount) {
 function renderSongsTab() {
   const trackList = document.getElementById('track-list');
 
-  // Manage the edit-mode banner (sibling above track-list)
-  const existingBanner = document.getElementById('pl-edit-banner');
-  if (playlistEditMode) {
-    if (!existingBanner) {
-      const pl = playlists.find(p => p.id === playlistEditTargetId);
-      const banner = document.createElement('div');
-      banner.id = 'pl-edit-banner';
-      banner.innerHTML = `
-        <span class="pl-edit-label">Adding to: <strong>${escHtml(pl?.name || '')}</strong></span>
-        <div class="pl-edit-actions">
-          <button class="pl-edit-confirm" id="pl-edit-confirm">Confirm</button>
-          <button class="pl-edit-revert" id="pl-edit-revert">Revert</button>
-        </div>
-      `;
-      trackList.parentElement.insertBefore(banner, trackList);
-      banner.querySelector('#pl-edit-confirm').addEventListener('click', () => exitPlaylistEditMode(true));
-      banner.querySelector('#pl-edit-revert').addEventListener('click', () => exitPlaylistEditMode(false));
-    }
-  } else {
-    existingBanner?.remove();
-  }
-
   if (tracks.length === 0) {
     trackList.innerHTML = `<div class="lib-empty-state">
       <div class="es-icon">\u25C8</div>
@@ -1120,8 +1098,28 @@ function showAddToPlaylistSubmenu(e, trackId) {
 document.addEventListener('click', () => plSubmenu.classList.remove('show'));
 
 function renderCurrentTab() {
-  // Remove edit-mode banner when not in songs tab (renderSongsTab re-adds it if needed)
-  if (activeTab !== 'songs') document.getElementById('pl-edit-banner')?.remove();
+  // Manage the edit-mode banner — visible on all tabs while edit mode is active
+  const existingBanner = document.getElementById('pl-edit-banner');
+  if (playlistEditMode) {
+    if (!existingBanner) {
+      const pl = playlists.find(p => p.id === playlistEditTargetId);
+      const banner = document.createElement('div');
+      banner.id = 'pl-edit-banner';
+      banner.innerHTML = `
+        <span class="pl-edit-label">Adding to: <strong>${escHtml(pl?.name || '')}</strong></span>
+        <div class="pl-edit-actions">
+          <button class="pl-edit-confirm" id="pl-edit-confirm">Confirm</button>
+          <button class="pl-edit-revert" id="pl-edit-revert">Revert</button>
+        </div>
+      `;
+      const trackList = document.getElementById('track-list');
+      trackList.parentElement.insertBefore(banner, trackList);
+      banner.querySelector('#pl-edit-confirm').addEventListener('click', () => exitPlaylistEditMode(true));
+      banner.querySelector('#pl-edit-revert').addEventListener('click', () => exitPlaylistEditMode(false));
+    }
+  } else {
+    existingBanner?.remove();
+  }
 
   const trackList = document.getElementById('track-list');
   // Reset any inline flex from artist drill-down before re-rendering
@@ -1349,12 +1347,6 @@ document.querySelectorAll('.nav-item[data-panel]').forEach(item => {
 // ─── TAB SWITCHING ───────────────────────────────────────────
 document.querySelectorAll('.lib-tab').forEach(btn => {
   btn.addEventListener('click', () => {
-    // If leaving songs tab during edit mode, revert changes silently
-    if (playlistEditMode && btn.dataset.tab !== 'songs') {
-      const pl = playlists.find(p => p.id === playlistEditTargetId);
-      if (pl) { pl.trackIds = playlistEditSnapshot; LibraryManager.savePlaylist(pl).catch(console.warn); }
-      playlistEditMode = false; playlistEditTargetId = null; playlistEditSnapshot = [];
-    }
     document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     activeTab = btn.dataset.tab;
