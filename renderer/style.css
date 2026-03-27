@@ -1176,7 +1176,7 @@
   }
   .mp-vol-group, .mm-vol-group { width: 100%; }
   .mp-vol-group .mp-row, .mm-vol-group .mp-row { margin-bottom: 0; }
-  .mp-vol-group { margin-bottom: 15px; }
+  .mp-vol-group { margin-bottom: 18px; }
 
   .mp-row input[type=range] { flex: 1; }
 
