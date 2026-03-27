@@ -102,7 +102,7 @@ function start() {
   const c = resume();
   isRunning = true;
   totalBeats = 0;
-  nextNoteTime = c.currentTime + 0.1;
+  nextNoteTime = c.currentTime;
   flashQueue = [];
   scheduler();
   schedulerTimer = setInterval(scheduler, SCHEDULE_INTERVAL);
