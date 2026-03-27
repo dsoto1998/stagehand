@@ -12,6 +12,17 @@ let activeTab = 'songs'; // 'songs' | 'artists' | 'playlists'
 let currentArtistView = null; // null = artist list, string = drill-down artist name
 let renamingActive = false;   // guards scroll re-renders during inline rename
 
+// ─── PLAYLIST STATE ───────────────────────────────────────────
+let playlists = [];            // cached from IDB
+let selectedPlaylistId = null; // which playlist is shown in right pane
+let activePlaylistId = null;   // playlist that launched current playback (for auto-next)
+let plDragSrcIndex = null;     // drag-to-reorder source index within playlist
+
+// ─── PLAYLIST EDIT MODE ───────────────────────────────────────
+let playlistEditMode = false;
+let playlistEditTargetId = null;
+let playlistEditSnapshot = [];   // copy of trackIds before any edits
+
 // ─── UTILITY ─────────────────────────────────────────────────
 function formatTime(sec) {
   if (!isFinite(sec)) return '0:00';
@@ -70,6 +81,10 @@ function readTags(file) {
 }
 
 
+// ─── SELECTION STATE ─────────────────────────────────────────
+let selectedIds = new Set();
+let lastSelectedIdx = -1;
+
 // ─── MINIPLAYER ───────────────────────────────────────────────
 let currentPlayingId = null;
 let seeking = false;
@@ -80,13 +95,15 @@ function showMiniplayer(trackId) {
   if (!track) return;
   currentPlayingId = trackId;
   document.getElementById('mp-track-name').textContent = track.name;
+  document.getElementById('mp-track-sub').textContent = (track.artist && track.album) ? track.artist + ' — ' + track.album : (track.artist || track.album || '—');
   const st = track.semitones || 0;
-  document.getElementById('mp-semitones').value = st;
   const mpStVal = document.getElementById('mp-semitones-val');
   mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
-  mpStVal.style.color = st === 0 ? 'var(--text-dim)' : 'var(--cyan)';
+  mpStVal.classList.toggle('xpose-active', st !== 0);
+  document.getElementById('mp-xpose-reset').classList.toggle('xpose-reset-visible', st !== 0);
   document.getElementById('mp-play').textContent = '⏸';
   document.getElementById('mp-play').setAttribute('aria-label', 'Pause');
+  document.getElementById('mp-play').classList.add('is-paused');
   const player = players[trackId];
   const totalStr = player && player.duration ? formatTime(player.duration) : '--:--';
   document.getElementById('mp-time-display').textContent = '0:00 / ' + totalStr;
@@ -96,12 +113,14 @@ function showMiniplayer(trackId) {
 function hideMiniplayer() {
   currentPlayingId = null;
   document.getElementById('mp-track-name').textContent = '—';
+  document.getElementById('mp-track-sub').textContent = '—';
   document.getElementById('mp-play').textContent = '▶';
   document.getElementById('mp-play').setAttribute('aria-label', 'Play');
-  document.getElementById('mp-semitones').value = 0;
+  document.getElementById('mp-play').classList.remove('is-paused');
   const mpStVal = document.getElementById('mp-semitones-val');
   mpStVal.textContent = '0st';
-  mpStVal.style.color = 'var(--text-dim)';
+  mpStVal.classList.remove('xpose-active');
+  document.getElementById('mp-xpose-reset').classList.remove('xpose-reset-visible');
   document.getElementById('mp-time-display').textContent = '0:00 / --:--';
   document.getElementById('mp-scrub-fill').style.width = '0%';
 }
@@ -109,6 +128,7 @@ function hideMiniplayer() {
 function syncMiniplayerPlayBtn(isPlaying) {
   const btn = document.getElementById('mp-play');
   btn.textContent = isPlaying ? '⏸' : '▶';
+  btn.classList.toggle('is-paused', isPlaying);
   btn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
 }
 
@@ -133,6 +153,12 @@ document.getElementById('mp-play').addEventListener('click', () => {
     player.pause();
     syncMiniplayerPlayBtn(false);
     renderCurrentTab();
+  } else if (player.buffer && player.pauseOffset > 0) {
+    // Resume from pause — don't reset offset
+    player.play().then(() => {
+      syncMiniplayerPlayBtn(true);
+      renderCurrentTab();
+    });
   } else {
     playTrack(currentPlayingId);
   }
@@ -141,6 +167,16 @@ document.getElementById('mp-play').addEventListener('click', () => {
 // Returns the next track to auto-play when the current track ends,
 // based on the active tab context at the time of the call.
 function getAutoNextTrack(currentId) {
+  // If playback was launched from a playlist, advance within that playlist
+  if (activePlaylistId) {
+    const pl = playlists.find(p => p.id === activePlaylistId);
+    if (!pl) { activePlaylistId = null; return null; }
+    // Use lastIndexOf so duplicate entries advance from the correct position
+    const idx = pl.trackIds.lastIndexOf(currentId);
+    const nextId = pl.trackIds[idx + 1];
+    if (!nextId) { activePlaylistId = null; return null; }
+    return tracks.find(t => t.id === nextId) || null;
+  }
   let list = [];
   if (activeTab === 'songs') {
     list = tracks;
@@ -162,38 +198,74 @@ document.getElementById('mp-prev').addEventListener('click', () => {
     currentPlayer.seek(0);
     return;
   }
+  if (activePlaylistId) {
+    const pl = playlists.find(p => p.id === activePlaylistId);
+    if (pl) {
+      const idx = pl.trackIds.indexOf(currentPlayingId);
+      if (idx > 0) {
+        const prev = tracks.find(t => t.id === pl.trackIds[idx - 1]);
+        if (prev) { if (players[prev.id]) players[prev.id].pauseOffset = 0; playTrack(prev.id, activePlaylistId); return; }
+      }
+    }
+  }
   if (tracks.length < 2) return;
   const idx = tracks.findIndex(t => t.id === currentPlayingId);
   const prev = tracks[(idx - 1 + tracks.length) % tracks.length];
-  const targetPlayer = players[prev.id];
-  if (targetPlayer) targetPlayer.pauseOffset = 0;
+  if (players[prev.id]) players[prev.id].pauseOffset = 0;
   playTrack(prev.id);
 });
 
 document.getElementById('mp-next').addEventListener('click', () => {
-  if (!currentPlayingId || tracks.length < 2) return;
+  if (!currentPlayingId) return;
+  if (activePlaylistId) {
+    const pl = playlists.find(p => p.id === activePlaylistId);
+    if (pl) {
+      const idx = pl.trackIds.lastIndexOf(currentPlayingId);
+      const nextId = pl.trackIds[idx + 1];
+      if (nextId) {
+        const next = tracks.find(t => t.id === nextId);
+        if (next) { if (players[next.id]) players[next.id].pauseOffset = 0; playTrack(next.id, activePlaylistId); return; }
+      }
+    }
+  }
+  if (tracks.length < 2) return;
   const idx = tracks.findIndex(t => t.id === currentPlayingId);
   const next = tracks[(idx + 1) % tracks.length];
-  const targetPlayer = players[next.id];
-  if (targetPlayer) targetPlayer.pauseOffset = 0;
+  if (players[next.id]) players[next.id].pauseOffset = 0;
   playTrack(next.id);
 });
 
-document.getElementById('mp-semitones').addEventListener('input', function() {
+document.getElementById('mp-xpose-dec').addEventListener('click', () => {
   if (!currentPlayingId) return;
-  const s = parseInt(this.value);
-  const player = players[currentPlayingId];
   const track = tracks.find(t => t.id === currentPlayingId);
-  if (player) player.setSemitones(s);
-  if (track) { track.semitones = s; saveTrackMeta(track); }
-  const mpVal = document.getElementById('mp-semitones-val');
-  mpVal.textContent = (s > 0 ? '+' : '') + s + 'st';
-  mpVal.style.color = s === 0 ? 'var(--text-dim)' : 'var(--cyan)';
+  if (track) applyTranspose(track.id, (track.semitones || 0) - 1);
+});
+document.getElementById('mp-xpose-inc').addEventListener('click', () => {
+  if (!currentPlayingId) return;
+  const track = tracks.find(t => t.id === currentPlayingId);
+  if (track) applyTranspose(track.id, (track.semitones || 0) + 1);
+});
+document.getElementById('mp-xpose-reset').addEventListener('click', () => {
+  if (!currentPlayingId) return;
+  applyTranspose(currentPlayingId, 0);
 });
 
+const mpVolVal = document.getElementById('mp-vol-val');
+let mpVolFadeTimer = null;
 document.getElementById('mp-vol').addEventListener('input', function() {
   setMasterVolume(this.value / 100);
-  document.getElementById('mp-vol-val').textContent = this.value + '%';
+  localStorage.setItem('masterVolume', this.value);
+  mpVolVal.textContent = this.value + '%';
+  mpVolVal.classList.add('visible');
+  if (mpVolFadeTimer) clearTimeout(mpVolFadeTimer);
+});
+document.getElementById('mp-vol').addEventListener('mouseup', function() {
+  if (mpVolFadeTimer) clearTimeout(mpVolFadeTimer);
+  mpVolFadeTimer = setTimeout(() => mpVolVal.classList.remove('visible'), 1000);
+});
+document.getElementById('mp-vol').addEventListener('touchend', function() {
+  if (mpVolFadeTimer) clearTimeout(mpVolFadeTimer);
+  mpVolFadeTimer = setTimeout(() => mpVolVal.classList.remove('visible'), 1000);
 });
 
 // ─── SCRUB BAR ──────────────────────────────────────────────
@@ -231,8 +303,12 @@ let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, du
 
 async function loadLibrary() {
   try {
-    const stored = await LibraryManager.all();
+    const [stored, storedPlaylists] = await Promise.all([
+      LibraryManager.all(),
+      LibraryManager.getPlaylists()
+    ]);
     tracks = stored;
+    playlists = storedPlaylists;
     // Initialize players eagerly for all loaded tracks
     tracks.forEach(t => {
       if (!players[t.id]) {
@@ -263,10 +339,17 @@ async function loadLibrary() {
 }
 
 // ─── PLAY TRACK ───────────────────────────────────────────────
-async function playTrack(id) {
+async function playTrack(id, fromPlaylistId) {
   resume();
   const track = tracks.find(t => t.id === id);
   if (!track) return;
+
+  // Track which playlist context launched this playback
+  if (fromPlaylistId !== undefined) {
+    activePlaylistId = fromPlaylistId || null;
+  } else if (activeTab !== 'playlists') {
+    activePlaylistId = null;
+  }
 
   if (!players[id]) {
     players[id] = new TrackPlayer(id);
@@ -338,7 +421,9 @@ async function playTrack(id) {
 // ─── ROW BUILDER ─────────────────────────────────────────────
 function buildTrackRow(track) {
   const row = document.createElement('div');
-  row.className = 'track-row' + (track.id === currentPlayingId ? ' playing' : '');
+  row.className = 'track-row'
+    + (track.id === currentPlayingId ? ' playing' : '')
+    + (selectedIds.has(track.id) ? ' selected' : '');
   row.dataset.id = track.id;
   row.style.height = ROW_H + 'px';
 
@@ -350,18 +435,43 @@ function buildTrackRow(track) {
   const stLabel = st > 0 ? `+${st}` : `${st}`;
 
   row.innerHTML = `
-    <div class="row-play-indicator"></div>
+    <div class="row-play-area">
+      <div class="row-play-indicator"></div>
+      <button class="row-play-btn" data-id="${escHtml(track.id)}">${track.id === currentPlayingId ? '⏸' : '▶'}</button>
+    </div>
     <div class="row-info">
       <div class="row-name">${escHtml(track.name)}</div>
       ${sub ? `<div class="row-sub">${escHtml(sub)}</div>` : ''}
     </div>
     <div class="row-xpose">
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose">↺</button>
       <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
       <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
   `;
+
+  if (playlistEditMode) {
+    const pl = playlists.find(p => p.id === playlistEditTargetId);
+    const already = pl?.trackIds.includes(track.id);
+    const addBtn = document.createElement('button');
+    addBtn.className = 'pl-edit-add-btn' + (already ? ' added' : '');
+    addBtn.textContent = already ? '✓' : '+';
+    addBtn.title = already ? 'Already in playlist' : 'Add to playlist';
+    addBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      if (addBtn.classList.contains('added')) return;
+      if (!pl) return;
+      pl.trackIds.push(track.id);
+      LibraryManager.savePlaylist(pl).catch(err => console.warn('Playlist save failed:', err));
+      addBtn.textContent = '✓';
+      addBtn.classList.add('added');
+      addBtn.title = 'Already in playlist';
+    });
+    row.appendChild(addBtn);
+  }
+
   return row;
 }
 
@@ -372,10 +482,10 @@ function applyTranspose(id, newSemitones) {
   players[id]?.setSemitones(track.semitones);
   saveTrackMeta(track);
   if (id === currentPlayingId) {
-    const slider = document.getElementById('mp-semitones');
-    const valEl  = document.getElementById('mp-semitones-val');
-    if (slider) slider.value = track.semitones;
-    if (valEl)  valEl.textContent = (track.semitones > 0 ? '+' : '') + track.semitones + 'st';
+    const valEl   = document.getElementById('mp-semitones-val');
+    const resetEl = document.getElementById('mp-xpose-reset');
+    if (valEl)   { valEl.textContent = (track.semitones > 0 ? '+' : '') + track.semitones + 'st'; valEl.classList.toggle('xpose-active', track.semitones !== 0); }
+    if (resetEl) resetEl.classList.toggle('xpose-reset-visible', track.semitones !== 0);
   }
   renderCurrentTab();
 }
@@ -429,6 +539,29 @@ function buildArtistRow(artistName, trackCount) {
 // ─── TAB RENDERERS ───────────────────────────────────────────
 function renderSongsTab() {
   const trackList = document.getElementById('track-list');
+
+  // Manage the edit-mode banner (sibling above track-list)
+  const existingBanner = document.getElementById('pl-edit-banner');
+  if (playlistEditMode) {
+    if (!existingBanner) {
+      const pl = playlists.find(p => p.id === playlistEditTargetId);
+      const banner = document.createElement('div');
+      banner.id = 'pl-edit-banner';
+      banner.innerHTML = `
+        <span class="pl-edit-label">Adding to: <strong>${escHtml(pl?.name || '')}</strong></span>
+        <div class="pl-edit-actions">
+          <button class="pl-edit-confirm" id="pl-edit-confirm">Confirm</button>
+          <button class="pl-edit-revert" id="pl-edit-revert">Revert</button>
+        </div>
+      `;
+      trackList.parentElement.insertBefore(banner, trackList);
+      banner.querySelector('#pl-edit-confirm').addEventListener('click', () => exitPlaylistEditMode(true));
+      banner.querySelector('#pl-edit-revert').addEventListener('click', () => exitPlaylistEditMode(false));
+    }
+  } else {
+    existingBanner?.remove();
+  }
+
   if (tracks.length === 0) {
     trackList.innerHTML = `<div class="lib-empty-state">
       <div class="es-icon">\u25C8</div>
@@ -516,14 +649,480 @@ function renderArtistsTab() {
 
 function renderPlaylistsTab() {
   const trackList = document.getElementById('track-list');
-  trackList.innerHTML = `<div class="lib-empty-state">
-    <div class="es-icon">\u266B</div>
-    <div class="es-text">No playlists yet</div>
-    <div class="es-sub">Playlists coming soon</div>
-  </div>`;
+
+  // Build two-pane container
+  const container = document.createElement('div');
+  container.className = 'playlists-container';
+
+  // ── Left pane ──────────────────────────────────────────
+  const left = document.createElement('div');
+  left.className = 'playlists-left';
+
+  const listHeader = document.createElement('div');
+  listHeader.className = 'pl-list-header';
+  listHeader.innerHTML = `
+    <span class="pl-list-header-title">Playlists</span>
+    <button class="pl-new-btn" id="pl-new-btn" title="New playlist">+</button>
+  `;
+  left.appendChild(listHeader);
+
+  const plList = document.createElement('div');
+  plList.className = 'pl-list';
+  plList.id = 'pl-list';
+
+  if (playlists.length === 0) {
+    plList.innerHTML = `<div style="padding: 16px 12px; font-family:'Barlow Condensed',sans-serif; font-size:13px; color:var(--text-dim);">No playlists yet</div>`;
+  } else {
+    playlists.forEach(pl => {
+      plList.appendChild(buildPlaylistRow(pl));
+    });
+  }
+  left.appendChild(plList);
+  container.appendChild(left);
+
+  // ── Right pane ─────────────────────────────────────────
+  const right = document.createElement('div');
+  right.className = 'playlists-right';
+  right.id = 'pl-right';
+
+  const selPl = playlists.find(p => p.id === selectedPlaylistId);
+  if (selPl) {
+    renderPlaylistDetail(right, selPl);
+  } else {
+    right.innerHTML = `<div class="pl-empty-right">← Select a playlist</div>`;
+  }
+  container.appendChild(right);
+
+  trackList.innerHTML = '';
+  trackList.style.display = 'flex';
+  trackList.style.flexDirection = 'column';
+  trackList.appendChild(container);
+
+  // ── Bind new playlist button ───────────────────────────
+  document.getElementById('pl-new-btn').addEventListener('click', createNewPlaylist);
 }
 
+function buildPlaylistRow(pl) {
+  const row = document.createElement('div');
+  row.className = 'pl-row' + (pl.id === selectedPlaylistId ? ' active' : '');
+  row.dataset.plId = pl.id;
+
+  const name = document.createElement('div');
+  name.className = 'pl-row-name';
+  name.textContent = pl.name;
+
+  const count = document.createElement('div');
+  count.className = 'pl-row-count';
+  count.textContent = pl.trackIds.length;
+
+  row.appendChild(name);
+  row.appendChild(count);
+
+  row.addEventListener('click', () => {
+    selectedPlaylistId = pl.id;
+    renderCurrentTab();
+  });
+
+  row.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    showPlCtxMenu(e, pl.id);
+  });
+
+  return row;
+}
+
+function renderPlaylistDetail(container, pl) {
+  // Header
+  const header = document.createElement('div');
+  header.className = 'pl-detail-header';
+  header.innerHTML = `
+    <div class="pl-detail-title">${escHtml(pl.name)}</div>
+    <div class="pl-detail-count">${pl.trackIds.length} track${pl.trackIds.length !== 1 ? 's' : ''}</div>
+    <button class="pl-add-tracks-btn" id="pl-add-tracks-btn">+ Add Tracks</button>
+  `;
+  container.appendChild(header);
+
+  // Track list
+  const listEl = document.createElement('div');
+  listEl.className = 'pl-track-list';
+  listEl.id = 'pl-track-list';
+
+  if (pl.trackIds.length === 0) {
+    listEl.innerHTML = `<div class="lib-empty-state"><div class="es-text">No tracks yet</div><div class="es-sub">Right-click any track → Add to Playlist</div></div>`;
+  } else {
+    pl.trackIds.forEach((tid, idx) => {
+      const track = tracks.find(t => t.id === tid);
+      if (track) listEl.appendChild(buildPlaylistTrackRow(track, idx, pl));
+    });
+  }
+  container.appendChild(listEl);
+
+  // Add Tracks button
+  container.querySelector('#pl-add-tracks-btn').addEventListener('click', () => {
+    enterPlaylistEditMode(pl);
+  });
+}
+
+function buildPlaylistTrackRow(track, idx, pl) {
+  const row = document.createElement('div');
+  row.className = 'track-row' + (track.id === currentPlayingId && activePlaylistId === pl.id ? ' playing' : '');
+  row.dataset.id = track.id;
+  row.dataset.plIdx = idx;
+  row.style.height = ROW_H + 'px';
+  row.draggable = true;
+
+  const artist = track.artist || '';
+  const album  = track.album  || '';
+  const sub    = [artist, album].filter(Boolean).join(' \u00B7 ');
+  const dur    = track.duration ? formatTime(track.duration) : '--:--';
+  const st     = track.semitones || 0;
+  const stLabel = st > 0 ? `+${st}` : `${st}`;
+
+  row.innerHTML = `
+    <div class="drag-handle" title="Drag to reorder">⠿</div>
+    <div class="row-pl-num">${idx + 1}</div>
+    <div class="row-play-area">
+      <div class="row-play-indicator"></div>
+      <button class="row-play-btn" data-id="${escHtml(track.id)}">${(track.id === currentPlayingId && activePlaylistId === pl.id) ? '⏸' : '▶'}</button>
+    </div>
+    <div class="row-info">
+      <div class="row-name">${escHtml(track.name)}</div>
+      ${sub ? `<div class="row-sub">${escHtml(sub)}</div>` : ''}
+    </div>
+    <div class="row-xpose">
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose">↺</button>
+      <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
+      <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
+      <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
+    </div>
+    <div class="row-dur">${escHtml(dur)}</div>
+    <button class="row-remove-pl" data-pl-idx="${idx}" title="Remove from playlist">×</button>
+  `;
+
+  // Drag-to-reorder bindings
+  row.addEventListener('dragstart', e => {
+    plDragSrcIndex = idx;
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  row.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    row.classList.remove('drag-above', 'drag-below');
+    const rect = row.getBoundingClientRect();
+    if (e.clientY < rect.top + rect.height / 2) {
+      row.classList.add('drag-above');
+    } else {
+      row.classList.add('drag-below');
+    }
+  });
+  row.addEventListener('dragleave', () => {
+    row.classList.remove('drag-above', 'drag-below');
+  });
+  row.addEventListener('drop', e => {
+    e.preventDefault();
+    row.classList.remove('drag-above', 'drag-below');
+    const srcIdx = plDragSrcIndex;
+    if (srcIdx === null || srcIdx === idx) return;
+    const rect = row.getBoundingClientRect();
+    let destIdx = idx;
+    if (e.clientY >= rect.top + rect.height / 2) destIdx = idx + 1;
+    // Adjust for removal of source
+    const newIds = [...pl.trackIds];
+    const [moved] = newIds.splice(srcIdx, 1);
+    const insertAt = destIdx > srcIdx ? destIdx - 1 : destIdx;
+    newIds.splice(insertAt, 0, moved);
+    pl.trackIds = newIds;
+    LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+    renderCurrentTab();
+  });
+  row.addEventListener('dragend', () => {
+    plDragSrcIndex = null;
+    document.querySelectorAll('.track-row').forEach(r => r.classList.remove('drag-above', 'drag-below'));
+  });
+
+  // Play button click
+  row.querySelector('.row-play-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    playTrack(track.id, pl.id);
+  });
+
+  // Double-click to play
+  let plLastClickId = null, plLastClickTime = 0;
+  row.addEventListener('click', e => {
+    if (e.target.closest('button')) return;
+    const now = Date.now();
+    if (plLastClickId === track.id && (now - plLastClickTime) < 300) {
+      plLastClickId = null;
+      playTrack(track.id, pl.id);
+    }
+    plLastClickId = track.id;
+    plLastClickTime = now;
+  });
+
+  // Remove from playlist
+  row.querySelector('.row-remove-pl').addEventListener('click', e => {
+    e.stopPropagation();
+    pl.trackIds.splice(idx, 1);
+    LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+    renderCurrentTab();
+  });
+
+  // Transpose controls
+  row.querySelector('.xpose-reset').addEventListener('click', e => {
+    e.stopPropagation(); applyTranspose(track.id, 0);
+  });
+  row.querySelector('.xpose-dec').addEventListener('click', e => {
+    e.stopPropagation(); applyTranspose(track.id, (track.semitones || 0) - 1);
+  });
+  row.querySelector('.xpose-inc').addEventListener('click', e => {
+    e.stopPropagation(); applyTranspose(track.id, (track.semitones || 0) + 1);
+  });
+
+  return row;
+}
+
+function enterPlaylistEditMode(pl) {
+  playlistEditMode = true;
+  playlistEditTargetId = pl.id;
+  playlistEditSnapshot = [...pl.trackIds];
+  document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active'));
+  document.querySelector('.lib-tab[data-tab="songs"]').classList.add('active');
+  activeTab = 'songs';
+  renderCurrentTab();
+}
+
+async function exitPlaylistEditMode(doConfirm) {
+  const pl = playlists.find(p => p.id === playlistEditTargetId);
+  if (pl && !doConfirm) {
+    pl.trackIds = playlistEditSnapshot;
+    await LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+  }
+  const returnId = pl?.id || null;
+  playlistEditMode = false;
+  playlistEditTargetId = null;
+  playlistEditSnapshot = [];
+  selectedPlaylistId = returnId;
+  document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active'));
+  document.querySelector('.lib-tab[data-tab="playlists"]').classList.add('active');
+  activeTab = 'playlists';
+  renderCurrentTab();
+  if (doConfirm) notify('Playlist updated', 'success');
+}
+
+function showAddTracksOverlay(container, pl) {
+  // Remove any existing overlay
+  container.querySelector('.add-tracks-overlay')?.remove();
+
+  const overlay = document.createElement('div');
+  overlay.className = 'add-tracks-overlay';
+
+  const sorted = [...tracks].sort((a, b) => a.name.localeCompare(b.name));
+
+  overlay.innerHTML = `
+    <div class="add-tracks-header">
+      <div class="add-tracks-title">Add Tracks</div>
+      <button class="add-tracks-close" id="add-tracks-close">✕</button>
+    </div>
+    <input class="add-tracks-filter" id="add-tracks-filter" type="text" placeholder="Filter tracks…" autocomplete="off">
+    <div class="add-tracks-list" id="add-tracks-list"></div>
+  `;
+  container.appendChild(overlay);
+
+  const filterInput = overlay.querySelector('#add-tracks-filter');
+  const listEl = overlay.querySelector('#add-tracks-list');
+
+  function buildAddRows(filterStr) {
+    const q = filterStr.toLowerCase();
+    const filtered = q ? sorted.filter(t =>
+      t.name.toLowerCase().includes(q) ||
+      (t.artist || '').toLowerCase().includes(q)
+    ) : sorted;
+    listEl.innerHTML = '';
+    filtered.forEach(track => {
+      const row = document.createElement('div');
+      row.className = 'add-track-row';
+      const artist = track.artist || '';
+      row.innerHTML = `
+        <div class="add-track-name">${escHtml(track.name)}</div>
+        ${artist ? `<div class="add-track-sub">${escHtml(artist)}</div>` : ''}
+        <button class="add-track-btn" title="Add to playlist">+</button>
+      `;
+      row.querySelector('.add-track-btn').addEventListener('click', e => {
+        e.stopPropagation();
+        pl.trackIds.push(track.id);
+        LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+        // Refresh count in header without closing overlay
+        const countEl = container.querySelector('.pl-detail-count');
+        if (countEl) countEl.textContent = pl.trackIds.length + ' track' + (pl.trackIds.length !== 1 ? 's' : '');
+        // Briefly flash the + button to confirm
+        const btn = row.querySelector('.add-track-btn');
+        btn.textContent = '✓';
+        btn.style.color = 'var(--accent)';
+        btn.style.borderColor = 'var(--accent)';
+        setTimeout(() => { btn.textContent = '+'; btn.style.color = ''; btn.style.borderColor = ''; }, 800);
+        // Update count on left-pane row too
+        const plRowEl = document.querySelector(`.pl-row[data-pl-id="${pl.id}"] .pl-row-count`);
+        if (plRowEl) plRowEl.textContent = pl.trackIds.length;
+      });
+      listEl.appendChild(row);
+    });
+  }
+
+  buildAddRows('');
+  filterInput.addEventListener('input', () => buildAddRows(filterInput.value));
+  filterInput.focus();
+
+  overlay.querySelector('#add-tracks-close').addEventListener('click', () => {
+    overlay.remove();
+    // Re-render to show updated track list
+    renderCurrentTab();
+  });
+}
+
+async function createNewPlaylist() {
+  const pl = {
+    id: LibraryManager.genPlaylistId(),
+    name: 'New Playlist',
+    trackIds: [],
+    createdAt: Date.now()
+  };
+  playlists.push(pl);
+  await LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+  selectedPlaylistId = pl.id;
+  renderCurrentTab();
+  // Start inline rename immediately
+  startPlaylistRename(pl.id);
+}
+
+function startPlaylistRename(plId) {
+  const rowEl = document.querySelector(`.pl-row[data-pl-id="${plId}"]`);
+  if (!rowEl) return;
+  const pl = playlists.find(p => p.id === plId);
+  if (!pl) return;
+
+  const nameEl = rowEl.querySelector('.pl-row-name');
+  const input = document.createElement('input');
+  input.className = 'pl-row-name-input';
+  input.value = pl.name;
+  nameEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function commit() {
+    const newName = input.value.trim() || pl.name;
+    pl.name = newName;
+    LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+    renderCurrentTab();
+  }
+  input.addEventListener('blur', commit);
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') input.blur();
+    if (e.key === 'Escape') { input.value = pl.name; input.blur(); }
+  });
+}
+
+// ─── PLAYLIST CONTEXT MENU ───────────────────────────────────
+let plCtxMenuId = null;
+const plCtxMenu = document.getElementById('pl-ctx-menu');
+
+function showPlCtxMenu(e, plId) {
+  plCtxMenuId = plId;
+  const x = Math.min(e.clientX, window.innerWidth - 150);
+  const y = Math.min(e.clientY, window.innerHeight - 80);
+  plCtxMenu.style.left = x + 'px';
+  plCtxMenu.style.top  = y + 'px';
+  plCtxMenu.classList.add('show');
+}
+
+plCtxMenu.addEventListener('click', async e => {
+  const action = e.target.closest('[data-pl-action]')?.dataset.plAction;
+  if (!action || !plCtxMenuId) return;
+  plCtxMenu.classList.remove('show');
+  if (action === 'rename') {
+    startPlaylistRename(plCtxMenuId);
+  } else if (action === 'delete') {
+    const pl = playlists.find(p => p.id === plCtxMenuId);
+    if (!pl) return;
+    const yes = await confirm('Delete Playlist', `Remove "${pl.name}"? The tracks will stay in your library.`);
+    if (!yes) return;
+    await LibraryManager.deletePlaylist(plCtxMenuId).catch(e => console.warn('Delete failed:', e));
+    playlists = playlists.filter(p => p.id !== plCtxMenuId);
+    if (selectedPlaylistId === plCtxMenuId) selectedPlaylistId = null;
+    if (activePlaylistId === plCtxMenuId) activePlaylistId = null;
+    renderCurrentTab();
+    notify('Playlist deleted', '');
+  }
+});
+
+document.addEventListener('click', () => plCtxMenu.classList.remove('show'));
+
+// ─── ADD TO PLAYLIST SUBMENU ─────────────────────────────────
+const plSubmenu = document.getElementById('pl-submenu');
+let submenuTrackId = null;
+
+function showAddToPlaylistSubmenu(e, trackId) {
+  submenuTrackId = trackId;
+  plSubmenu.innerHTML = '';
+
+  if (playlists.length > 0) {
+    playlists.forEach(pl => {
+      const item = document.createElement('div');
+      item.className = 'pl-submenu-item';
+      item.textContent = pl.name;
+      item.addEventListener('click', () => {
+        pl.trackIds.push(trackId);
+        LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+        plSubmenu.classList.remove('show');
+        if (activeTab === 'playlists' && selectedPlaylistId === pl.id) renderCurrentTab();
+        notify(`Added to "${pl.name}"`, 'success');
+      });
+      plSubmenu.appendChild(item);
+    });
+    const sep = document.createElement('div');
+    sep.style.cssText = 'height:1px;background:var(--border);margin:4px 0;';
+    plSubmenu.appendChild(sep);
+  }
+
+  const newItem = document.createElement('div');
+  newItem.className = 'pl-submenu-item new-pl';
+  newItem.textContent = '+ New Playlist…';
+  newItem.addEventListener('click', async () => {
+    plSubmenu.classList.remove('show');
+    const pl = {
+      id: LibraryManager.genPlaylistId(),
+      name: 'New Playlist',
+      trackIds: [trackId],
+      createdAt: Date.now()
+    };
+    playlists.push(pl);
+    await LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+    selectedPlaylistId = pl.id;
+    // Switch to playlists tab so user can rename
+    document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active'));
+    document.querySelector('.lib-tab[data-tab="playlists"]').classList.add('active');
+    activeTab = 'playlists';
+    renderCurrentTab();
+    startPlaylistRename(pl.id);
+    notify('New playlist created', 'success');
+  });
+  plSubmenu.appendChild(newItem);
+
+  // Position submenu to the right of context menu, or left if no space
+  const ctxRect = ctxMenu.getBoundingClientRect();
+  let x = ctxRect.right + 2;
+  if (x + 160 > window.innerWidth) x = ctxRect.left - 162;
+  const y = Math.min(e.clientY, window.innerHeight - (playlists.length * 32 + 70));
+  plSubmenu.style.left = x + 'px';
+  plSubmenu.style.top  = y + 'px';
+  plSubmenu.classList.add('show');
+}
+
+document.addEventListener('click', () => plSubmenu.classList.remove('show'));
+
 function renderCurrentTab() {
+  // Remove edit-mode banner when not in songs tab (renderSongsTab re-adds it if needed)
+  if (activeTab !== 'songs') document.getElementById('pl-edit-banner')?.remove();
+
   const trackList = document.getElementById('track-list');
   // Reset any inline flex from artist drill-down before re-rendering
   trackList.style.display = '';
@@ -667,6 +1266,74 @@ async function importFiles(files) {
 }
 
 
+// ─── UI SCALE ────────────────────────────────────────────────
+const SCALE_MIN = 85, SCALE_MAX = 160, SCALE_STEP = 5;
+let uiScale = parseInt(localStorage.getItem('uiScale') || '110');
+
+// ─── RESTORE VOLUME SETTINGS ──────────────────────────────────
+const storedMasterVol = localStorage.getItem('masterVolume');
+if (storedMasterVol !== null) {
+  document.getElementById('mp-vol').value = storedMasterVol;
+}
+const storedMetroVol = localStorage.getItem('metronomeVolume');
+if (storedMetroVol !== null) {
+  document.getElementById('mm-vol').value = storedMetroVol;
+  Metronome.setVolume(parseInt(storedMetroVol) / 100);
+}
+
+function applyScale() {
+  const scale = uiScale / 100;
+  const app = document.getElementById('app');
+  // Clear any legacy zoom on documentElement
+  document.documentElement.style.zoom = '';
+  // Apply zoom to #app so all UI scales together
+  app.style.zoom = uiScale + '%';
+  // For scale > 1: pre-shrink layout dimensions so the zoomed result
+  // fills exactly the viewport and nothing is cropped by overflow:hidden
+  if (scale > 1) {
+    app.style.width = (100 / scale) + 'vw';
+    app.style.height = (100 / scale) + 'vh';
+  } else {
+    app.style.width = '';
+    app.style.height = '';
+  }
+  document.getElementById('scale-val').textContent = (uiScale - 10) + '%';
+}
+
+document.getElementById('scale-minus').addEventListener('click', () => {
+  if (uiScale > SCALE_MIN) { uiScale -= SCALE_STEP; localStorage.setItem('uiScale', uiScale); applyScale(); }
+});
+document.getElementById('scale-plus').addEventListener('click', () => {
+  if (uiScale < SCALE_MAX) { uiScale += SCALE_STEP; localStorage.setItem('uiScale', uiScale); applyScale(); }
+});
+
+applyScale();
+
+// ─── SETTINGS POPUP ──────────────────────────────────────────
+const settingsBtn   = document.getElementById('settings-btn');
+const settingsPopup = document.getElementById('settings-popup');
+
+settingsBtn.addEventListener('click', e => {
+  e.stopPropagation();
+  const open = !settingsPopup.classList.contains('hidden');
+  settingsPopup.classList.toggle('hidden', open);
+  settingsBtn.classList.toggle('active', !open);
+});
+
+document.addEventListener('click', e => {
+  if (!settingsPopup.classList.contains('hidden') && !settingsPopup.contains(e.target)) {
+    settingsPopup.classList.add('hidden');
+    settingsBtn.classList.remove('active');
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape' && !settingsPopup.classList.contains('hidden')) {
+    settingsPopup.classList.add('hidden');
+    settingsBtn.classList.remove('active');
+  }
+});
+
 // ─── NAVIGATION ──────────────────────────────────────────────
 document.querySelectorAll('.nav-item[data-panel]').forEach(item => {
   item.addEventListener('click', () => {
@@ -682,6 +1349,12 @@ document.querySelectorAll('.nav-item[data-panel]').forEach(item => {
 // ─── TAB SWITCHING ───────────────────────────────────────────
 document.querySelectorAll('.lib-tab').forEach(btn => {
   btn.addEventListener('click', () => {
+    // If leaving songs tab during edit mode, revert changes silently
+    if (playlistEditMode && btn.dataset.tab !== 'songs') {
+      const pl = playlists.find(p => p.id === playlistEditTargetId);
+      if (pl) { pl.trackIds = playlistEditSnapshot; LibraryManager.savePlaylist(pl).catch(console.warn); }
+      playlistEditMode = false; playlistEditTargetId = null; playlistEditSnapshot = [];
+    }
     document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     activeTab = btn.dataset.tab;
@@ -712,6 +1385,10 @@ trackList.addEventListener('scroll', () => {
 });
 
 // ─── EVENT DELEGATION: ROW CLICK + CONTEXT MENU ──────────────
+let lastClickId = null;
+let lastClickTime = 0;
+const DBL_CLICK_MS = 300;
+
 trackList.addEventListener('click', e => {
   // Artist row click -> drill down
   const artistRow = e.target.closest('.artist-row[data-artist]');
@@ -729,7 +1406,21 @@ trackList.addEventListener('click', e => {
     return;
   }
 
-  // Transpose dec/inc buttons — must check before track-row click
+  // Hover play button
+  const playBtn = e.target.closest('.row-play-btn[data-id]');
+  if (playBtn) {
+    e.stopPropagation();
+    playTrack(playBtn.dataset.id);
+    return;
+  }
+
+  // Transpose reset/dec/inc buttons — must check before track-row click
+  const xreset = e.target.closest('.xpose-reset[data-id]');
+  if (xreset) {
+    e.stopPropagation();
+    applyTranspose(xreset.dataset.id, 0);
+    return;
+  }
   const xdec = e.target.closest('.xpose-dec');
   if (xdec) {
     e.stopPropagation();
@@ -745,10 +1436,41 @@ trackList.addEventListener('click', e => {
     return;
   }
 
-  // Track row click -> play
+  // Track row click -> select (File Explorer style), double-click -> play
   const row = e.target.closest('.track-row[data-id]');
-  if (!row) return;
-  playTrack(row.dataset.id);
+  if (!row) {
+    // Clicked empty space — deselect all
+    selectedIds.clear();
+    lastSelectedIdx = -1;
+    renderCurrentTab();
+    return;
+  }
+  const id = row.dataset.id;
+  const now = Date.now();
+  if (lastClickId === id && (now - lastClickTime) < DBL_CLICK_MS) {
+    // Double-click detected — play
+    lastClickId = null;
+    lastClickTime = 0;
+    playTrack(id);
+    return;
+  }
+  lastClickId = id;
+  lastClickTime = now;
+  const idx = tracks.findIndex(t => t.id === id);
+  if (e.ctrlKey || e.metaKey) {
+    if (selectedIds.has(id)) selectedIds.delete(id);
+    else selectedIds.add(id);
+    lastSelectedIdx = idx;
+  } else if (e.shiftKey && lastSelectedIdx !== -1) {
+    const start = Math.min(lastSelectedIdx, idx);
+    const end   = Math.max(lastSelectedIdx, idx);
+    for (let i = start; i <= end; i++) selectedIds.add(tracks[i].id);
+  } else {
+    selectedIds.clear();
+    selectedIds.add(id);
+    lastSelectedIdx = idx;
+  }
+  renderCurrentTab();
 });
 
 trackList.addEventListener('contextmenu', e => {
@@ -763,9 +1485,19 @@ const ctxMenu = document.getElementById('ctx-menu');
 
 function showCtxMenu(e, trackId) {
   e.preventDefault();
+  // Right-clicking an unselected row: select only it
+  if (!selectedIds.has(trackId)) {
+    selectedIds.clear();
+    selectedIds.add(trackId);
+    lastSelectedIdx = tracks.findIndex(t => t.id === trackId);
+    renderCurrentTab();
+  }
   ctxMenuTrackId = trackId;
-  const x = Math.min(e.clientX, window.innerWidth - 140);
-  const y = Math.min(e.clientY, window.innerHeight - 70);
+  // Rename only available for a single selection
+  ctxMenu.querySelector('[data-action="rename"]')
+    .classList.toggle('ctx-disabled', selectedIds.size !== 1);
+  const x = Math.min(e.clientX, window.innerWidth - 160);
+  const y = Math.min(e.clientY, window.innerHeight - 130);
   ctxMenu.style.left = x + 'px';
   ctxMenu.style.top  = y + 'px';
   ctxMenu.classList.add('show');
@@ -780,18 +1512,50 @@ trackList.addEventListener('scroll', () => ctxMenu.classList.remove('show'));
 ctxMenu.addEventListener('click', e => {
   const action = e.target.closest('[data-action]')?.dataset.action;
   if (!action || !ctxMenuTrackId) return;
+  if (action === 'add-to-playlist') {
+    e.stopPropagation(); // prevent document click from closing menus immediately
+    showAddToPlaylistSubmenu(e, ctxMenuTrackId);
+    return;
+  }
   ctxMenu.classList.remove('show');
-  if (action === 'rename') startRenameById(ctxMenuTrackId);
-  if (action === 'delete') deleteTrackById(ctxMenuTrackId);
+  if (action === 'play') {
+    playTrack(ctxMenuTrackId);
+  } else if (action === 'rename') {
+    startRenameById(ctxMenuTrackId);
+  } else if (action === 'delete') {
+    deleteSelectedTracks([...selectedIds]);
+  } else if (action === 'select-all') {
+    tracks.forEach(t => selectedIds.add(t.id));
+    renderCurrentTab();
+  }
 });
+
+async function deleteSelectedTracks(ids) {
+  if (!ids.length) return;
+  const label = ids.length === 1
+    ? `Remove "${tracks.find(t => t.id === ids[0])?.name}" from your library? This cannot be undone.`
+    : `Remove ${ids.length} tracks from your library? This cannot be undone.`;
+  const yes = await confirm('Delete Track' + (ids.length > 1 ? 's' : ''), label);
+  if (!yes) return;
+  for (const id of ids) {
+    const player = players[id];
+    if (player) player.stop();
+    if (currentPlayingId === id) hideMiniplayer();
+    delete players[id];
+    await LibraryManager.remove(id);
+    tracks = tracks.filter(t => t.id !== id);
+    selectedIds.delete(id);
+  }
+  renderCurrentTab();
+  notify(ids.length === 1 ? 'Track deleted' : `${ids.length} tracks deleted`, '');
+}
 
 
 // ─── LIBRARY EVENT BINDINGS ───────────────────────────────────
-const dropZone = document.getElementById('drop-zone');
 const fileInput = document.getElementById('file-input');
 const importBtn = document.getElementById('import-btn');
+const libraryPanel = document.getElementById('panel-library');
 
-dropZone.addEventListener('click', () => fileInput.click());
 importBtn.addEventListener('click', () => fileInput.click());
 
 fileInput.addEventListener('change', () => {
@@ -799,35 +1563,130 @@ fileInput.addEventListener('change', () => {
   fileInput.value = '';
 });
 
-dropZone.addEventListener('dragover', e => {
+libraryPanel.addEventListener('dragover', e => {
   e.preventDefault();
-  dropZone.classList.add('drag-over');
+  libraryPanel.classList.add('drag-over');
 });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-dropZone.addEventListener('drop', e => {
+libraryPanel.addEventListener('dragleave', e => {
+  if (!libraryPanel.contains(e.relatedTarget)) libraryPanel.classList.remove('drag-over');
+});
+libraryPanel.addEventListener('drop', e => {
   e.preventDefault();
-  dropZone.classList.remove('drag-over');
-  const files = Array.from(e.dataTransfer.files);
-  importFiles(files);
+  libraryPanel.classList.remove('drag-over');
+  importFiles(Array.from(e.dataTransfer.files));
 });
 
-// ─── METRONOME EVENT BINDINGS ─────────────────────────────────
+// ─── METRONOME MINIPLAYER SYNC ────────────────────────────────
+Metronome.onBeat(() => {
+  const btn = document.getElementById('mm-bpm-display');
+  btn.classList.add('beat-flash');
+  setTimeout(() => btn.classList.remove('beat-flash'), 80);
+});
+
+function syncMetroMini() {
+  document.querySelector('#mm-bpm-display .mm-bpm-num').textContent = Metronome.getBpm();
+  const active = Metronome.isActive();
+  document.getElementById('mm-play-btn').textContent = active ? '⏹' : '▶';
+  document.getElementById('mm-play-btn').classList.toggle('running', active);
+}
+
+// ─── METRONOME MINIPLAYER BINDINGS ────────────────────────────
+document.getElementById('mm-play-btn').addEventListener('click', async function() {
+  const ctx = resume();
+  if (ctx.state === 'suspended') await ctx.resume();
+  if (Metronome.isActive()) { Metronome.stop(); } else { Metronome.start(); }
+  syncMetroMini();
+  // sync full-panel button
+  const fullBtn = document.getElementById('metro-play-btn');
+  fullBtn.textContent = Metronome.isActive() ? '⏹ Stop' : '▶ Start';
+  fullBtn.classList.toggle('running', Metronome.isActive());
+});
+
+// BPM display — double-click to type BPM inline
+document.getElementById('mm-bpm-display').addEventListener('dblclick', () => {
+  const display = document.getElementById('mm-bpm-display');
+  const input = document.getElementById('mm-bpm-inline');
+  input.value = Metronome.getBpm();
+  display.style.display = 'none';
+  input.style.display = '';
+  input.focus();
+  input.select();
+});
+
+function commitBpmInline() {
+  const display = document.getElementById('mm-bpm-display');
+  const input = document.getElementById('mm-bpm-inline');
+  const val = parseInt(input.value);
+  if (!isNaN(val)) { Metronome.setBpm(val); document.getElementById('bpm-input').value = Metronome.getBpm(); syncMetroMini(); }
+  input.style.display = 'none';
+  display.style.display = '';
+}
+document.getElementById('mm-bpm-inline').addEventListener('blur', commitBpmInline);
+document.getElementById('mm-bpm-inline').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') { e.preventDefault(); commitBpmInline(); }
+  if (e.key === 'Escape') {
+    const input = document.getElementById('mm-bpm-inline');
+    input.style.display = 'none';
+    document.getElementById('mm-bpm-display').style.display = '';
+  }
+});
+
+// TAP button — tap tempo
+document.getElementById('mm-tap-btn').addEventListener('click', () => {
+  resume();
+  const bpm = TapTempo.tap();
+  const count = TapTempo.count();
+  if (bpm) { Metronome.setBpm(bpm); document.getElementById('bpm-input').value = bpm; }
+  syncMetroMini();
+  const countEl = document.getElementById('tap-count');
+  countEl.textContent = count < 2 ? 'tap again...' : `${count} taps · ${bpm} BPM`;
+});
+
+document.getElementById('mm-bpm-minus').addEventListener('click', () => {
+  Metronome.setBpm(Metronome.getBpm() - 1);
+  syncMetroMini();
+  document.getElementById('bpm-input').value = Metronome.getBpm();
+});
+document.getElementById('mm-bpm-plus').addEventListener('click', () => {
+  Metronome.setBpm(Metronome.getBpm() + 1);
+  syncMetroMini();
+  document.getElementById('bpm-input').value = Metronome.getBpm();
+});
+
+document.getElementById('mm-subdiv-select').addEventListener('change', function() {
+  const subdiv = parseInt(this.value);
+  Metronome.setSubdivision(subdiv);
+  // sync full-panel subdivision buttons
+  document.querySelectorAll('.subdiv-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.subdiv) === subdiv));
+  localStorage.setItem('metronomeSubdiv', subdiv);
+});
+
+document.getElementById('mm-vol').addEventListener('input', function() {
+  Metronome.setVolume(this.value / 100);
+  localStorage.setItem('metronomeVolume', this.value);
+});
+
+// ─── METRONOME FULL-PANEL BINDINGS ───────────────────────────
 document.getElementById('bpm-minus').addEventListener('click', () => {
   Metronome.setBpm(Metronome.getBpm() - 1);
+  syncMetroMini();
 });
 document.getElementById('bpm-plus').addEventListener('click', () => {
   Metronome.setBpm(Metronome.getBpm() + 1);
+  syncMetroMini();
 });
 
 document.getElementById('bpm-input').addEventListener('change', function() {
   Metronome.setBpm(parseInt(this.value) || 120);
+  syncMetroMini();
 });
 document.getElementById('bpm-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') this.blur();
 });
 
-document.getElementById('metro-play-btn').addEventListener('click', function() {
-  resume();
+document.getElementById('metro-play-btn').addEventListener('click', async function() {
+  const ctx = resume();
+  if (ctx.state === 'suspended') await ctx.resume();
   if (Metronome.isActive()) {
     Metronome.stop();
     this.textContent = '▶ Start';
@@ -837,27 +1696,90 @@ document.getElementById('metro-play-btn').addEventListener('click', function() {
     this.textContent = '⏹ Stop';
     this.classList.add('running');
   }
+  syncMetroMini();
 });
 
 document.querySelectorAll('.subdiv-btn').forEach(btn => {
   btn.addEventListener('click', function() {
     document.querySelectorAll('.subdiv-btn').forEach(b => b.classList.remove('active'));
     this.classList.add('active');
-    Metronome.setSubdivision(parseInt(this.dataset.subdiv));
+    const subdiv = parseInt(this.dataset.subdiv);
+    Metronome.setSubdivision(subdiv);
+    // sync miniplayer select
+    document.getElementById('mm-subdiv-select').value = subdiv;
+    localStorage.setItem('metronomeSubdiv', subdiv);
   });
 });
 
-document.getElementById('metro-vol').addEventListener('input', function() {
-  Metronome.setVolume(this.value / 100);
-  document.getElementById('metro-vol-val').textContent = this.value + '%';
+// Accent toggle (synced between full panel and miniplayer)
+function syncAccentBtns(enabled) {
+  document.getElementById('accent-toggle-btn').classList.toggle('active', enabled);
+  document.getElementById('mm-accent-btn').classList.toggle('active', enabled);
+}
+document.getElementById('accent-toggle-btn').addEventListener('click', function() {
+  const enabled = !Metronome.getAccent();
+  Metronome.setAccent(enabled);
+  syncAccentBtns(enabled);
+  localStorage.setItem('metronomeAccent', enabled);
+});
+document.getElementById('mm-accent-btn').addEventListener('click', function() {
+  const enabled = !Metronome.getAccent();
+  Metronome.setAccent(enabled);
+  syncAccentBtns(enabled);
+  localStorage.setItem('metronomeAccent', enabled);
 });
 
-// Tap tempo
+// ─── TIME SIGNATURE ───────────────────────────────────────────
+function syncTimeSigUI(num, den) {
+  document.querySelectorAll('.timesig-btn').forEach(b =>
+    b.classList.toggle('active', parseInt(b.dataset.num) === num && parseInt(b.dataset.den) === den)
+  );
+  document.getElementById('timesig-num').value = num;
+  document.getElementById('timesig-den').value = den;
+  const sel = document.getElementById('mm-timesig-select');
+  const key = `${num}/${den}`;
+  const opt = sel.querySelector(`option[value="${key}"]`);
+  if (opt) {
+    sel.value = key;
+  } else {
+    let customOpt = sel.querySelector('option[value="custom"]');
+    customOpt.textContent = `Custom (${num}/${den})`;
+    customOpt.disabled = false;
+    sel.value = 'custom';
+  }
+}
+
+function applyTimeSignature(num, den) {
+  Metronome.setTimeSignature(num, den);
+  syncTimeSigUI(num, den);
+  localStorage.setItem('metronomeTimeSig', JSON.stringify({ num, den }));
+}
+
+document.querySelectorAll('.timesig-btn').forEach(btn => {
+  btn.addEventListener('click', function() {
+    applyTimeSignature(parseInt(this.dataset.num), parseInt(this.dataset.den));
+  });
+});
+
+document.getElementById('timesig-apply-btn').addEventListener('click', () => {
+  const num = parseInt(document.getElementById('timesig-num').value);
+  const den = parseInt(document.getElementById('timesig-den').value);
+  if (num >= 2 && num <= 16) applyTimeSignature(num, den);
+});
+
+document.getElementById('mm-timesig-select').addEventListener('change', function() {
+  if (this.value === 'custom') return;
+  const [num, den] = this.value.split('/').map(Number);
+  applyTimeSignature(num, den);
+});
+
+// Tap tempo (full-panel button)
 document.getElementById('tap-btn').addEventListener('click', () => {
   resume();
   const bpm = TapTempo.tap();
   const count = TapTempo.count();
   if (bpm) Metronome.setBpm(bpm);
+  syncMetroMini();
   const countEl = document.getElementById('tap-count');
   if (count < 2) {
     countEl.textContent = 'tap again...';
@@ -866,36 +1788,96 @@ document.getElementById('tap-btn').addEventListener('click', () => {
   }
 });
 
-// Custom click sound
-document.getElementById('load-click-btn').addEventListener('click', () => {
-  document.getElementById('click-file-input').click();
-});
-document.getElementById('click-file-input').addEventListener('change', async function() {
-  if (!this.files[0]) return;
-  const file = this.files[0];
-  const ab = await file.arrayBuffer();
-  const ctx = resume();
-  try {
-    const buf = await ctx.decodeAudioData(ab);
-    Metronome.setCustomBuffer(buf);
-    document.getElementById('click-sound-name').textContent = file.name;
-    document.getElementById('clear-click-btn').style.display = '';
-    notify('Custom click loaded', 'success');
-  } catch(e) {
-    notify('Could not decode audio file', 'error');
-  }
-  this.value = '';
-});
-document.getElementById('clear-click-btn').addEventListener('click', () => {
-  Metronome.setCustomBuffer(null);
-  document.getElementById('click-sound-name').textContent = 'Default (Synthesized)';
-  document.getElementById('clear-click-btn').style.display = 'none';
-});
+// Custom click sounds (4 slots: accent, quarter, eighth, subdivision)
+{
+  let activeType = null;
+  const fileInput = document.getElementById('click-file-input');
+
+  document.querySelectorAll('.load-click-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeType = btn.dataset.type;
+      fileInput.click();
+    });
+  });
+
+  fileInput.addEventListener('change', async function() {
+    if (!this.files[0] || !activeType) return;
+    const file = this.files[0];
+    const ab = await file.arrayBuffer();
+    const abForStore = ab.slice(0); // decodeAudioData may transfer ab
+    const ctx = resume();
+    let buf;
+    try {
+      buf = await ctx.decodeAudioData(ab);
+    } catch(e) {
+      notify('Could not decode audio file', 'error');
+      return;
+    }
+    Metronome.setCustomBuffer(activeType, buf);
+    document.querySelector(`.click-sound-name[data-type="${activeType}"]`).textContent = file.name;
+    document.querySelector(`.clear-click-btn[data-type="${activeType}"]`).style.display = '';
+    try {
+      await LibraryManager.putSetting({ key: 'click_' + activeType, name: file.name, data: abForStore });
+    } catch(e) {
+      console.error('Failed to save click sound to storage:', e);
+    }
+    notify(`${activeType.charAt(0).toUpperCase() + activeType.slice(1)} click loaded`, 'success');
+    this.value = '';
+    activeType = null;
+  });
+
+  document.querySelectorAll('.clear-click-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const type = btn.dataset.type;
+      Metronome.setCustomBuffer(type, null);
+      document.querySelector(`.click-sound-name[data-type="${type}"]`).textContent = 'Default';
+      btn.style.display = 'none';
+      LibraryManager.deleteSetting('click_' + type);
+    });
+  });
+}
 
 
 // ─── INIT ────────────────────────────────────────────────────
 (async function init() {
-  Metronome.updateBeatDots(1);
+  // Restore time signature before building beat dots
+  const storedTimeSig = localStorage.getItem('metronomeTimeSig');
+  if (storedTimeSig) {
+    try {
+      const { num, den } = JSON.parse(storedTimeSig);
+      Metronome.setTimeSignature(num, den);
+      syncTimeSigUI(num, den);
+    } catch(e) { /* corrupt — ignore */ }
+  }
+  // Restore subdivision
+  const storedSubdiv = parseInt(localStorage.getItem('metronomeSubdiv'));
+  const subdiv = [1, 2, 3, 4].includes(storedSubdiv) ? storedSubdiv : 1;
+  Metronome.setSubdivision(subdiv);
+  document.querySelectorAll('.subdiv-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.subdiv) === subdiv));
+  document.getElementById('mm-subdiv-select').value = subdiv;
+
+  // Restore accent toggle
+  const storedAccent = localStorage.getItem('metronomeAccent');
+  if (storedAccent !== null) {
+    const enabled = storedAccent === 'true';
+    Metronome.setAccent(enabled);
+    syncAccentBtns(enabled);
+  }
+
+  syncMetroMini();
   await loadLibrary();
-  document.getElementById('topbar-status').textContent = 'READY';
+  // Restore persisted click sounds
+  const ctx = resume();
+  for (const type of ['accent', 'quarter', 'eighth', 'subdivision']) {
+    const record = await LibraryManager.getSetting('click_' + type);
+    if (!record) continue;
+    try {
+      const buf = await ctx.decodeAudioData(record.data.slice(0));
+      Metronome.setCustomBuffer(type, buf);
+      document.querySelector(`.click-sound-name[data-type="${type}"]`).textContent = record.name;
+      document.querySelector(`.clear-click-btn[data-type="${type}"]`).style.display = '';
+    } catch(e) {
+      console.error('Failed to restore click sound:', type, e);
+    }
+  }
 })();
