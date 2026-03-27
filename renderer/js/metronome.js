@@ -1,15 +1,20 @@
 // ─── METRONOME ────────────────────────────────────────────────
-import { resume, getCtx, getMaster } from './audio-engine.js';
+import { resume, getCtx, getMaster, getMetronomeGain } from './audio-engine.js';
 
 let bpm = 120;
 let subdivision = 1;
+let beatsPerBar = 4;
+let beatUnit = 4;                              // denominator: 4 or 8
+let beatAccents = [true, false, false, false]; // per-beat accent; length = beatsPerBar
 let isRunning = false;
 let nextNoteTime = 0;
 let currentBeat = 0;
 let totalBeats = 0;
+let startTime = 0;
 let schedulerTimer = null;
 let volume = 0.8;
-let customBuffer = null;
+let accentEnabled = true;
+const customBuffers = { accent: null, quarter: null, eighth: null, subdivision: null };
 const LOOKAHEAD = 0.1;
 const SCHEDULE_INTERVAL = 25;
 
@@ -17,13 +22,30 @@ const SCHEDULE_INTERVAL = 25;
 let flashQueue = [];
 let flashRaf = null;
 
-function scheduleNote(time, isAccent) {
-  const c = resume();
-  let source;
+// External beat callback (fires on every main beat / quarter-note position)
+let beatCallback = null;
+function onBeat(fn) { beatCallback = fn; }
 
-  if (customBuffer) {
-    source = c.createBufferSource();
-    source.buffer = customBuffer;
+const SYNTH_PARAMS = {
+  accent:      { freq: 1800, decay: 0.06, stop: 0.08, vol: 1.0 },
+  quarter:     { freq: 1200, decay: 0.04, stop: 0.06, vol: 0.85 },
+  eighth:      { freq: 900,  decay: 0.025, stop: 0.04, vol: 0.7 },
+  subdivision: { freq: 700,  decay: 0.025, stop: 0.04, vol: 0.6 },
+};
+
+function scheduleNote(time, beatType) {
+  const c = resume();
+  const buf = customBuffers[beatType];
+  const p = SYNTH_PARAMS[beatType];
+
+  if (buf) {
+    const source = c.createBufferSource();
+    source.buffer = buf;
+    const gainNode = c.createGain();
+    gainNode.gain.value = volume * p.vol;
+    source.connect(gainNode);
+    gainNode.connect(getMetronomeGain());
+    source.start(time);
   } else {
     // Synthesize click
     const oscillator = c.createOscillator();
@@ -32,39 +54,36 @@ function scheduleNote(time, isAccent) {
     const gainNode = c.createGain();
     gainNode.gain.value = volume;
     env.connect(gainNode);
-    gainNode.connect(getMaster());
-    oscillator.frequency.value = isAccent ? 1800 : 1200;
+    gainNode.connect(getMetronomeGain());
+    oscillator.frequency.value = p.freq;
     oscillator.type = 'sine';
     env.gain.setValueAtTime(0, time);
-    env.gain.linearRampToValueAtTime(volume * 0.9, time + 0.002);
-    env.gain.exponentialRampToValueAtTime(0.001, time + (isAccent ? 0.06 : 0.04));
+    env.gain.linearRampToValueAtTime(p.vol * 0.9, time + 0.002);
+    env.gain.exponentialRampToValueAtTime(0.001, time + p.decay);
     oscillator.start(time);
-    oscillator.stop(time + 0.08);
-    return;
-  }
-
-  if (source) {
-    const gainNode = c.createGain();
-    gainNode.gain.value = volume * (isAccent ? 1.0 : 0.7);
-    source.connect(gainNode);
-    gainNode.connect(getMaster());
-    source.start(time);
+    oscillator.stop(time + p.stop);
   }
 }
 
 function scheduler() {
   const c = getCtx();
-  const beatsPerBar = 4;
   const subdivSteps = subdivision;
-  const secPerBeat = 60 / bpm;
+  const secPerBeat = (beatUnit === 8) ? 30 / bpm : 60 / bpm;
   const secPerSubdiv = secPerBeat / subdivSteps;
+  const barLength = beatsPerBar * subdivSteps;
 
   while (nextNoteTime < c.currentTime + LOOKAHEAD) {
-    const isAccent = (totalBeats % (beatsPerBar * subdivSteps) === 0);
-    scheduleNote(nextNoteTime, isAccent);
+    const pos = totalBeats % barLength;
+    const beatIdx = Math.floor(pos / subdivSteps);
+    const isBeatBoundary = pos % subdivSteps === 0;
+    let beatType;
+    if (isBeatBoundary && accentEnabled && beatAccents[beatIdx]) beatType = 'accent';
+    else if (isBeatBoundary)                                     beatType = 'quarter';
+    else if (subdivSteps === 4 && pos % 2 === 0)                 beatType = 'eighth';
+    else                                                         beatType = 'subdivision';
+    scheduleNote(nextNoteTime, beatType);
 
-    const beatIndex = Math.floor(totalBeats % (beatsPerBar * subdivSteps));
-    flashQueue.push({ time: nextNoteTime, beat: beatIndex, subdivSteps });
+    flashQueue.push({ time: nextNoteTime, beat: pos, subdivSteps });
 
     nextNoteTime += secPerSubdiv;
     totalBeats++;
@@ -74,10 +93,22 @@ function scheduler() {
 function updateBeatDots(subdivSteps) {
   const grid = document.getElementById('beat-grid');
   grid.innerHTML = '';
-  const count = 4 * subdivSteps;
+  const count = beatsPerBar * subdivSteps;
   for (let i = 0; i < count; i++) {
+    const beatIdx = Math.floor(i / subdivSteps);
+    const isBoundary = i % subdivSteps === 0;
     const d = document.createElement('div');
-    d.className = 'beat-dot' + (i % subdivSteps === 0 ? ' accent' : '');
+    const classes = ['beat-dot'];
+    if (isBoundary) {
+      classes.push('beat-boundary');
+      if (beatAccents[beatIdx]) classes.push('accent');
+      d.title = 'Click to toggle accent';
+      d.addEventListener('click', () => {
+        beatAccents[beatIdx] = !beatAccents[beatIdx];
+        updateBeatDots(subdivision);
+      });
+    }
+    d.className = classes.join(' ');
     d.id = 'dot-' + i;
     grid.appendChild(d);
   }
@@ -94,6 +125,9 @@ function flashLoop() {
       dot.classList.add('flash');
       setTimeout(() => dot.classList.remove('flash'), 80);
     }
+    if (item.beat % item.subdivSteps === 0 && beatCallback) {
+      beatCallback();
+    }
   }
   flashRaf = requestAnimationFrame(flashLoop);
 }
@@ -102,6 +136,7 @@ function start() {
   const c = resume();
   isRunning = true;
   totalBeats = 0;
+  startTime = c.currentTime;
   nextNoteTime = c.currentTime;
   flashQueue = [];
   scheduler();
@@ -129,12 +164,32 @@ function setVolume(v) { volume = v; }
 function setSubdivision(s) {
   subdivision = s;
   updateBeatDots(s);
-  if (isRunning) { stop(); start(); }
+  if (isRunning) {
+    const c = getCtx();
+    const secPerBeat = (beatUnit === 8) ? 30 / bpm : 60 / bpm;
+    const elapsed = c.currentTime - startTime;
+    const nextBeatIndex = Math.ceil(elapsed / secPerBeat);
+    nextNoteTime = startTime + nextBeatIndex * secPerBeat;
+    totalBeats = (nextBeatIndex % beatsPerBar) * s;
+    flashQueue = [];
+  }
 }
-function setCustomBuffer(buf) { customBuffer = buf; }
+function setTimeSignature(numerator, denominator) {
+  beatsPerBar = numerator;
+  beatUnit = denominator;
+  beatAccents = Array.from({ length: numerator }, (_, i) => i === 0);
+  updateBeatDots(subdivision);
+}
+function setBeatAccent(beatIdx, v) { beatAccents[beatIdx] = v; }
+function getTimeSignature() { return { numerator: beatsPerBar, denominator: beatUnit }; }
+function getBeatAccents() { return [...beatAccents]; }
+function setCustomBuffer(type, buf) { customBuffers[type] = buf; }
+function getCustomBuffer(type) { return customBuffers[type]; }
+function setAccent(enabled) { accentEnabled = enabled; }
+function getAccent() { return accentEnabled; }
 function isActive() { return isRunning; }
 
-export const Metronome = { start, stop, setBpm, getBpm, setVolume, setSubdivision, setCustomBuffer, isActive, updateBeatDots };
+export const Metronome = { start, stop, setBpm, getBpm, setVolume, setSubdivision, setTimeSignature, setBeatAccent, getTimeSignature, getBeatAccents, setCustomBuffer, getCustomBuffer, setAccent, getAccent, isActive, updateBeatDots, onBeat };
 
 
 // ─── TAP TEMPO ───────────────────────────────────────────────
