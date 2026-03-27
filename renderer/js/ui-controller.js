@@ -17,6 +17,9 @@ let playlists = [];            // cached from IDB
 let selectedPlaylistId = null; // which playlist is shown in right pane
 let activePlaylistId = null;   // playlist that launched current playback (for auto-next)
 let plDragSrcIndex = null;     // drag-to-reorder source index within playlist
+let playlistSortMode = 'manual'; // 'manual' | 'name' | 'date'
+let playlistManualOrder = [];    // IDs array for manual sort order
+let plListDragSrcId = null;      // drag-to-reorder source ID within playlist list
 
 // ─── PLAYLIST EDIT MODE ───────────────────────────────────────
 let playlistEditMode = false;
@@ -250,22 +253,9 @@ document.getElementById('mp-xpose-reset').addEventListener('click', () => {
   applyTranspose(currentPlayingId, 0);
 });
 
-const mpVolVal = document.getElementById('mp-vol-val');
-let mpVolFadeTimer = null;
 document.getElementById('mp-vol').addEventListener('input', function() {
   setMasterVolume(this.value / 100);
   localStorage.setItem('masterVolume', this.value);
-  mpVolVal.textContent = this.value + '%';
-  mpVolVal.classList.add('visible');
-  if (mpVolFadeTimer) clearTimeout(mpVolFadeTimer);
-});
-document.getElementById('mp-vol').addEventListener('mouseup', function() {
-  if (mpVolFadeTimer) clearTimeout(mpVolFadeTimer);
-  mpVolFadeTimer = setTimeout(() => mpVolVal.classList.remove('visible'), 1000);
-});
-document.getElementById('mp-vol').addEventListener('touchend', function() {
-  if (mpVolFadeTimer) clearTimeout(mpVolFadeTimer);
-  mpVolFadeTimer = setTimeout(() => mpVolVal.classList.remove('visible'), 1000);
 });
 
 // ─── SCRUB BAR ──────────────────────────────────────────────
@@ -303,12 +293,19 @@ let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, du
 
 async function loadLibrary() {
   try {
-    const [stored, storedPlaylists] = await Promise.all([
+    const [stored, storedPlaylists, sortModeSetting, orderSetting] = await Promise.all([
       LibraryManager.all(),
-      LibraryManager.getPlaylists()
+      LibraryManager.getPlaylists(),
+      LibraryManager.getSetting('playlist_sort_mode'),
+      LibraryManager.getSetting('playlist_order')
     ]);
     tracks = stored;
     playlists = storedPlaylists;
+    if (sortModeSetting) playlistSortMode = sortModeSetting.value;
+    if (orderSetting) playlistManualOrder = orderSetting.ids || [];
+    // Sync manual order: ensure all playlists are represented
+    const knownIds = new Set(playlistManualOrder);
+    playlists.forEach(pl => { if (!knownIds.has(pl.id)) playlistManualOrder.push(pl.id); });
     // Initialize players eagerly for all loaded tracks
     tracks.forEach(t => {
       if (!players[t.id]) {
@@ -625,6 +622,38 @@ function renderArtistsTab() {
   }
 }
 
+function getSortedPlaylists() {
+  if (playlistSortMode === 'name') {
+    return [...playlists].sort((a, b) => a.name.localeCompare(b.name));
+  }
+  if (playlistSortMode === 'date') {
+    return [...playlists].sort((a, b) => {
+      const da = a.date || '';
+      const db = b.date || '';
+      if (!da && !db) return 0;
+      if (!da) return 1;
+      if (!db) return -1;
+      return da.localeCompare(db); // soonest first
+    });
+  }
+  // manual: use playlistManualOrder
+  const ordered = [];
+  const seen = new Set();
+  playlistManualOrder.forEach(id => {
+    const pl = playlists.find(p => p.id === id);
+    if (pl) { ordered.push(pl); seen.add(id); }
+  });
+  playlists.forEach(pl => { if (!seen.has(pl.id)) ordered.push(pl); });
+  return ordered;
+}
+
+async function savePlaylistSortSettings() {
+  await Promise.all([
+    LibraryManager.putSetting({ key: 'playlist_sort_mode', value: playlistSortMode }),
+    LibraryManager.putSetting({ key: 'playlist_order', ids: playlistManualOrder })
+  ]).catch(e => console.warn('Sort settings save failed:', e));
+}
+
 function renderPlaylistsTab() {
   const trackList = document.getElementById('track-list');
 
@@ -644,14 +673,31 @@ function renderPlaylistsTab() {
   `;
   left.appendChild(listHeader);
 
+  const sortBar = document.createElement('div');
+  sortBar.className = 'pl-sort-bar';
+  sortBar.innerHTML = `
+    <button class="pl-sort-btn${playlistSortMode === 'manual' ? ' active' : ''}" data-sort="manual">Manual</button>
+    <button class="pl-sort-btn${playlistSortMode === 'name' ? ' active' : ''}" data-sort="name">Name</button>
+    <button class="pl-sort-btn${playlistSortMode === 'date' ? ' active' : ''}" data-sort="date">Date</button>
+  `;
+  sortBar.addEventListener('click', e => {
+    const btn = e.target.closest('[data-sort]');
+    if (!btn) return;
+    playlistSortMode = btn.dataset.sort;
+    savePlaylistSortSettings();
+    renderCurrentTab();
+  });
+  left.appendChild(sortBar);
+
   const plList = document.createElement('div');
   plList.className = 'pl-list';
   plList.id = 'pl-list';
 
-  if (playlists.length === 0) {
+  const sortedPls = getSortedPlaylists();
+  if (sortedPls.length === 0) {
     plList.innerHTML = `<div style="padding: 16px 12px; font-family:'Barlow Condensed',sans-serif; font-size:13px; color:var(--text-dim);">No playlists yet</div>`;
   } else {
-    playlists.forEach(pl => {
+    sortedPls.forEach(pl => {
       plList.appendChild(buildPlaylistRow(pl));
     });
   }
@@ -680,20 +726,42 @@ function renderPlaylistsTab() {
   document.getElementById('pl-new-btn').addEventListener('click', createNewPlaylist);
 }
 
+function formatPlaylistDate(dateStr) {
+  if (!dateStr) return '';
+  // dateStr is "YYYY-MM-DD"
+  const [y, m, d] = dateStr.split('-').map(Number);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${months[m - 1]} ${d}, ${y}`;
+}
+
 function buildPlaylistRow(pl) {
   const row = document.createElement('div');
   row.className = 'pl-row' + (pl.id === selectedPlaylistId ? ' active' : '');
   row.dataset.plId = pl.id;
 
+  const isManual = playlistSortMode === 'manual';
+  if (isManual) row.draggable = true;
+
+  const info = document.createElement('div');
+  info.className = 'pl-row-info';
+
   const name = document.createElement('div');
   name.className = 'pl-row-name';
   name.textContent = pl.name;
+  info.appendChild(name);
+
+  if (pl.date) {
+    const dateEl = document.createElement('div');
+    dateEl.className = 'pl-row-date';
+    dateEl.textContent = formatPlaylistDate(pl.date);
+    info.appendChild(dateEl);
+  }
 
   const count = document.createElement('div');
   count.className = 'pl-row-count';
   count.textContent = pl.trackIds.length;
 
-  row.appendChild(name);
+  row.appendChild(info);
   row.appendChild(count);
 
   row.addEventListener('click', () => {
@@ -706,6 +774,42 @@ function buildPlaylistRow(pl) {
     showPlCtxMenu(e, pl.id);
   });
 
+  // Drag-to-reorder (manual mode only)
+  if (isManual) {
+    row.addEventListener('dragstart', e => {
+      plListDragSrcId = pl.id;
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragover', e => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'move';
+      row.classList.remove('drag-above', 'drag-below');
+      const rect = row.getBoundingClientRect();
+      row.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drag-above' : 'drag-below');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-above', 'drag-below'));
+    row.addEventListener('drop', e => {
+      e.preventDefault();
+      row.classList.remove('drag-above', 'drag-below');
+      const srcId = plListDragSrcId;
+      if (!srcId || srcId === pl.id) return;
+      const srcIdx = playlistManualOrder.indexOf(srcId);
+      const dstIdx = playlistManualOrder.indexOf(pl.id);
+      if (srcIdx === -1 || dstIdx === -1) return;
+      const rect = row.getBoundingClientRect();
+      const insertAfter = e.clientY >= rect.top + rect.height / 2;
+      playlistManualOrder.splice(srcIdx, 1);
+      const newDst = playlistManualOrder.indexOf(pl.id);
+      playlistManualOrder.splice(insertAfter ? newDst + 1 : newDst, 0, srcId);
+      savePlaylistSortSettings();
+      renderCurrentTab();
+    });
+    row.addEventListener('dragend', () => {
+      plListDragSrcId = null;
+      document.querySelectorAll('.pl-row').forEach(r => r.classList.remove('drag-above', 'drag-below'));
+    });
+  }
+
   return row;
 }
 
@@ -716,9 +820,36 @@ function renderPlaylistDetail(container, pl) {
   header.innerHTML = `
     <div class="pl-detail-title">${escHtml(pl.name)}</div>
     <div class="pl-detail-count">${pl.trackIds.length} track${pl.trackIds.length !== 1 ? 's' : ''}</div>
+    <div class="pl-detail-date-wrap">
+      <label class="pl-detail-date-label">Date</label>
+      <input type="date" class="pl-detail-date" id="pl-detail-date" value="${escHtml(pl.date || '')}">
+    </div>
     <button class="pl-add-tracks-btn" id="pl-add-tracks-btn">+ Add Tracks</button>
   `;
   container.appendChild(header);
+
+  // Date change handler
+  container.querySelector('#pl-detail-date').addEventListener('change', e => {
+    pl.date = e.target.value || null;
+    LibraryManager.savePlaylist(pl).catch(err => console.warn('Playlist date save failed:', err));
+    // Update the row in the left pane if visible
+    const rowEl = document.querySelector(`.pl-row[data-pl-id="${pl.id}"]`);
+    if (rowEl) {
+      const dateEl = rowEl.querySelector('.pl-row-date');
+      if (pl.date) {
+        if (dateEl) {
+          dateEl.textContent = formatPlaylistDate(pl.date);
+        } else {
+          const newDateEl = document.createElement('div');
+          newDateEl.className = 'pl-row-date';
+          newDateEl.textContent = formatPlaylistDate(pl.date);
+          rowEl.querySelector('.pl-row-info').appendChild(newDateEl);
+        }
+      } else if (dateEl) {
+        dateEl.remove();
+      }
+    }
+  });
 
   // Track list
   const listEl = document.createElement('div');
@@ -962,10 +1093,15 @@ async function createNewPlaylist() {
     id: LibraryManager.genPlaylistId(),
     name: 'New Playlist',
     trackIds: [],
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    date: null
   };
   playlists.push(pl);
-  await LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+  playlistManualOrder.push(pl.id);
+  await Promise.all([
+    LibraryManager.savePlaylist(pl),
+    savePlaylistSortSettings()
+  ]).catch(e => console.warn('Playlist save failed:', e));
   selectedPlaylistId = pl.id;
   renderCurrentTab();
   // Start inline rename immediately
@@ -1025,6 +1161,8 @@ plCtxMenu.addEventListener('click', async e => {
     if (!yes) return;
     await LibraryManager.deletePlaylist(plCtxMenuId).catch(e => console.warn('Delete failed:', e));
     playlists = playlists.filter(p => p.id !== plCtxMenuId);
+    playlistManualOrder = playlistManualOrder.filter(id => id !== plCtxMenuId);
+    savePlaylistSortSettings();
     if (selectedPlaylistId === plCtxMenuId) selectedPlaylistId = null;
     if (activePlaylistId === plCtxMenuId) activePlaylistId = null;
     renderCurrentTab();
@@ -1070,10 +1208,15 @@ function showAddToPlaylistSubmenu(e, trackId) {
       id: LibraryManager.genPlaylistId(),
       name: 'New Playlist',
       trackIds: [trackId],
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      date: null
     };
     playlists.push(pl);
-    await LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+    playlistManualOrder.push(pl.id);
+    await Promise.all([
+      LibraryManager.savePlaylist(pl),
+      savePlaylistSortSettings()
+    ]).catch(e => console.warn('Playlist save failed:', e));
     selectedPlaylistId = pl.id;
     // Switch to playlists tab so user can rename
     document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active'));
@@ -1277,7 +1420,6 @@ const storedMetroVol = localStorage.getItem('metronomeVolume');
 if (storedMetroVol !== null) {
   document.getElementById('mm-vol').value = storedMetroVol;
   Metronome.setVolume(parseInt(storedMetroVol) / 100);
-  document.getElementById('mm-vol-val').textContent = storedMetroVol + '%';
 }
 
 function applyScale() {
@@ -1432,6 +1574,8 @@ trackList.addEventListener('click', e => {
   // Track row click -> select (File Explorer style), double-click -> play
   const row = e.target.closest('.track-row[data-id]');
   if (!row) {
+    // Clicks inside the playlists pane (date input, buttons, etc.) must not trigger re-render
+    if (e.target.closest('.playlists-container')) return;
     // Clicked empty space — deselect all
     selectedIds.clear();
     lastSelectedIdx = -1;
@@ -1654,22 +1798,9 @@ document.getElementById('mm-subdiv-select').addEventListener('change', function(
   localStorage.setItem('metronomeSubdiv', subdiv);
 });
 
-const mmVolVal = document.getElementById('mm-vol-val');
-let mmVolFadeTimer = null;
 document.getElementById('mm-vol').addEventListener('input', function() {
   Metronome.setVolume(this.value / 100);
   localStorage.setItem('metronomeVolume', this.value);
-  mmVolVal.textContent = this.value + '%';
-  mmVolVal.classList.add('visible');
-  if (mmVolFadeTimer) clearTimeout(mmVolFadeTimer);
-});
-document.getElementById('mm-vol').addEventListener('mouseup', function() {
-  if (mmVolFadeTimer) clearTimeout(mmVolFadeTimer);
-  mmVolFadeTimer = setTimeout(() => mmVolVal.classList.remove('visible'), 800);
-});
-document.getElementById('mm-vol').addEventListener('touchend', function() {
-  if (mmVolFadeTimer) clearTimeout(mmVolFadeTimer);
-  mmVolFadeTimer = setTimeout(() => mmVolVal.classList.remove('visible'), 800);
 });
 
 // ─── METRONOME FULL-PANEL BINDINGS ───────────────────────────

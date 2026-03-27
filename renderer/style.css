@@ -1174,21 +1174,8 @@
     filter: grayscale(1);
     opacity: 0.6;
   }
-  .mp-vol-group, .mm-vol-group { width: 100%; position: relative; }
+  .mp-vol-group, .mm-vol-group { width: 100%; }
   .mp-vol-group .mp-row, .mm-vol-group .mp-row { margin-bottom: 0; }
-  #mp-vol-val, #mm-vol-val {
-    position: absolute;
-    top: 100%;
-    left: 0; right: 0;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
-    font-size: 11px;
-    color: var(--text-secondary);
-    text-align: center;
-    margin-top: 3px;
-    opacity: 0;
-    transition: opacity 0.4s ease;
-  }
-  #mp-vol-val.visible, #mm-vol-val.visible { opacity: 1; transition: none; }
 
   .mp-row input[type=range] { flex: 1; }
 
