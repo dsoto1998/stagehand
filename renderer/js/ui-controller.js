@@ -1277,6 +1277,7 @@ const storedMetroVol = localStorage.getItem('metronomeVolume');
 if (storedMetroVol !== null) {
   document.getElementById('mm-vol').value = storedMetroVol;
   Metronome.setVolume(parseInt(storedMetroVol) / 100);
+  document.getElementById('mm-vol-val').textContent = storedMetroVol + '%';
 }
 
 function applyScale() {
@@ -1653,9 +1654,22 @@ document.getElementById('mm-subdiv-select').addEventListener('change', function(
   localStorage.setItem('metronomeSubdiv', subdiv);
 });
 
+const mmVolVal = document.getElementById('mm-vol-val');
+let mmVolFadeTimer = null;
 document.getElementById('mm-vol').addEventListener('input', function() {
   Metronome.setVolume(this.value / 100);
   localStorage.setItem('metronomeVolume', this.value);
+  mmVolVal.textContent = this.value + '%';
+  mmVolVal.classList.add('visible');
+  if (mmVolFadeTimer) clearTimeout(mmVolFadeTimer);
+});
+document.getElementById('mm-vol').addEventListener('mouseup', function() {
+  if (mmVolFadeTimer) clearTimeout(mmVolFadeTimer);
+  mmVolFadeTimer = setTimeout(() => mmVolVal.classList.remove('visible'), 800);
+});
+document.getElementById('mm-vol').addEventListener('touchend', function() {
+  if (mmVolFadeTimer) clearTimeout(mmVolFadeTimer);
+  mmVolFadeTimer = setTimeout(() => mmVolVal.classList.remove('visible'), 800);
 });
 
 // ─── METRONOME FULL-PANEL BINDINGS ───────────────────────────

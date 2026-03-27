@@ -14,42 +14,132 @@
     <div class="logo">Stage<span>hand</span></div>
     <div class="tagline">Rehearsal Tool v1.0</div>
     <div id="topbar-right">
-      <div id="topbar-status" style="font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--text-dim);letter-spacing:1px;">READY</div>
-      <div class="status-dot"></div>
+      <button id="settings-btn" title="Settings">☰</button>
+    </div>
+    <div id="settings-popup" class="hidden">
+      <div class="sp-section-label">Display</div>
+      <div class="sp-row">
+        <span class="sp-label">UI Scale</span>
+        <div class="sp-control">
+          <button class="sp-adj" id="scale-minus">−</button>
+          <span id="scale-val" class="sp-val">100%</span>
+          <button class="sp-adj" id="scale-plus">+</button>
+        </div>
+      </div>
+      <div class="sp-divider"></div>
+      <div class="sp-section-label">Metronome</div>
+      <div class="sp-row sp-col">
+        <span class="sp-label">Click Sounds</span>
+        <div class="click-sounds-grid">
+          <div class="click-sound-row">
+            <span class="click-type-label">Accent</span>
+            <span class="click-sound-name" data-type="accent">Default</span>
+            <button class="sp-btn-small load-click-btn" data-type="accent">Load…</button>
+            <button class="sp-btn-small clear-click-btn" data-type="accent" style="display:none">Clear</button>
+          </div>
+          <div class="click-sound-row">
+            <span class="click-type-label">Quarter</span>
+            <span class="click-sound-name" data-type="quarter">Default</span>
+            <button class="sp-btn-small load-click-btn" data-type="quarter">Load…</button>
+            <button class="sp-btn-small clear-click-btn" data-type="quarter" style="display:none">Clear</button>
+          </div>
+          <div class="click-sound-row">
+            <span class="click-type-label">Eighth</span>
+            <span class="click-sound-name" data-type="eighth">Default</span>
+            <button class="sp-btn-small load-click-btn" data-type="eighth">Load…</button>
+            <button class="sp-btn-small clear-click-btn" data-type="eighth" style="display:none">Clear</button>
+          </div>
+          <div class="click-sound-row">
+            <span class="click-type-label">16th / Trip</span>
+            <span class="click-sound-name" data-type="subdivision">Default</span>
+            <button class="sp-btn-small load-click-btn" data-type="subdivision">Load…</button>
+            <button class="sp-btn-small clear-click-btn" data-type="subdivision" style="display:none">Clear</button>
+          </div>
+          <input type="file" id="click-file-input" accept=".wav,.mp3,.ogg" style="display:none">
+        </div>
+      </div>
     </div>
   </div>
 
   <div id="body">
     <!-- SIDEBAR -->
     <div id="sidebar">
-      <div class="nav-section-label">Navigation</div>
+      <div id="sidebar-nav">
+        <div class="nav-section-label">Navigation</div>
 
-      <div class="nav-item active" data-panel="library">
-        <span class="nav-icon">◈</span>
-        <span>Library</span>
-        <span class="nav-badge" id="lib-badge">0</span>
-      </div>
-      <div class="nav-item" data-panel="metronome">
-        <span class="nav-icon">◎</span>
-        <span>Metronome</span>
-      </div>
-
-      <div class="nav-section-label" style="margin-top:8px;">Coming Soon</div>
-      <div class="nav-item" style="opacity:0.4;pointer-events:none;">
-        <span class="nav-icon">⬡</span>
-        <span>VST Plugins</span>
-      </div>
-      <div class="nav-item" style="opacity:0.4;pointer-events:none;">
-        <span class="nav-icon">⊕</span>
-        <span>Live Input</span>
-      </div>
-      <div class="nav-item" style="opacity:0.4;pointer-events:none;">
-        <span class="nav-icon">♩</span>
-        <span>Chord Charts</span>
+        <div class="nav-item active" data-panel="library">
+          <span class="nav-icon">◈</span>
+          <span>Library</span>
+          <span class="nav-badge" id="lib-badge">0</span>
+        </div>
+<div class="nav-section-label" style="margin-top:8px;">Coming Soon</div>
+        <div class="nav-item" style="opacity:0.4;pointer-events:none;">
+          <span class="nav-icon">⬡</span>
+          <span>VST Plugins</span>
+        </div>
+        <div class="nav-item" style="opacity:0.4;pointer-events:none;">
+          <span class="nav-icon">⊕</span>
+          <span>Live Input</span>
+        </div>
+        <div class="nav-item" style="opacity:0.4;pointer-events:none;">
+          <span class="nav-icon">♩</span>
+          <span>Chord Charts</span>
+        </div>
       </div>
 
       <div id="sidebar-bottom">
-        <div id="mp-track-name">—</div>
+        <!-- METRONOME MINIPLAYER -->
+        <div id="metro-mini">
+          <div class="mm-play-row">
+            <button id="mm-play-btn" class="mm-play" title="Start / Stop metronome">▶</button>
+          </div>
+          <div class="mm-bpm-section">
+            <button id="mm-bpm-minus" class="mm-adj" title="BPM −1">−</button>
+            <div class="mm-bpm-display-wrap">
+              <button id="mm-bpm-display" class="mm-bpm-display" title="Double-click to type BPM">
+                <span class="mm-bpm-num">120</span>
+              </button>
+              <input type="number" id="mm-bpm-inline" class="mm-bpm-inline" min="20" max="300" style="display:none">
+            </div>
+            <button id="mm-bpm-plus" class="mm-adj" title="BPM +1">+</button>
+            <button id="mm-tap-btn" class="mm-tap-btn" title="Tap tempo">TAP</button>
+          </div>
+          <div class="mm-vol-group">
+            <div class="mp-row mp-row-center">
+              <span class="mp-vol-icon">🔊</span>
+              <input type="range" id="mm-vol" min="0" max="100" value="80" title="Metronome volume">
+              <span class="mp-vol-icon" aria-hidden="true" style="visibility:hidden">🔊</span>
+            </div>
+            <div id="mm-vol-val">80%</div>
+          </div>
+          <div class="mm-subdiv-row">
+            <select id="mm-subdiv-select" title="Subdivision">
+              <option value="1">♩  Quarter (1/4)</option>
+              <option value="2">♪  Eighth (1/8)</option>
+              <option value="3">♪  Triplet</option>
+              <option value="4">𝅘𝅥𝅯  Sixteenth (1/16)</option>
+            </select>
+          </div>
+          <div class="mm-timesig-row">
+            <select id="mm-timesig-select" title="Time signature">
+              <option value="2/4">2/4</option>
+              <option value="3/4">3/4</option>
+              <option value="4/4" selected>4/4</option>
+              <option value="5/4">5/4</option>
+              <option value="6/8">6/8</option>
+              <option value="7/8">7/8</option>
+              <option value="12/8">12/8</option>
+              <option value="custom" disabled>Custom</option>
+            </select>
+          </div>
+          <div class="mm-accent-row">
+            <button id="mm-accent-btn" class="mm-accent-btn active" title="Toggle beat accents">Accent</button>
+          </div>
+        </div>
+        <div id="mp-track-info">
+          <div id="mp-track-name">—</div>
+          <div id="mp-track-sub">—</div>
+        </div>
         <div id="mp-scrub-bar" aria-label="Playback position">
           <div id="mp-scrub-fill"></div>
         </div>
@@ -59,15 +149,19 @@
           <button id="mp-play" title="Play / Pause" aria-label="Play">▶</button>
           <button id="mp-next" title="Next track" aria-label="Next track">⏭</button>
         </div>
-        <div class="mp-row">
-          <span class="mp-label">Transpose</span>
-          <input type="range" id="mp-semitones" min="-12" max="12" value="0">
-          <span id="mp-semitones-val" class="mp-val">0st</span>
+        <div class="mp-vol-group">
+          <div class="mp-row mp-row-center">
+            <span class="mp-vol-icon">🔊</span>
+            <input type="range" id="mp-vol" min="0" max="100" value="100">
+            <span class="mp-vol-icon" aria-hidden="true" style="visibility:hidden">🔊</span>
+          </div>
+          <div id="mp-vol-val">100%</div>
         </div>
-        <div class="mp-row">
-          <span class="mp-label">Master Vol</span>
-          <input type="range" id="mp-vol" min="0" max="100" value="100">
-          <span id="mp-vol-val" class="mp-val">100%</span>
+        <div class="mp-row mp-row-center mp-xpose-row">
+          <button class="xpose-reset" id="mp-xpose-reset" title="Reset transpose">↺</button>
+          <button class="xpose-btn" id="mp-xpose-dec">−</button>
+          <span id="mp-semitones-val" class="xpose-val">0st</span>
+          <button class="xpose-btn" id="mp-xpose-inc">+</button>
         </div>
       </div>
     </div>
@@ -80,18 +174,11 @@
         <div class="panel-header">
           <div class="panel-title">Library</div>
           <div class="panel-subtitle">// Audio Files</div>
-        </div>
-
-        <div id="drop-zone">
-          <div class="dz-icon">⊕</div>
-          <div class="dz-text">Drop Audio Files Here</div>
-          <div class="dz-sub">WAV · MP3 · FLAC · OGG — or click to browse</div>
-          <input type="file" id="file-input" accept=".wav,.mp3,.flac,.ogg,.opus" multiple>
-        </div>
-
-        <div class="library-toolbar">
-          <button class="btn btn-sm" id="import-btn">⊕ Import</button>
-          <span class="library-count" id="lib-count-label">0 tracks</span>
+          <div class="panel-header-actions">
+            <span class="library-count" id="lib-count-label">0 tracks</span>
+            <button class="btn btn-sm" id="import-btn">⊕ Import</button>
+            <input type="file" id="file-input" accept=".wav,.mp3,.flac,.ogg,.opus" multiple>
+          </div>
         </div>
 
         <div class="lib-tab-bar">
@@ -149,30 +236,37 @@
               <button class="subdiv-btn" data-subdiv="3" data-label="Triplet">♪♪♪<br><span style="font-size:10px">Trip</span></button>
               <button class="subdiv-btn" data-subdiv="4" data-label="Sixteenth"><span style="font-size:9px">𝅘𝅥𝅯</span><br><span style="font-size:10px">1/16</span></button>
             </div>
+            <div class="accent-toggle-row">
+              <button id="accent-toggle-btn" class="accent-toggle-btn active" title="Toggle accent on beat 1">Accent</button>
+            </div>
           </div>
 
-          <!-- Volume + Sound Card -->
-          <div class="metro-card">
-            <div class="metro-card-title">Sound</div>
-            <div class="ctrl-label" style="margin-bottom:6px;">
-              <span>Volume</span>
-              <span class="ctrl-val" id="metro-vol-val">80%</span>
+          <!-- Time Signature Card -->
+          <div class="metro-card" id="metro-timesig-card">
+            <div class="metro-card-title">Time Signature</div>
+            <div class="timesig-presets">
+              <button class="timesig-btn" data-num="2" data-den="4">2/4</button>
+              <button class="timesig-btn" data-num="3" data-den="4">3/4</button>
+              <button class="timesig-btn active" data-num="4" data-den="4">4/4</button>
+              <button class="timesig-btn" data-num="5" data-den="4">5/4</button>
+              <button class="timesig-btn" data-num="6" data-den="8">6/8</button>
+              <button class="timesig-btn" data-num="7" data-den="8">7/8</button>
+              <button class="timesig-btn" data-num="12" data-den="8">12/8</button>
             </div>
-            <div class="vol-row" style="margin-bottom:14px;">
-              <span class="vol-icon">▸</span>
-              <input type="range" id="metro-vol" min="0" max="100" value="80">
+            <div class="timesig-custom-row">
+              <input type="number" id="timesig-num" min="2" max="16" value="4" class="timesig-input" title="Beats per bar">
+              <span class="timesig-slash">/</span>
+              <select id="timesig-den" class="timesig-den-select" title="Beat unit">
+                <option value="4">4</option>
+                <option value="8">8</option>
+              </select>
+              <button id="timesig-apply-btn" class="timesig-apply">Apply</button>
             </div>
-            <div class="metro-card-title">Click Sound</div>
-            <div class="custom-sound-area">
-              <span class="custom-sound-name" id="click-sound-name">Default (Synthesized)</span>
-              <button class="btn btn-sm" id="load-click-btn">Load</button>
-              <button class="btn btn-sm btn-danger" id="clear-click-btn" style="display:none">✕</button>
-            </div>
-            <input type="file" id="click-file-input" accept=".wav,.mp3,.ogg" style="display:none">
           </div>
 
         </div>
       </div>
+
 
     </div><!-- /main -->
   </div><!-- /body -->
@@ -194,9 +288,20 @@
 </div>
 
 <div id="ctx-menu">
+  <div class="ctx-item" data-action="play">Play</div>
   <div class="ctx-item" data-action="rename">Rename</div>
   <div class="ctx-item ctx-danger" data-action="delete">Delete</div>
+  <div class="ctx-separator"></div>
+  <div class="ctx-item" data-action="select-all">Select All</div>
+  <div class="ctx-item" data-action="add-to-playlist">Add to Playlist ▶</div>
 </div>
+
+<div id="pl-ctx-menu">
+  <div class="ctx-item" data-pl-action="rename">Rename</div>
+  <div class="ctx-item ctx-danger" data-pl-action="delete">Delete</div>
+</div>
+
+<div id="pl-submenu"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
 <script type="module" src="./js/ui-controller.js"></script>
