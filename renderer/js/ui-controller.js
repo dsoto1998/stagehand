@@ -2536,6 +2536,8 @@ document.getElementById('tap-btn').addEventListener('click', () => {
   }
 
   syncMetroMini();
+  document.getElementById('track-list').innerHTML =
+    '<div class="lib-empty-state"><div class="es-icon">⟳</div><div class="es-text">Loading Library…</div></div>';
   await loadLibrary();
   // Restore persisted click sounds
   const ctx = resume();
