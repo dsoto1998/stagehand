@@ -166,6 +166,7 @@ function showInfoModal(trackIds) {
     document.getElementById('info-ok').removeEventListener('click', onSave);
     document.getElementById('info-cancel').removeEventListener('click', onCancel);
     overlay.removeEventListener('click', onOverlayClick);
+    overlay.removeEventListener('keydown', onKey);
   }
   async function onSave() {
     cleanup();
@@ -194,10 +195,12 @@ function showInfoModal(trackIds) {
   }
   function onCancel() { cleanup(); }
   function onOverlayClick(e) { if (e.target === overlay) cleanup(); }
+  function onKey(e) { if (e.key === 'Enter') { e.preventDefault(); onSave(); } }
 
   document.getElementById('info-ok').addEventListener('click', onSave);
   document.getElementById('info-cancel').addEventListener('click', onCancel);
   overlay.addEventListener('click', onOverlayClick);
+  overlay.addEventListener('keydown', onKey);
 }
 
 function escHtml(s) {
@@ -941,7 +944,7 @@ function renderAlbumDrillDown(albumName) {
     return (a.name || '').localeCompare(b.name || '');
   });
 
-  renderVirtualList(listContainer, albumTracks, buildTrackRow);
+  renderVirtualList(listContainer, albumTracks, buildArtistDrillTrackRow);
 
   let drillRafPending = false;
   listContainer.addEventListener('scroll', () => {
@@ -949,7 +952,7 @@ function renderAlbumDrillDown(albumName) {
     drillRafPending = true;
     requestAnimationFrame(() => {
       drillRafPending = false;
-      renderVirtualList(listContainer, albumTracks, buildTrackRow);
+      renderVirtualList(listContainer, albumTracks, buildArtistDrillTrackRow);
     });
   });
 }
