@@ -1,6 +1,6 @@
 // ─── INDEXEDDB LIBRARY ───────────────────────────────────────
 const DB_NAME = 'stagehand_db';
-const DB_VER  = 2;
+const DB_VER  = 5;
 const STORE   = 'tracks';
 let db = null;
 
@@ -18,6 +18,12 @@ function open() {
       // existing records have undefined; read-time || '' / || 0 handles them.
       if (!d.objectStoreNames.contains('playlists')) {
         d.createObjectStore('playlists', { keyPath: 'id' });
+      }
+      if (!d.objectStoreNames.contains('settings')) {
+        d.createObjectStore('settings', { keyPath: 'key' });
+      }
+      if (!d.objectStoreNames.contains('helix_presets')) {
+        d.createObjectStore('helix_presets', { keyPath: 'id' });
       }
     };
     req.onsuccess = e => { db = e.target.result; res(db); };
@@ -71,4 +77,62 @@ export function remove(id) {
 
 export function genId() {
   return 'trk_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+}
+
+export function genPlaylistId() {
+  return 'pl_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
+}
+
+export function getPlaylists() {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('playlists', 'readonly');
+    const req = tx.objectStore('playlists').getAll();
+    req.onsuccess = () => res(req.result);
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function savePlaylist(playlist) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('playlists', 'readwrite');
+    const req = tx.objectStore('playlists').put(playlist);
+    req.onsuccess = () => res();
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function deletePlaylist(id) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('playlists', 'readwrite');
+    const req = tx.objectStore('playlists').delete(id);
+    req.onsuccess = () => res();
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function getSetting(key) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('settings', 'readonly');
+    const req = tx.objectStore('settings').get(key);
+    req.onsuccess = () => res(req.result || null);
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function putSetting(record) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('settings', 'readwrite');
+    const req = tx.objectStore('settings').put(record);
+    req.onsuccess = () => res();
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function deleteSetting(key) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('settings', 'readwrite');
+    const req = tx.objectStore('settings').delete(key);
+    req.onsuccess = () => res();
+    req.onerror   = e => rej(e.target.error);
+  }));
 }

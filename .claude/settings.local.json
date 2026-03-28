@@ -1,0 +1,57 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" commit \"docs: initialize project\" --files .planning/PROJECT.md)",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" config-new-project '{\"\"mode\"\":\"\"yolo\"\",\"\"granularity\"\":\"\"standard\"\",\"\"parallelization\"\":true,\"\"commit_docs\"\":true,\"\"model_profile\"\":\"\"balanced\"\",\"\"workflow\"\":{\"\"research\"\":false,\"\"plan_check\"\":true,\"\"verifier\"\":true,\"\"nyquist_validation\"\":false,\"\"auto_advance\"\":false,\"\"ui_phase\"\":true,\"\"ui_safety_gate\"\":true,\"\"research_before_questions\"\":false,\"\"skip_discuss\"\":false}}')",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" commit \"chore: add project config\" --files .planning/config.json)",
+      "Skill(gsd:plan-phase)",
+      "Skill(gsd:discuss-phase)",
+      "WebSearch",
+      "Bash(\"C:\\\\Users\\\\david\\\\Documents\\\\Claude Projects\\\\Stagehand\\\\stagehand\\\\.planning\\\\phases\\\\02-rubber-band-integration\\\\02-02-SUMMARY.md\":*)",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" commit \"test\\(02-02\\): human verification approved — pitch quality confirmed at ±7 semitones\" --files \".planning/phases/02-rubber-band-integration/02-02-SUMMARY.md\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" commit \"docs\\(phase-02\\): complete phase execution\" --files \".planning/ROADMAP.md\" \".planning/STATE.md\" \".planning/phases/02-rubber-band-integration/02-VERIFICATION.md\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" commit \"docs\\(phase-02\\): evolve PROJECT.md after phase completion\" --files \".planning/PROJECT.md\")",
+      "Skill(gsd:fast)",
+      "Skill(gsd:quick)",
+      "Bash(npm view:*)",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" init plan-phase \"03-transport-metadata-foundation\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" frontmatter validate \".planning/phases/03-transport-metadata-foundation/03-01-PLAN.md\" --schema plan)",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" frontmatter validate \".planning/phases/03-transport-metadata-foundation/03-02-PLAN.md\" --schema plan)",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" verify plan-structure \".planning/phases/03-transport-metadata-foundation/03-01-PLAN.md\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" verify plan-structure \".planning/phases/03-transport-metadata-foundation/03-02-PLAN.md\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" commit \"docs\\(03\\): create phase plan — transport scrub bar + metadata parsing\" --files \".planning/phases/03-transport-metadata-foundation/03-01-PLAN.md\" \".planning/phases/03-transport-metadata-foundation/03-02-PLAN.md\" \".planning/ROADMAP.md\")",
+      "Bash(ls \"C:/Users/david/Documents/Claude Projects/Stagehand/stagehand/.planning/phases/04-library-tabs-virtual-scrolling/\"*VALIDATION*)",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" state advance-plan)",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" state update-progress)",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" state record-metric --phase \"04-library-tabs-virtual-scrolling\" --plan \"01\" --duration \"90\" --tasks \"7\" --files \"4\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" state add-decision --phase \"04-library-tabs-virtual-scrolling\" --summary \"playTrack\\(\\) always resets pauseOffset=0 — never resumes previous position on fresh play\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" state add-decision --phase \"04-library-tabs-virtual-scrolling\" --summary \"Transpose exposed via context menu +/- buttons; menu stays open \\(stopPropagation\\) for rapid multi-step changes\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" state add-decision --phase \"04-library-tabs-virtual-scrolling\" --summary \"Fast import pattern: push track to list and render immediately, then async IDB save + decode + ID3 tag parse\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" state record-session --stopped-at \"Completed 04-01-PLAN.md — ready for 04-02\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" roadmap update-plan-progress \"04\")",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" requirements mark-complete LIB-01 LIB-04)",
+      "Bash(git -C \"C:/Users/david/Documents/Claude Projects/Stagehand/stagehand\" status --short .planning/)",
+      "Bash(node \"$HOME/.claude/get-shit-done/bin/gsd-tools.cjs\" verify key-links .planning/phases/04-library-tabs-virtual-scrolling/04-02-PLAN.md)",
+      "Bash(grep -c \"''Rajdhani''\\\\|''JetBrains Mono''\\\\|''Barlow Condensed''\" style.css)",
+      "Bash(sed -i \"s/''Rajdhani''/''Bebas Neue''/g; s/''JetBrains Mono''/''Bebas Neue''/g; s/''Barlow Condensed''/''Bebas Neue''/g\" style.css)",
+      "Bash(grep -c \"''Bebas Neue''\" style.css)",
+      "Bash(cd:*)",
+      "Bash(node:*)"
+    ],
+    "defaultMode": "bypassPermissions"
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ const cmd=(JSON.parse(d).tool_input||{}).command||''; if(/git commit|gsd-tools.*commit/.test(cmd)){ const {execSync}=require('child_process'); try{ execSync('git push origin main', {cwd:'C:/Users/david/Documents/Claude Projects/Stagehand/stagehand',stdio:'inherit'}); }catch(e){} } });\"",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
