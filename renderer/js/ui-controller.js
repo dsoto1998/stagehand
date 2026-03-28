@@ -111,6 +111,95 @@ function promptChoice(title, msg, okLabel, altLabel) {
   });
 }
 
+// ─── INFO MODAL ───────────────────────────────────────────────
+function showInfoModal(trackIds) {
+  const selected = trackIds.map(id => tracks.find(t => t.id === id)).filter(Boolean);
+  if (!selected.length) return;
+
+  const isSingle = selected.length === 1;
+  const overlay  = document.getElementById('info-overlay');
+  const titleEl  = document.getElementById('info-title');
+  const rowName  = document.getElementById('info-row-name');
+  const readonly = document.getElementById('info-readonly');
+  const nameIn   = document.getElementById('info-name');
+  const artistIn = document.getElementById('info-artist');
+  const albumIn  = document.getElementById('info-album');
+  const trackIn  = document.getElementById('info-trackNum');
+
+  titleEl.textContent = isSingle ? 'Song Info' : `Info — ${selected.length} Songs`;
+  rowName.style.display  = isSingle ? '' : 'none';
+  readonly.style.display = isSingle ? '' : 'none';
+
+  if (isSingle) {
+    const t = selected[0];
+    nameIn.value   = t.name   || '';
+    artistIn.value = t.artist || '';
+    albumIn.value  = t.album  || '';
+    trackIn.value  = t.trackNumber || '';
+    // read-only fields
+    document.getElementById('info-format').textContent = t.format || '—';
+    document.getElementById('info-dur').textContent    = t.duration ? formatTime(t.duration) : '—';
+    document.getElementById('info-size').textContent   = t.size ? formatSize(t.size) : '—';
+    document.getElementById('info-added').textContent  = t.addedAt ? new Date(t.addedAt).toLocaleDateString() : '—';
+    artistIn.placeholder = '';
+    albumIn.placeholder  = '';
+    trackIn.placeholder  = '';
+  } else {
+    nameIn.value = '';
+    // For each shared field: pre-fill if all tracks match, else blank + placeholder
+    const allArtists = [...new Set(selected.map(t => t.artist || ''))];
+    const allAlbums  = [...new Set(selected.map(t => t.album  || ''))];
+    const allNums    = [...new Set(selected.map(t => t.trackNumber || 0))];
+    artistIn.value       = allArtists.length === 1 ? allArtists[0] : '';
+    albumIn.value        = allAlbums.length  === 1 ? allAlbums[0]  : '';
+    trackIn.value        = allNums.length    === 1 ? (allNums[0] || '') : '';
+    artistIn.placeholder = allArtists.length > 1 ? 'Multiple Values' : '';
+    albumIn.placeholder  = allAlbums.length  > 1 ? 'Multiple Values' : '';
+    trackIn.placeholder  = allNums.length    > 1 ? '—'               : '';
+  }
+
+  overlay.classList.add('show');
+  (isSingle ? nameIn : artistIn).focus();
+
+  function cleanup() {
+    overlay.classList.remove('show');
+    document.getElementById('info-ok').removeEventListener('click', onSave);
+    document.getElementById('info-cancel').removeEventListener('click', onCancel);
+    overlay.removeEventListener('click', onOverlayClick);
+  }
+  async function onSave() {
+    cleanup();
+    for (const t of selected) {
+      const updates = { id: t.id };
+      if (isSingle) {
+        const n = nameIn.value.trim();
+        if (n) updates.name = n;
+      }
+      // For bulk: only apply if user typed something (non-empty = override all)
+      const a = artistIn.value.trim();
+      const b = albumIn.value.trim();
+      const n = parseInt(trackIn.value, 10);
+      if (a !== '' || isSingle) updates.artist = a;
+      if (b !== '' || isSingle) updates.album  = b;
+      if (!isNaN(n) && trackIn.value.trim() !== '') updates.trackNumber = n;
+      Object.assign(t, updates);
+      await LibraryManager.saveMeta(updates);
+    }
+    renderCurrentTab();
+    if (selected.some(t => t.id === currentPlayingId)) {
+      const pt = tracks.find(t => t.id === currentPlayingId);
+      if (pt) showMiniplayer(pt.id);
+    }
+    notify(isSingle ? 'Info saved' : `Updated ${selected.length} tracks`, '');
+  }
+  function onCancel() { cleanup(); }
+  function onOverlayClick(e) { if (e.target === overlay) cleanup(); }
+
+  document.getElementById('info-ok').addEventListener('click', onSave);
+  document.getElementById('info-cancel').addEventListener('click', onCancel);
+  overlay.addEventListener('click', onOverlayClick);
+}
+
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -2058,7 +2147,7 @@ function showCtxMenu(e, trackId, plContext = null) {
   ctxMenu.querySelector('[data-action="remove-from-playlist"]')
     .classList.toggle('ctx-hidden', !plContext);
   const x = Math.min(e.clientX, window.innerWidth - 160);
-  const y = Math.min(e.clientY, window.innerHeight - 130);
+  const y = Math.min(e.clientY, window.innerHeight - 160);
   ctxMenu.style.left = x + 'px';
   ctxMenu.style.top  = y + 'px';
   ctxMenu.classList.add('show');
@@ -2081,6 +2170,9 @@ ctxMenu.addEventListener('click', e => {
   ctxMenu.classList.remove('show');
   if (action === 'play') {
     playTrack(ctxMenuTrackId);
+  } else if (action === 'info') {
+    const ids = selectedIds.size > 0 ? [...selectedIds] : [ctxMenuTrackId];
+    showInfoModal(ids);
   } else if (action === 'rename') {
     startRenameById(ctxMenuTrackId);
   } else if (action === 'delete') {

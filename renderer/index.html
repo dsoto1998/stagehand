@@ -288,8 +288,59 @@
   </div>
 </div>
 
+<!-- Info dialog -->
+<div id="info-overlay">
+  <div id="info-box">
+    <div class="info-header" id="info-title">Song Info</div>
+    <div id="info-body">
+      <div class="info-fields">
+        <div class="info-row" id="info-row-name">
+          <label class="info-label">Title</label>
+          <input class="info-input" type="text" id="info-name" />
+        </div>
+        <div class="info-row">
+          <label class="info-label">Artist</label>
+          <input class="info-input" type="text" id="info-artist" placeholder="" />
+        </div>
+        <div class="info-row">
+          <label class="info-label">Album</label>
+          <input class="info-input" type="text" id="info-album" placeholder="" />
+        </div>
+        <div class="info-row">
+          <label class="info-label">Track #</label>
+          <input class="info-input info-input-sm" type="number" id="info-trackNum" min="0" max="999" />
+        </div>
+      </div>
+      <div id="info-readonly">
+        <div class="info-divider"></div>
+        <div class="info-row">
+          <label class="info-label">Format</label>
+          <span class="info-value" id="info-format"></span>
+        </div>
+        <div class="info-row">
+          <label class="info-label">Duration</label>
+          <span class="info-value" id="info-dur"></span>
+        </div>
+        <div class="info-row">
+          <label class="info-label">File size</label>
+          <span class="info-value" id="info-size"></span>
+        </div>
+        <div class="info-row">
+          <label class="info-label">Added</label>
+          <span class="info-value" id="info-added"></span>
+        </div>
+      </div>
+    </div>
+    <div class="info-actions">
+      <button class="btn" id="info-cancel">Cancel</button>
+      <button class="btn btn-accent" id="info-ok">Save</button>
+    </div>
+  </div>
+</div>
+
 <div id="ctx-menu">
   <div class="ctx-item" data-action="play">Play</div>
+  <div class="ctx-item" data-action="info">Info</div>
   <div class="ctx-item" data-action="rename">Rename</div>
   <div class="ctx-item ctx-danger ctx-hidden" data-action="remove-from-playlist">Remove from Playlist</div>
   <div class="ctx-item ctx-danger" data-action="delete">Delete from Library</div>
