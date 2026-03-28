@@ -220,6 +220,11 @@ function parseTrackNumber(raw) {
   return isNaN(n) ? 0 : n;
 }
 
+// Returns the first non-empty releaseDate found among a list of tracks
+function albumReleaseYear(trks) {
+  return (trks.find(t => t.releaseDate) || {}).releaseDate || '';
+}
+
 function readTags(file) {
   return new Promise(resolve => {
     if (typeof jsmediatags === 'undefined') { resolve({}); return; }
@@ -245,7 +250,8 @@ function showMiniplayer(trackId) {
   if (!track) return;
   currentPlayingId = trackId;
   document.getElementById('mp-track-name').textContent = track.name;
-  document.getElementById('mp-track-sub').textContent = (track.artist && track.album) ? track.artist + ' — ' + track.album : (track.artist || track.album || '—');
+  const mpAlbum = track.album ? (track.releaseDate ? `${track.album} (${track.releaseDate})` : track.album) : '';
+  document.getElementById('mp-track-sub').textContent = (track.artist && mpAlbum) ? track.artist + ' \u2014 ' + mpAlbum : (track.artist || mpAlbum || '—');
   const st = track.semitones || 0;
   const mpStVal = document.getElementById('mp-semitones-val');
   mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
@@ -577,7 +583,8 @@ function buildTrackRow(track) {
 
   const artist = track.artist || '';
   const album  = track.album  || '';
-  const sub    = [artist, album].filter(Boolean).join(' \u00B7 ');
+  const albumLabel = album && track.releaseDate ? `${album} (${track.releaseDate})` : album;
+  const sub    = [artist, albumLabel].filter(Boolean).join(' \u00B7 ');
   const dur    = track.duration ? formatTime(track.duration) : '--:--';
   const st     = track.semitones || 0;
   const stLabel = st > 0 ? `+${st}` : `${st}`;
@@ -678,11 +685,12 @@ function renderVirtualList(container, items, renderRowFn) {
 }
 
 // ─── ARTIST DRILL-DOWN ROW BUILDERS ──────────────────────────
-function buildAlbumSectionHeader(albumName, trackCount) {
+function buildAlbumSectionHeader(albumName, trackCount, year) {
   const el = document.createElement('div');
   el.className = 'album-section-header';
+  const nameLabel = year ? `${albumName} (${year})` : albumName;
   el.innerHTML = `
-    <div class="album-section-header-name">${escHtml(albumName)}</div>
+    <div class="album-section-header-name">${escHtml(nameLabel)}</div>
     <div class="album-section-header-count">${trackCount} track${trackCount !== 1 ? 's' : ''}</div>
   `;
   return el;
@@ -849,7 +857,7 @@ function renderArtistDrillDown(artistName) {
       if (na !== nb) return na - nb;
       return (a.name || '').localeCompare(b.name || '');
     });
-    listContainer.appendChild(buildAlbumSectionHeader(albumName, albumTracks.length));
+    listContainer.appendChild(buildAlbumSectionHeader(albumName, albumTracks.length, albumReleaseYear(albumTracks)));
     albumTracks.forEach(t => listContainer.appendChild(buildArtistDrillTrackRow(t)));
   });
 }
@@ -873,7 +881,7 @@ function getAlbumGroups() {
   return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 
-function buildAlbumRow(albumName, trackCount, artistNames) {
+function buildAlbumRow(albumName, trackCount, artistNames, year) {
   const row = document.createElement('div');
   row.className = 'album-row';
   row.dataset.album = albumName;
@@ -881,9 +889,10 @@ function buildAlbumRow(albumName, trackCount, artistNames) {
   const artistLine = artistNames.length > 0
     ? `<div class="album-row-artist">${escHtml(artistNames.join(' · '))}</div>`
     : '';
+  const nameLabel = year ? `${albumName} (${year})` : albumName;
   row.innerHTML = `
     <div class="album-row-info">
-      <div class="album-row-name">${escHtml(albumName)}</div>
+      <div class="album-row-name">${escHtml(nameLabel)}</div>
       ${artistLine}
     </div>
     <div class="album-row-count">${trackCount} track${trackCount !== 1 ? 's' : ''}</div>
@@ -907,9 +916,10 @@ function renderAlbumList() {
   const albumItems = groups.map(([name, trks]) => ({
     name,
     count: trks.length,
-    artists: [...new Set(trks.map(t => t.artist || '').filter(Boolean))]
+    artists: [...new Set(trks.map(t => t.artist || '').filter(Boolean))],
+    year: albumReleaseYear(trks)
   }));
-  renderVirtualList(trackList, albumItems, (item) => buildAlbumRow(item.name, item.count, item.artists));
+  renderVirtualList(trackList, albumItems, (item) => buildAlbumRow(item.name, item.count, item.artists, item.year));
 }
 
 function renderAlbumDrillDown(albumName) {
@@ -918,11 +928,13 @@ function renderAlbumDrillDown(albumName) {
   const entry = groups.find(([name]) => name === albumName);
   const albumTracks = entry ? entry[1] : [];
 
+  const drillYear = albumReleaseYear(albumTracks);
+  const drillTitle = drillYear ? `${albumName} (${drillYear})` : albumName;
   const header = document.createElement('div');
   header.className = 'artist-drill-header';
   header.innerHTML = `
     <button class="artist-back-btn">\u2190</button>
-    <div class="artist-drill-title">${escHtml(albumName)}</div>
+    <div class="artist-drill-title">${escHtml(drillTitle)}</div>
     <div class="artist-drill-count">${albumTracks.length} track${albumTracks.length !== 1 ? 's' : ''}</div>
   `;
 
@@ -1347,7 +1359,8 @@ function buildPlaylistTrackRow(track, idx, pl) {
 
   const artist = track.artist || '';
   const album  = track.album  || '';
-  const sub    = [artist, album].filter(Boolean).join(' \u00B7 ');
+  const albumLabel = album && track.releaseDate ? `${album} (${track.releaseDate})` : album;
+  const sub    = [artist, albumLabel].filter(Boolean).join(' \u00B7 ');
   const dur    = track.duration ? formatTime(track.duration) : '--:--';
   const st     = track.semitones || 0;
   const stLabel = st > 0 ? `+${st}` : `${st}`;
