@@ -124,7 +124,8 @@ function showInfoModal(trackIds) {
   const nameIn   = document.getElementById('info-name');
   const artistIn = document.getElementById('info-artist');
   const albumIn  = document.getElementById('info-album');
-  const trackIn  = document.getElementById('info-trackNum');
+  const trackIn       = document.getElementById('info-trackNum');
+  const releaseDateIn = document.getElementById('info-releaseDate');
 
   titleEl.textContent = isSingle ? 'Song Info' : `Info — ${selected.length} Songs`;
   rowName.style.display  = isSingle ? '' : 'none';
@@ -135,7 +136,8 @@ function showInfoModal(trackIds) {
     nameIn.value   = t.name   || '';
     artistIn.value = t.artist || '';
     albumIn.value  = t.album  || '';
-    trackIn.value  = t.trackNumber || '';
+    trackIn.value       = t.trackNumber || '';
+    releaseDateIn.value = t.releaseDate || '';
     // read-only fields
     document.getElementById('info-format').textContent = t.format || '—';
     document.getElementById('info-dur').textContent    = t.duration ? formatTime(t.duration) : '—';
@@ -150,12 +152,15 @@ function showInfoModal(trackIds) {
     const allArtists = [...new Set(selected.map(t => t.artist || ''))];
     const allAlbums  = [...new Set(selected.map(t => t.album  || ''))];
     const allNums    = [...new Set(selected.map(t => t.trackNumber || 0))];
-    artistIn.value       = allArtists.length === 1 ? allArtists[0] : '';
-    albumIn.value        = allAlbums.length  === 1 ? allAlbums[0]  : '';
-    trackIn.value        = allNums.length    === 1 ? (allNums[0] || '') : '';
-    artistIn.placeholder = allArtists.length > 1 ? 'Multiple Values' : '';
-    albumIn.placeholder  = allAlbums.length  > 1 ? 'Multiple Values' : '';
-    trackIn.placeholder  = allNums.length    > 1 ? '—'               : '';
+    const allDates   = [...new Set(selected.map(t => t.releaseDate || ''))];
+    artistIn.value        = allArtists.length === 1 ? allArtists[0] : '';
+    albumIn.value         = allAlbums.length  === 1 ? allAlbums[0]  : '';
+    trackIn.value         = allNums.length    === 1 ? (allNums[0] || '') : '';
+    releaseDateIn.value   = allDates.length   === 1 ? allDates[0]   : '';
+    artistIn.placeholder  = allArtists.length > 1 ? 'Multiple Values' : '';
+    albumIn.placeholder   = allAlbums.length  > 1 ? 'Multiple Values' : '';
+    trackIn.placeholder   = allNums.length    > 1 ? '—'               : '';
+    releaseDateIn.placeholder = allDates.length > 1 ? 'Multiple Values' : '';
   }
 
   overlay.classList.add('show');
@@ -180,9 +185,11 @@ function showInfoModal(trackIds) {
       const a = artistIn.value.trim();
       const b = albumIn.value.trim();
       const n = parseInt(trackIn.value, 10);
+      const d = releaseDateIn.value.trim();
       if (a !== '' || isSingle) updates.artist = a;
       if (b !== '' || isSingle) updates.album  = b;
       if (!isNaN(n) && trackIn.value.trim() !== '') updates.trackNumber = n;
+      if (d !== '' || isSingle) updates.releaseDate = d;
       Object.assign(t, updates);
       await LibraryManager.saveMeta(updates);
     }
@@ -433,7 +440,7 @@ mpScrubBar.addEventListener('mousedown', e => {
 
 
 // ─── LIBRARY STATE ───────────────────────────────────────────
-let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, duration, artist, album, title, trackNumber, addedAt}]
+let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, duration, artist, album, title, trackNumber, releaseDate, addedAt}]
 
 async function loadLibrary() {
   try {
@@ -1821,7 +1828,7 @@ async function importFiles(files) {
       format: ext.toUpperCase(),
       size: file.size,
       semitones: 0, volume: 1.0,
-      artist: '', album: '', title: '', trackNumber: 0,
+      artist: '', album: '', title: '', trackNumber: 0, releaseDate: '',
       duration: 0, arrayBuffer: null,
       addedAt: Date.now()
     };
@@ -1845,6 +1852,7 @@ async function importFiles(files) {
       track.album        = tags.album  || '';
       track.title        = tags.title  || '';
       track.trackNumber  = parseTrackNumber(tags.track);
+      track.releaseDate  = tags.year   || '';
       const abMem  = ab.slice(0); // keep live copy; ab will be transferred to IDB
       track.arrayBuffer = abMem;
 
