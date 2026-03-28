@@ -934,6 +934,13 @@ function renderAlbumDrillDown(albumName) {
   trackList.style.display = 'flex';
   trackList.style.flexDirection = 'column';
 
+  albumTracks.sort((a, b) => {
+    const na = a.trackNumber || 0;
+    const nb = b.trackNumber || 0;
+    if (na !== nb) return na - nb;
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
   renderVirtualList(listContainer, albumTracks, buildTrackRow);
 
   let drillRafPending = false;
