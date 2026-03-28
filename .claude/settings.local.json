@@ -40,18 +40,5 @@
     ],
     "defaultMode": "bypassPermissions"
   },
-  "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node -e \"let d=''; process.stdin.on('data',c=>d+=c); process.stdin.on('end',()=>{ const cmd=(JSON.parse(d).tool_input||{}).command||''; if(/git commit|gsd-tools.*commit/.test(cmd)){ const {execSync}=require('child_process'); try{ execSync('git push origin main', {cwd:'C:/Users/david/Documents/Claude Projects/Stagehand/stagehand',stdio:'inherit'}); }catch(e){} } });\"",
-            "async": true
-          }
-        ]
-      }
-    ]
-  }
+  "hooks": {}
 }
