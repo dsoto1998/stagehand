@@ -1028,6 +1028,7 @@
   .ctx-danger:hover { background: rgba(255,71,87,0.1); }
   .ctx-separator { height: 1px; background: var(--border); margin: 4px 0; }
   .ctx-disabled { opacity: 0.4; pointer-events: none; }
+  .ctx-hidden { display: none; }
 
   /* ── LIBRARY EMPTY STATE ─────────────────────────────── */
   .lib-empty-state {
@@ -1299,6 +1300,47 @@
   flex-shrink: 0;
 }
 
+/* ── ALBUM SECTION HEADERS (within artist drill-down) ── */
+.album-section-header {
+  display: flex;
+  align-items: center;
+  height: 32px;
+  padding: 0 12px;
+  background: var(--bg-active);
+  border-top: 2px solid var(--accent);
+  border-bottom: 1px solid var(--border-bright);
+  flex-shrink: 0;
+  gap: 8px;
+}
+.album-section-header-name {
+  flex: 1;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.album-section-header-count {
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+}
+
+/* ── TRACK NUMBER BADGE ──────────────────────────────── */
+.track-num {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-dim);
+  width: 22px;
+  text-align: right;
+  flex-shrink: 0;
+}
+
 /* ── ARTIST DRILL-DOWN HEADER ────────────────────────── */
 .artist-drill-header {
   display: flex;
@@ -1350,6 +1392,51 @@
   overflow-x: hidden;
   flex: 1;
   min-height: 0;
+}
+
+/* ── ALBUM ROWS ──────────────────────────────────────── */
+.album-row {
+  display: flex;
+  align-items: center;
+  height: 50px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--border);
+  padding: 0 12px;
+  cursor: pointer;
+  gap: 10px;
+  transition: background 0.1s;
+}
+.album-row:hover { background: var(--bg-hover); }
+
+.album-row-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  overflow: hidden;
+}
+.album-row-name {
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  font-size: 15px;
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.album-row-artist {
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+.album-row-count {
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-shrink: 0;
 }
 
 /* ── PLAYLISTS TAB ───────────────────────────────────── */
@@ -1613,25 +1700,6 @@
 .drag-handle:active { cursor: grabbing; }
 
 /* Remove-from-playlist button */
-.row-remove-pl {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  border: none;
-  background: none;
-  color: var(--text-dim);
-  font-size: 14px;
-  cursor: pointer;
-  opacity: 0;
-  transition: opacity 0.1s, color 0.1s;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-}
-.track-row:hover .row-remove-pl { opacity: 1; }
-.row-remove-pl:hover { color: var(--red); }
 
 /* Row number in playlist */
 .row-pl-num {
@@ -1648,6 +1716,36 @@
 .track-row.drag-below { box-shadow: inset 0 -2px 0 var(--accent); }
 .pl-row.drag-above { box-shadow: inset 0 2px 0 var(--accent); }
 .pl-row.drag-below { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* Library drag-to-playlist visual states */
+.lib-tab.drag-hover {
+  color: var(--accent);
+  position: relative;
+  overflow: hidden;
+}
+.lib-tab.drag-hover::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0;
+  height: 2px;
+  background: var(--accent);
+  animation: tab-drag-fill 1s linear forwards;
+}
+@keyframes tab-drag-fill {
+  from { width: 0% }
+  to   { width: 100% }
+}
+.pl-row.lib-drag-over {
+  background: var(--bg-hover);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.pl-empty-drop.lib-drag-over {
+  background: var(--accent-glow);
+  outline: 1px dashed var(--accent);
+  outline-offset: -2px;
+  color: var(--accent);
+}
 
 /* Empty right pane */
 .pl-empty-right {

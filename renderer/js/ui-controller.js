@@ -5,11 +5,13 @@ import { TrackPlayer, players } from './track-player.js';
 import { Metronome, TapTempo } from './metronome.js';
 import { renderWaveform } from './waveform.js';
 
+
 // ─── VIRTUAL SCROLL STATE ─────────────────────────────────────
 const ROW_H = 50;       // px — must match CSS .track-row height
 const OVERSCAN = 5;     // extra rows above/below viewport
-let activeTab = 'songs'; // 'songs' | 'artists' | 'playlists'
+let activeTab = 'songs'; // 'songs' | 'artists' | 'albums' | 'playlists'
 let currentArtistView = null; // null = artist list, string = drill-down artist name
+let currentAlbumView = null;  // null = album list, string = drill-down album name
 let renamingActive = false;   // guards scroll re-renders during inline rename
 
 // ─── PLAYLIST STATE ───────────────────────────────────────────
@@ -17,6 +19,8 @@ let playlists = [];            // cached from IDB
 let selectedPlaylistId = null; // which playlist is shown in right pane
 let activePlaylistId = null;   // playlist that launched current playback (for auto-next)
 let plDragSrcIndex = null;     // drag-to-reorder source index within playlist
+let plDragSrcPlaylistId = null; // source playlist ID for cross-playlist move
+let plDragSrcTrackId = null;    // track ID being dragged from a playlist
 let playlistSortMode = 'manual'; // 'manual' | 'name' | 'date'
 let playlistManualOrder = [];    // IDs array for manual sort order
 let plListDragSrcId = null;      // drag-to-reorder source ID within playlist list
@@ -25,6 +29,13 @@ let plListDragSrcId = null;      // drag-to-reorder source ID within playlist li
 let playlistEditMode = false;
 let playlistEditTargetId = null;
 let playlistEditSnapshot = [];   // copy of trackIds before any edits
+
+// ─── LIBRARY DRAG STATE ───────────────────────────────────────
+let libDragIds = null;      // Set<string> | null — IDs being dragged from library; null = no active drag
+let tabHoverTimer = null;   // timer handle for tab auto-switch
+let tabHoverTarget = null;  // data-tab value of currently hovered tab
+let plHoverTimer = null;    // timer handle for playlist row hover-to-open
+let plHoverTargetId = null; // playlist ID currently being hovered
 
 // ─── UTILITY ─────────────────────────────────────────────────
 function formatTime(sec) {
@@ -69,8 +80,45 @@ function confirm(title, msg) {
   });
 }
 
+// promptChoice: 3-button modal. Returns 'ok' | 'alt' | null (cancel).
+// okLabel uses btn-danger styling; altLabel uses plain btn styling.
+function promptChoice(title, msg, okLabel, altLabel) {
+  return new Promise(res => {
+    document.getElementById('conf-title').textContent = title;
+    document.getElementById('conf-msg').textContent = msg;
+    const overlay = document.getElementById('confirm-overlay');
+    const ok     = document.getElementById('conf-ok');
+    const alt    = document.getElementById('conf-alt');
+    const cancel = document.getElementById('conf-cancel');
+    ok.textContent  = okLabel;
+    alt.textContent = altLabel;
+    alt.style.display = '';
+    overlay.classList.add('show');
+    function cleanup(v) {
+      overlay.classList.remove('show');
+      alt.style.display = 'none';
+      ok.removeEventListener('click', onOk);
+      alt.removeEventListener('click', onAlt);
+      cancel.removeEventListener('click', onCancel);
+      res(v);
+    }
+    function onOk()     { cleanup('ok');  }
+    function onAlt()    { cleanup('alt'); }
+    function onCancel() { cleanup(null);  }
+    ok.addEventListener('click', onOk);
+    alt.addEventListener('click', onAlt);
+    cancel.addEventListener('click', onCancel);
+  });
+}
+
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function parseTrackNumber(raw) {
+  if (!raw) return 0;
+  const n = parseInt(String(raw).split('/')[0], 10);
+  return isNaN(n) ? 0 : n;
 }
 
 function readTags(file) {
@@ -187,6 +235,10 @@ function getAutoNextTrack(currentId) {
     const groups = getArtistGroups();
     const entry = groups.find(([name]) => name === currentArtistView);
     list = entry ? entry[1] : [];
+  } else if (activeTab === 'albums' && currentAlbumView !== null) {
+    const groups = getAlbumGroups();
+    const entry = groups.find(([name]) => name === currentAlbumView);
+    list = entry ? entry[1] : [];
   }
   if (list.length === 0) return null;
   const idx = list.findIndex(t => t.id === currentId);
@@ -289,7 +341,7 @@ mpScrubBar.addEventListener('mousedown', e => {
 
 
 // ─── LIBRARY STATE ───────────────────────────────────────────
-let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, duration, artist, album, title}]
+let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, duration, artist, album, title, trackNumber, addedAt}]
 
 async function loadLibrary() {
   try {
@@ -467,6 +519,22 @@ function buildTrackRow(track) {
       addBtn.title = 'Already in playlist';
     });
     row.appendChild(addBtn);
+  } else {
+    row.draggable = true;
+    row.addEventListener('dragstart', e => {
+      const ids = selectedIds.has(track.id) && selectedIds.size > 1
+        ? [...selectedIds]
+        : [track.id];
+      libDragIds = new Set(ids);
+      e.dataTransfer.effectAllowed = 'copy';
+      e.dataTransfer.setData('text/plain', ids.join(','));
+    });
+    row.addEventListener('dragend', () => {
+      libDragIds = null;
+      clearTimeout(tabHoverTimer); tabHoverTimer = null; tabHoverTarget = null;
+      clearTimeout(plHoverTimer); plHoverTimer = null; plHoverTargetId = null;
+      document.querySelectorAll('.lib-tab').forEach(t => t.classList.remove('drag-hover'));
+    });
   }
 
   return row;
@@ -508,6 +576,67 @@ function renderVirtualList(container, items, renderRowFn) {
     container.appendChild(renderRowFn(items[i], i));
   }
   container.appendChild(spacerBot);
+}
+
+// ─── ARTIST DRILL-DOWN ROW BUILDERS ──────────────────────────
+function buildAlbumSectionHeader(albumName, trackCount) {
+  const el = document.createElement('div');
+  el.className = 'album-section-header';
+  el.innerHTML = `
+    <div class="album-section-header-name">${escHtml(albumName)}</div>
+    <div class="album-section-header-count">${trackCount} track${trackCount !== 1 ? 's' : ''}</div>
+  `;
+  return el;
+}
+
+function buildArtistDrillTrackRow(track) {
+  const row = document.createElement('div');
+  row.className = 'track-row'
+    + (track.id === currentPlayingId ? ' playing' : '')
+    + (selectedIds.has(track.id) ? ' selected' : '');
+  row.dataset.id = track.id;
+  row.style.height = ROW_H + 'px';
+
+  const trackNum = track.trackNumber > 0 ? String(track.trackNumber) : '\u2014';
+  const dur      = track.duration ? formatTime(track.duration) : '--:--';
+  const st       = track.semitones || 0;
+  const stLabel  = st > 0 ? `+${st}` : `${st}`;
+
+  row.innerHTML = `
+    <div class="track-num">${escHtml(trackNum)}</div>
+    <div class="row-play-area">
+      <div class="row-play-indicator"></div>
+      <button class="row-play-btn" data-id="${escHtml(track.id)}">${track.id === currentPlayingId ? '⏸' : '▶'}</button>
+    </div>
+    <div class="row-info">
+      <div class="row-name">${escHtml(track.name)}</div>
+    </div>
+    <div class="row-xpose">
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose">↺</button>
+      <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
+      <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
+      <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
+    </div>
+    <div class="row-dur">${escHtml(dur)}</div>
+  `;
+
+  row.draggable = true;
+  row.addEventListener('dragstart', e => {
+    const ids = selectedIds.has(track.id) && selectedIds.size > 1
+      ? [...selectedIds]
+      : [track.id];
+    libDragIds = new Set(ids);
+    e.dataTransfer.effectAllowed = 'copy';
+    e.dataTransfer.setData('text/plain', ids.join(','));
+  });
+  row.addEventListener('dragend', () => {
+    libDragIds = null;
+    clearTimeout(tabHoverTimer); tabHoverTimer = null; tabHoverTarget = null;
+    clearTimeout(plHoverTimer);  plHoverTimer  = null; plHoverTargetId = null;
+    document.querySelectorAll('.lib-tab').forEach(t => t.classList.remove('drag-hover'));
+  });
+
+  return row;
 }
 
 // ─── ARTIST GROUPING ─────────────────────────────────────────
@@ -591,26 +720,38 @@ function renderArtistDrillDown(artistName) {
     return;
   }
 
-  // Sub-container for virtual list so header stays fixed at top
+  // Group by album, sort albums A→Z with Unknown Album last
+  const albumMap = new Map();
+  artistTracks.forEach(t => {
+    const key = (t.album && t.album.trim()) ? t.album.trim() : 'Unknown Album';
+    if (!albumMap.has(key)) albumMap.set(key, []);
+    albumMap.get(key).push(t);
+  });
+  const sortedAlbums = [...albumMap.entries()].sort((a, b) => {
+    if (a[0] === 'Unknown Album') return 1;
+    if (b[0] === 'Unknown Album') return -1;
+    return a[0].localeCompare(b[0]);
+  });
+
+  // Sub-container (non-virtual) so header stays fixed at top
   const listContainer = document.createElement('div');
   listContainer.className = 'artist-track-list';
   trackList.appendChild(listContainer);
 
-  // Make trackList flex so header + scrollable list stack
   trackList.style.display = 'flex';
   trackList.style.flexDirection = 'column';
 
-  renderVirtualList(listContainer, artistTracks, buildTrackRow);
-
-  // Scroll listener for the drill-down sub-container
-  let drillRafPending = false;
-  listContainer.addEventListener('scroll', () => {
-    if (drillRafPending) return;
-    drillRafPending = true;
-    requestAnimationFrame(() => {
-      drillRafPending = false;
-      renderVirtualList(listContainer, artistTracks, buildTrackRow);
+  // Render album sections
+  sortedAlbums.forEach(([albumName, albumTracks]) => {
+    // Sort tracks within album by trackNumber, then name
+    albumTracks.sort((a, b) => {
+      const na = a.trackNumber || 0;
+      const nb = b.trackNumber || 0;
+      if (na !== nb) return na - nb;
+      return (a.name || '').localeCompare(b.name || '');
     });
+    listContainer.appendChild(buildAlbumSectionHeader(albumName, albumTracks.length));
+    albumTracks.forEach(t => listContainer.appendChild(buildArtistDrillTrackRow(t)));
   });
 }
 
@@ -619,6 +760,109 @@ function renderArtistsTab() {
     renderArtistList();
   } else {
     renderArtistDrillDown(currentArtistView);
+  }
+}
+
+// ─── ALBUM GROUPING ──────────────────────────────────────────
+function getAlbumGroups() {
+  const map = new Map();
+  tracks.forEach(t => {
+    const key = (t.album && t.album.trim()) ? t.album.trim() : 'Unknown Album';
+    if (!map.has(key)) map.set(key, []);
+    map.get(key).push(t);
+  });
+  return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+}
+
+function buildAlbumRow(albumName, trackCount, artistNames) {
+  const row = document.createElement('div');
+  row.className = 'album-row';
+  row.dataset.album = albumName;
+  row.style.height = ROW_H + 'px';
+  const artistLine = artistNames.length > 0
+    ? `<div class="album-row-artist">${escHtml(artistNames.join(' · '))}</div>`
+    : '';
+  row.innerHTML = `
+    <div class="album-row-info">
+      <div class="album-row-name">${escHtml(albumName)}</div>
+      ${artistLine}
+    </div>
+    <div class="album-row-count">${trackCount} track${trackCount !== 1 ? 's' : ''}</div>
+  `;
+  return row;
+}
+
+function renderAlbumList() {
+  const trackList = document.getElementById('track-list');
+  const groups = getAlbumGroups();
+
+  if (groups.length === 0) {
+    trackList.innerHTML = `<div class="lib-empty-state">
+      <div class="es-icon">\u25C8</div>
+      <div class="es-text">No albums</div>
+      <div class="es-sub">Import tracks with album tags</div>
+    </div>`;
+    return;
+  }
+
+  const albumItems = groups.map(([name, trks]) => ({
+    name,
+    count: trks.length,
+    artists: [...new Set(trks.map(t => t.artist || '').filter(Boolean))]
+  }));
+  renderVirtualList(trackList, albumItems, (item) => buildAlbumRow(item.name, item.count, item.artists));
+}
+
+function renderAlbumDrillDown(albumName) {
+  const trackList = document.getElementById('track-list');
+  const groups = getAlbumGroups();
+  const entry = groups.find(([name]) => name === albumName);
+  const albumTracks = entry ? entry[1] : [];
+
+  const header = document.createElement('div');
+  header.className = 'artist-drill-header';
+  header.innerHTML = `
+    <button class="artist-back-btn">\u2190</button>
+    <div class="artist-drill-title">${escHtml(albumName)}</div>
+    <div class="artist-drill-count">${albumTracks.length} track${albumTracks.length !== 1 ? 's' : ''}</div>
+  `;
+
+  trackList.innerHTML = '';
+  trackList.appendChild(header);
+
+  if (albumTracks.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'lib-empty-state';
+    empty.innerHTML = `<div class="es-text">No tracks</div>`;
+    trackList.appendChild(empty);
+    return;
+  }
+
+  const listContainer = document.createElement('div');
+  listContainer.className = 'artist-track-list';
+  trackList.appendChild(listContainer);
+
+  trackList.style.display = 'flex';
+  trackList.style.flexDirection = 'column';
+
+  renderVirtualList(listContainer, albumTracks, buildTrackRow);
+
+  let drillRafPending = false;
+  listContainer.addEventListener('scroll', () => {
+    if (drillRafPending) return;
+    drillRafPending = true;
+    requestAnimationFrame(() => {
+      drillRafPending = false;
+      renderVirtualList(listContainer, albumTracks, buildTrackRow);
+    });
+  });
+}
+
+function renderAlbumsTab() {
+  if (currentAlbumView === null) {
+    renderAlbumList();
+  } else {
+    renderAlbumDrillDown(currentAlbumView);
   }
 }
 
@@ -781,13 +1025,17 @@ function buildPlaylistRow(pl) {
       e.dataTransfer.effectAllowed = 'move';
     });
     row.addEventListener('dragover', e => {
+      if (!plListDragSrcId) return;
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       row.classList.remove('drag-above', 'drag-below');
       const rect = row.getBoundingClientRect();
       row.classList.add(e.clientY < rect.top + rect.height / 2 ? 'drag-above' : 'drag-below');
     });
-    row.addEventListener('dragleave', () => row.classList.remove('drag-above', 'drag-below'));
+    row.addEventListener('dragleave', () => {
+      if (!plListDragSrcId) return;
+      row.classList.remove('drag-above', 'drag-below');
+    });
     row.addEventListener('drop', e => {
       e.preventDefault();
       row.classList.remove('drag-above', 'drag-below');
@@ -809,6 +1057,57 @@ function buildPlaylistRow(pl) {
       document.querySelectorAll('.pl-row').forEach(r => r.classList.remove('drag-above', 'drag-below'));
     });
   }
+
+  // Library-to-playlist drop OR cross-playlist move
+  row.addEventListener('dragover', e => {
+    const isCrossPlaylist = plDragSrcPlaylistId !== null && plDragSrcPlaylistId !== pl.id;
+    if (!libDragIds && !isCrossPlaylist) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = libDragIds ? 'copy' : 'move';
+    row.classList.add('lib-drag-over');
+    // Hover-to-open: select this playlist after 1s if it isn't already open
+    if (plHoverTargetId !== pl.id) {
+      plHoverTargetId = pl.id;
+      clearTimeout(plHoverTimer);
+      plHoverTimer = setTimeout(() => {
+        plHoverTargetId = null; plHoverTimer = null;
+        if (selectedPlaylistId !== pl.id) {
+          selectedPlaylistId = pl.id;
+          renderCurrentTab();
+        }
+      }, 1000);
+    }
+  });
+  row.addEventListener('dragleave', () => {
+    row.classList.remove('lib-drag-over');
+    if (plHoverTargetId === pl.id) {
+      clearTimeout(plHoverTimer); plHoverTimer = null; plHoverTargetId = null;
+    }
+  });
+  row.addEventListener('drop', e => {
+    const isCrossPlaylist = plDragSrcPlaylistId !== null && plDragSrcPlaylistId !== pl.id;
+    if (!libDragIds && !isCrossPlaylist) return;
+    e.preventDefault();
+    row.classList.remove('lib-drag-over');
+    const targetPl = playlists.find(p => p.id === pl.id);
+    if (!targetPl) return;
+    if (isCrossPlaylist) {
+      const srcPl = playlists.find(p => p.id === plDragSrcPlaylistId);
+      if (!srcPl) return;
+      const trackId = plDragSrcTrackId;
+      srcPl.trackIds = srcPl.trackIds.filter(id => id !== trackId);
+      LibraryManager.savePlaylist(srcPl).catch(err => console.warn('Playlist save failed:', err));
+      if (!targetPl.trackIds.includes(trackId)) {
+        targetPl.trackIds.push(trackId);
+        LibraryManager.savePlaylist(targetPl).catch(err => console.warn('Playlist save failed:', err));
+      }
+      renderCurrentTab();
+      const track = tracks.find(t => t.id === trackId);
+      notify(`Moved "${track?.name || 'track'}" to "${targetPl.name}"`);
+    } else {
+      performLibraryDrop(targetPl, targetPl.trackIds.length);
+    }
+  });
 
   return row;
 }
@@ -857,19 +1156,79 @@ function renderPlaylistDetail(container, pl) {
   listEl.id = 'pl-track-list';
 
   if (pl.trackIds.length === 0) {
-    listEl.innerHTML = `<div class="lib-empty-state"><div class="es-text">No tracks yet</div><div class="es-sub">Right-click any track → Add to Playlist</div></div>`;
+    const emptyEl = document.createElement('div');
+    emptyEl.className = 'lib-empty-state pl-empty-drop';
+    emptyEl.innerHTML = `<div class="es-text">No tracks yet</div><div class="es-sub">Drag songs here, or right-click → Add to Playlist</div>`;
+    emptyEl.addEventListener('dragover', e => {
+      if (!libDragIds) return;
+      e.preventDefault(); e.dataTransfer.dropEffect = 'copy';
+      emptyEl.classList.add('lib-drag-over');
+    });
+    emptyEl.addEventListener('dragleave', () => emptyEl.classList.remove('lib-drag-over'));
+    emptyEl.addEventListener('drop', e => {
+      if (!libDragIds) return;
+      e.preventDefault(); emptyEl.classList.remove('lib-drag-over');
+      performLibraryDrop(pl, 0);
+    });
+    listEl.appendChild(emptyEl);
   } else {
     pl.trackIds.forEach((tid, idx) => {
       const track = tracks.find(t => t.id === tid);
       if (track) listEl.appendChild(buildPlaylistTrackRow(track, idx, pl));
     });
   }
+
+  // Container-level drop: catches drops in empty space below tracks
+  listEl.addEventListener('dragover', e => {
+    if (!libDragIds && plDragSrcIndex === null) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = libDragIds ? 'copy' : 'move';
+  });
+  listEl.addEventListener('drop', e => {
+    if (!libDragIds && plDragSrcIndex === null) return;
+    e.preventDefault();
+    if (libDragIds) {
+      performLibraryDrop(pl, pl.trackIds.length);
+    } else {
+      // Reorder: move dragged track to end
+      const srcIdx = plDragSrcIndex;
+      if (srcIdx === null || srcIdx === pl.trackIds.length - 1) return;
+      const newIds = [...pl.trackIds];
+      const [moved] = newIds.splice(srcIdx, 1);
+      newIds.push(moved);
+      pl.trackIds = newIds;
+      LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+      renderCurrentTab();
+    }
+  });
+
   container.appendChild(listEl);
 
   // Add Tracks button
   container.querySelector('#pl-add-tracks-btn').addEventListener('click', () => {
     enterPlaylistEditMode(pl);
   });
+}
+
+function performLibraryDrop(pl, insertIdx) {
+  const idsToAdd = [...libDragIds].filter(id => !pl.trackIds.includes(id));
+  const skipped = libDragIds.size - idsToAdd.length;
+  if (idsToAdd.length === 0) {
+    notify(`Already in "${pl.name}"`); return;
+  }
+  pl.trackIds.splice(insertIdx, 0, ...idsToAdd);
+  LibraryManager.savePlaylist(pl).catch(err => console.warn('Playlist save failed:', err));
+  if (selectedPlaylistId === pl.id && activeTab === 'playlists') {
+    renderCurrentTab();
+  } else {
+    const countEl = document.querySelector(`.pl-row[data-pl-id="${pl.id}"] .pl-row-count`);
+    if (countEl) countEl.textContent = pl.trackIds.length;
+  }
+  const added = idsToAdd.length;
+  const msg = added === 1
+    ? `Added to "${pl.name}"`
+    : `Added ${added} tracks to "${pl.name}"${skipped > 0 ? ` (${skipped} skipped)` : ''}`;
+  notify(msg);
 }
 
 function buildPlaylistTrackRow(track, idx, pl) {
@@ -905,17 +1264,19 @@ function buildPlaylistTrackRow(track, idx, pl) {
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
-    <button class="row-remove-pl" data-pl-idx="${idx}" title="Remove from playlist">×</button>
   `;
 
   // Drag-to-reorder bindings
   row.addEventListener('dragstart', e => {
     plDragSrcIndex = idx;
+    plDragSrcPlaylistId = pl.id;
+    plDragSrcTrackId = track.id;
     e.dataTransfer.effectAllowed = 'move';
   });
   row.addEventListener('dragover', e => {
+    if (plDragSrcIndex === null && !libDragIds) return;
     e.preventDefault();
-    e.dataTransfer.dropEffect = 'move';
+    e.dataTransfer.dropEffect = libDragIds ? 'copy' : 'move';
     row.classList.remove('drag-above', 'drag-below');
     const rect = row.getBoundingClientRect();
     if (e.clientY < rect.top + rect.height / 2) {
@@ -930,6 +1291,15 @@ function buildPlaylistTrackRow(track, idx, pl) {
   row.addEventListener('drop', e => {
     e.preventDefault();
     row.classList.remove('drag-above', 'drag-below');
+
+    if (libDragIds) {
+      e.stopPropagation();
+      const rect = row.getBoundingClientRect();
+      const insertIdx = e.clientY < rect.top + rect.height / 2 ? idx : idx + 1;
+      performLibraryDrop(pl, insertIdx);
+      return;
+    }
+
     const srcIdx = plDragSrcIndex;
     if (srcIdx === null || srcIdx === idx) return;
     const rect = row.getBoundingClientRect();
@@ -946,6 +1316,8 @@ function buildPlaylistTrackRow(track, idx, pl) {
   });
   row.addEventListener('dragend', () => {
     plDragSrcIndex = null;
+    plDragSrcPlaylistId = null;
+    plDragSrcTrackId = null;
     document.querySelectorAll('.track-row').forEach(r => r.classList.remove('drag-above', 'drag-below'));
   });
 
@@ -966,14 +1338,6 @@ function buildPlaylistTrackRow(track, idx, pl) {
     }
     plLastClickId = track.id;
     plLastClickTime = now;
-  });
-
-  // Remove from playlist
-  row.querySelector('.row-remove-pl').addEventListener('click', e => {
-    e.stopPropagation();
-    pl.trackIds.splice(idx, 1);
-    LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
-    renderCurrentTab();
   });
 
   // Transpose controls
@@ -1276,6 +1640,7 @@ function renderCurrentTab() {
 
   if (activeTab === 'songs') renderSongsTab();
   else if (activeTab === 'artists') renderArtistsTab();
+  else if (activeTab === 'albums') renderAlbumsTab();
   else if (activeTab === 'playlists') renderPlaylistsTab();
 }
 
@@ -1357,7 +1722,7 @@ async function importFiles(files) {
       format: ext.toUpperCase(),
       size: file.size,
       semitones: 0, volume: 1.0,
-      artist: '', album: '', title: '',
+      artist: '', album: '', title: '', trackNumber: 0,
       duration: 0, arrayBuffer: null,
       addedAt: Date.now()
     };
@@ -1377,9 +1742,10 @@ async function importFiles(files) {
       const [tags, ab] = await Promise.all([readTags(file), file.arrayBuffer()]);
 
       // Update skeleton with real metadata
-      track.artist = tags.artist || '';
-      track.album  = tags.album  || '';
-      track.title  = tags.title  || '';
+      track.artist       = tags.artist || '';
+      track.album        = tags.album  || '';
+      track.title        = tags.title  || '';
+      track.trackNumber  = parseTrackNumber(tags.track);
       const abMem  = ab.slice(0); // keep live copy; ab will be transferred to IDB
       track.arrayBuffer = abMem;
 
@@ -1494,7 +1860,36 @@ document.querySelectorAll('.lib-tab').forEach(btn => {
     btn.classList.add('active');
     activeTab = btn.dataset.tab;
     if (activeTab !== 'artists') currentArtistView = null;
+    if (activeTab !== 'albums') currentAlbumView = null;
     renderCurrentTab();
+  });
+
+  btn.addEventListener('dragover', e => {
+    if (!libDragIds) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'none';
+    const targetTab = btn.dataset.tab;
+    if (targetTab === activeTab || tabHoverTarget === targetTab) return;
+    tabHoverTarget = targetTab;
+    clearTimeout(tabHoverTimer);
+    btn.classList.add('drag-hover');
+    tabHoverTimer = setTimeout(() => {
+      document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active', 'drag-hover'));
+      btn.classList.add('active');
+      activeTab = targetTab;
+      if (activeTab !== 'artists') currentArtistView = null;
+      if (activeTab !== 'albums') currentAlbumView = null;
+      renderCurrentTab();
+      tabHoverTarget = null; tabHoverTimer = null;
+    }, 1000);
+  });
+
+  btn.addEventListener('dragleave', () => {
+    if (!libDragIds) return;
+    if (tabHoverTarget === btn.dataset.tab) {
+      clearTimeout(tabHoverTimer); tabHoverTimer = null; tabHoverTarget = null;
+      btn.classList.remove('drag-hover');
+    }
   });
 });
 
@@ -1514,8 +1909,15 @@ trackList.addEventListener('scroll', () => {
       const groups = getArtistGroups();
       const artistItems = groups.map(([name, trks]) => ({ name, count: trks.length }));
       renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count));
+    } else if (activeTab === 'albums' && currentAlbumView === null) {
+      const groups = getAlbumGroups();
+      const albumItems = groups.map(([name, trks]) => ({
+        name, count: trks.length,
+        artists: [...new Set(trks.map(t => t.artist || '').filter(Boolean))]
+      }));
+      renderVirtualList(trackList, albumItems, (item) => buildAlbumRow(item.name, item.count, item.artists));
     }
-    // artist drill-down has its own scroll listener on the sub-container
+    // drill-down views have their own scroll listener on the sub-container
   });
 });
 
@@ -1533,10 +1935,19 @@ trackList.addEventListener('click', e => {
     return;
   }
 
-  // Back button in artist drill-down -> return to artist list
+  // Album row click -> drill down
+  const albumRow = e.target.closest('.album-row[data-album]');
+  if (albumRow) {
+    currentAlbumView = albumRow.dataset.album;
+    renderCurrentTab();
+    return;
+  }
+
+  // Back button in drill-down -> return to list
   const backBtn = e.target.closest('.artist-back-btn');
   if (backBtn) {
-    currentArtistView = null;
+    if (activeTab === 'albums') currentAlbumView = null;
+    else currentArtistView = null;
     renderCurrentTab();
     return;
   }
@@ -1613,15 +2024,25 @@ trackList.addEventListener('click', e => {
 trackList.addEventListener('contextmenu', e => {
   const row = e.target.closest('.track-row[data-id]');
   if (!row) return;
-  showCtxMenu(e, row.dataset.id);
+  // Detect if this row is inside a playlist track list
+  if (row.closest('.pl-track-list')) {
+    const plId = selectedPlaylistId;
+    const pl = playlists.find(p => p.id === plId);
+    const idx = parseInt(row.dataset.plIdx, 10);
+    showCtxMenu(e, row.dataset.id, pl ? { pl, idx } : null);
+  } else {
+    showCtxMenu(e, row.dataset.id);
+  }
 });
 
 // ─── CONTEXT MENU ────────────────────────────────────────────
 let ctxMenuTrackId = null;
+let ctxMenuPlContext = null; // { pl, idx } when right-clicking inside a playlist
 const ctxMenu = document.getElementById('ctx-menu');
 
-function showCtxMenu(e, trackId) {
+function showCtxMenu(e, trackId, plContext = null) {
   e.preventDefault();
+  ctxMenuPlContext = plContext;
   // Right-clicking an unselected row: select only it
   if (!selectedIds.has(trackId)) {
     selectedIds.clear();
@@ -1633,6 +2054,9 @@ function showCtxMenu(e, trackId) {
   // Rename only available for a single selection
   ctxMenu.querySelector('[data-action="rename"]')
     .classList.toggle('ctx-disabled', selectedIds.size !== 1);
+  // "Remove from Playlist" only visible when inside a playlist
+  ctxMenu.querySelector('[data-action="remove-from-playlist"]')
+    .classList.toggle('ctx-hidden', !plContext);
   const x = Math.min(e.clientX, window.innerWidth - 160);
   const y = Math.min(e.clientY, window.innerHeight - 130);
   ctxMenu.style.left = x + 'px';
@@ -1661,6 +2085,13 @@ ctxMenu.addEventListener('click', e => {
     startRenameById(ctxMenuTrackId);
   } else if (action === 'delete') {
     deleteSelectedTracks([...selectedIds]);
+  } else if (action === 'remove-from-playlist') {
+    if (ctxMenuPlContext) {
+      const { pl, idx } = ctxMenuPlContext;
+      pl.trackIds.splice(idx, 1);
+      LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
+      renderCurrentTab();
+    }
   } else if (action === 'select-all') {
     tracks.forEach(t => selectedIds.add(t.id));
     renderCurrentTab();
@@ -1701,6 +2132,7 @@ fileInput.addEventListener('change', () => {
 });
 
 libraryPanel.addEventListener('dragover', e => {
+  if (!e.dataTransfer.types.includes('Files')) return;
   e.preventDefault();
   libraryPanel.classList.add('drag-over');
 });
@@ -1710,7 +2142,7 @@ libraryPanel.addEventListener('dragleave', e => {
 libraryPanel.addEventListener('drop', e => {
   e.preventDefault();
   libraryPanel.classList.remove('drag-over');
-  importFiles(Array.from(e.dataTransfer.files));
+  if (e.dataTransfer.files.length > 0) importFiles(Array.from(e.dataTransfer.files));
 });
 
 // ─── METRONOME MINIPLAYER SYNC ────────────────────────────────
