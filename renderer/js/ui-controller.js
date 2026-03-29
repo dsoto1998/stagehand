@@ -2143,7 +2143,7 @@ trackList.addEventListener('click', e => {
 
 trackList.addEventListener('contextmenu', e => {
   const row = e.target.closest('.track-row[data-id]');
-  if (!row) return;
+  if (!row || e.target.closest('.album-row[data-album]')) return;
   // Detect if this row is inside a playlist track list
   if (row.closest('.pl-track-list')) {
     const plId = selectedPlaylistId;
@@ -2220,6 +2220,42 @@ ctxMenu.addEventListener('click', e => {
     renderCurrentTab();
   }
 });
+
+// ─── ALBUM CONTEXT MENU ──────────────────────────────────────
+let albumCtxMenuName = null;
+const albumCtxMenu = document.getElementById('album-ctx-menu');
+
+function showAlbumCtxMenu(e, albumName) {
+  e.preventDefault();
+  albumCtxMenuName = albumName;
+  const x = Math.min(e.clientX, window.innerWidth  - 140);
+  const y = Math.min(e.clientY, window.innerHeight - 60);
+  albumCtxMenu.style.left = x + 'px';
+  albumCtxMenu.style.top  = y + 'px';
+  albumCtxMenu.classList.add('show');
+}
+
+trackList.addEventListener('contextmenu', e => {
+  const row = e.target.closest('.album-row[data-album]');
+  if (!row) return;
+  showAlbumCtxMenu(e, row.dataset.album);
+});
+
+albumCtxMenu.addEventListener('click', e => {
+  const action = e.target.closest('[data-album-action]')?.dataset.albumAction;
+  if (!action || !albumCtxMenuName) return;
+  albumCtxMenu.classList.remove('show');
+  if (action === 'info') {
+    const albumTracks = tracks.filter(t => (t.album || '').trim() === albumCtxMenuName || (albumCtxMenuName === 'Unknown Album' && !t.album?.trim()));
+    showInfoModal(albumTracks.map(t => t.id));
+  }
+});
+
+document.addEventListener('click', () => albumCtxMenu.classList.remove('show'));
+document.addEventListener('contextmenu', e => {
+  if (!e.target.closest('.album-row')) albumCtxMenu.classList.remove('show');
+});
+trackList.addEventListener('scroll', () => albumCtxMenu.classList.remove('show'));
 
 async function deleteSelectedTracks(ids) {
   if (!ids.length) return;

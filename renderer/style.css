@@ -1984,6 +1984,20 @@
 .pl-edit-add-btn:hover { color: var(--accent); border-color: var(--accent); }
 .pl-edit-add-btn.added { color: var(--accent); border-color: var(--accent); cursor: default; }
 
+/* Album context menu */
+#album-ctx-menu {
+  position: fixed;
+  background: var(--bg-card);
+  border: 1px solid var(--border-bright);
+  border-radius: 6px;
+  padding: 4px 0;
+  min-width: 130px;
+  z-index: 1000;
+  display: none;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.5);
+}
+#album-ctx-menu.show { display: block; }
+
 /* Playlist context menu */
 #pl-ctx-menu {
   position: fixed;
