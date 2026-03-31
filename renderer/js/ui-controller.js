@@ -4,6 +4,7 @@ import * as LibraryManager from './library-manager.js';
 import { TrackPlayer, players } from './track-player.js';
 import { Metronome, TapTempo } from './metronome.js';
 import { renderWaveform } from './waveform.js';
+import * as ArtworkManager from './artwork-manager.js';
 
 
 // ─── VIRTUAL SCROLL STATE ─────────────────────────────────────
@@ -314,6 +315,24 @@ function showMiniplayer(trackId) {
   const totalStr = player && player.duration ? formatTime(player.duration) : '--:--';
   document.getElementById('mp-time-display').textContent = '0:00 / ' + totalStr;
   document.getElementById('mp-scrub-fill').style.width = '0%';
+
+  // Load artwork
+  const mpArtImg = document.getElementById('mp-art-img');
+  const mpArtPlaceholder = document.querySelector('.mp-art-placeholder');
+  const artKey = ArtworkManager.artworkKeyFor(track);
+  LibraryManager.getArtwork(artKey).then(dataUrl => {
+    if (dataUrl) {
+      mpArtImg.src = dataUrl;
+      mpArtImg.style.display = 'block';
+      if (mpArtPlaceholder) mpArtPlaceholder.style.display = 'none';
+    } else {
+      mpArtImg.style.display = 'none';
+      if (mpArtPlaceholder) mpArtPlaceholder.style.display = '';
+    }
+  }).catch(() => {
+    mpArtImg.style.display = 'none';
+    if (mpArtPlaceholder) mpArtPlaceholder.style.display = '';
+  });
 }
 
 function hideMiniplayer() {
@@ -329,6 +348,10 @@ function hideMiniplayer() {
   document.getElementById('mp-xpose-reset').classList.remove('xpose-reset-visible');
   document.getElementById('mp-time-display').textContent = '0:00 / --:--';
   document.getElementById('mp-scrub-fill').style.width = '0%';
+  const mpArtImg = document.getElementById('mp-art-img');
+  if (mpArtImg) { mpArtImg.src = ''; mpArtImg.style.display = 'none'; }
+  const mpArtPlaceholder = document.querySelector('.mp-art-placeholder');
+  if (mpArtPlaceholder) mpArtPlaceholder.style.display = '';
 }
 
 function syncMiniplayerPlayBtn(isPlaying) {
@@ -536,6 +559,8 @@ async function loadLibrary() {
     });
     libraryLoaded = true;
     renderCurrentTab();
+    // Warm artwork cache from IDB (no network), then repaint rows
+    ArtworkManager.warmCache(tracks).then(() => refreshRowArt()).catch(() => {});
   } catch(e) {
     console.warn('IndexedDB load failed:', e);
     tracks = [];
@@ -624,6 +649,40 @@ async function playTrack(id, fromPlaylistId) {
   }
 }
 
+// ─── ARTWORK HELPERS ──────────────────────────────────────────
+function buildArtThumb(track) {
+  const div = document.createElement('div');
+  div.className = 'row-art';
+  const dataUrl = ArtworkManager.getCachedArtwork(track);
+  if (dataUrl) {
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.alt = '';
+    div.appendChild(img);
+  } else {
+    div.classList.add('row-art-empty');
+  }
+  return div;
+}
+
+// Paint artwork onto already-rendered rows (called after async cache warm)
+function refreshRowArt() {
+  document.querySelectorAll('#track-list .track-row[data-id]').forEach(row => {
+    const track = tracks.find(t => t.id === row.dataset.id);
+    if (!track) return;
+    const artDiv = row.querySelector('.row-art');
+    if (!artDiv) return;
+    const dataUrl = ArtworkManager.getCachedArtwork(track);
+    if (dataUrl && artDiv.classList.contains('row-art-empty')) {
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.alt = '';
+      artDiv.appendChild(img);
+      artDiv.classList.remove('row-art-empty');
+    }
+  });
+}
+
 // ─── ROW BUILDER ─────────────────────────────────────────────
 function buildTrackRow(track) {
   const row = document.createElement('div');
@@ -641,7 +700,8 @@ function buildTrackRow(track) {
   const st     = track.semitones || 0;
   const stLabel = st > 0 ? `+${st}` : `${st}`;
 
-  row.innerHTML = `
+  row.appendChild(buildArtThumb(track));
+  row.insertAdjacentHTML('beforeend', `
     <div class="row-play-area">
       <div class="row-play-indicator"></div>
       <button class="row-play-btn" data-id="${escHtml(track.id)}">${track.id === currentPlayingId ? '⏸' : '▶'}</button>
@@ -761,7 +821,8 @@ function buildArtistDrillTrackRow(track) {
   const st       = track.semitones || 0;
   const stLabel  = st > 0 ? `+${st}` : `${st}`;
 
-  row.innerHTML = `
+  row.appendChild(buildArtThumb(track));
+  row.insertAdjacentHTML('beforeend', `
     <div class="track-num">${escHtml(trackNum)}</div>
     <div class="row-play-area">
       <div class="row-play-indicator"></div>
@@ -777,7 +838,7 @@ function buildArtistDrillTrackRow(track) {
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
-  `;
+  `);
 
   row.draggable = true;
   row.addEventListener('dragstart', e => {
@@ -957,7 +1018,16 @@ function buildAlbumRow(albumName, trackCount, artistNames, year) {
     ? `<div class="album-row-artist">${escHtml(artistNames.join(' · '))}</div>`
     : '';
   const nameLabel = year ? `${albumName} (${year})` : albumName;
+
+  // Find a representative track for this album to look up artwork
+  const repTrack = tracks.find(t => (t.album || '').trim() === albumName || (!t.album && albumName === 'Unknown Album'));
+  const artDataUrl = repTrack ? ArtworkManager.getCachedArtwork(repTrack) : null;
+  const artHtml = artDataUrl
+    ? `<img src="${escHtml(artDataUrl)}" alt="" class="album-row-art-img">`
+    : '';
+
   row.innerHTML = `
+    <div class="album-row-art">${artHtml}</div>
     <div class="album-row-info">
       <div class="album-row-name">${escHtml(nameLabel)}</div>
       ${artistLine}
@@ -1438,9 +1508,12 @@ function buildPlaylistTrackRow(track, idx, pl) {
   const st     = track.semitones || 0;
   const stLabel = st > 0 ? `+${st}` : `${st}`;
 
-  row.innerHTML = `
+  row.insertAdjacentHTML('beforeend', `
     <div class="drag-handle" title="Drag to reorder">⠿</div>
     <div class="row-pl-num">${idx + 1}</div>
+  `);
+  row.appendChild(buildArtThumb(track));
+  row.insertAdjacentHTML('beforeend', `
     <div class="row-play-area">
       <div class="row-play-indicator"></div>
       <button class="row-play-btn" data-id="${escHtml(track.id)}">${(track.id === currentPlayingId && activePlaylistId === pl.id) ? '⏸' : '▶'}</button>
@@ -1456,7 +1529,7 @@ function buildPlaylistTrackRow(track, idx, pl) {
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
-  `;
+  `);
 
   // Drag-to-reorder bindings
   row.addEventListener('dragstart', e => {
@@ -1972,6 +2045,11 @@ async function importFiles(files) {
       LibraryManager.save({ ...track, arrayBuffer: ab })
         .catch(e => console.warn('IDB save failed:', e));
 
+      // Resolve artwork — fire and forget, uses abMem (still live)
+      ArtworkManager.resolveAndStoreArtwork(track, abMem.slice(0))
+        .then(() => refreshRowArt())
+        .catch(() => {});
+
       // Decode for duration — fire and forget
       players[track.id].loadBuffer(abMem.slice(0)).then(() => {
         if (!track.duration) {
@@ -2326,6 +2404,41 @@ trackList.addEventListener('click', e => {
     lastSelectedIdx = idx !== -1 ? idx : 0;
   }
   updateSelectionClasses();
+});
+
+// Album row right-click → Set Artwork
+const artFileInput = document.createElement('input');
+artFileInput.type = 'file';
+artFileInput.accept = 'image/jpeg,image/png,image/webp';
+artFileInput.style.display = 'none';
+document.body.appendChild(artFileInput);
+let artFileInputKey = null;
+
+trackList.addEventListener('contextmenu', e => {
+  const albumRow = e.target.closest('.album-row[data-album]');
+  if (albumRow) {
+    e.preventDefault();
+    const albumName = albumRow.dataset.album;
+    const repTrack = tracks.find(t => (t.album || '').trim() === albumName || (!t.album && albumName === 'Unknown Album'));
+    if (!repTrack) return;
+    artFileInputKey = ArtworkManager.artworkKeyFor(repTrack);
+    artFileInput.value = '';
+    artFileInput.click();
+    return;
+  }
+});
+
+artFileInput.addEventListener('change', async () => {
+  const file = artFileInput.files[0];
+  if (!file || !artFileInputKey) return;
+  try {
+    await ArtworkManager.storeManualArtwork(artFileInputKey, file);
+    renderCurrentTab();
+    refreshRowArt();
+  } catch(e) {
+    notify('Could not set artwork: ' + (e.message || 'unknown'), 'error');
+  }
+  artFileInputKey = null;
 });
 
 trackList.addEventListener('contextmenu', e => {

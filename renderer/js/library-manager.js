@@ -1,6 +1,6 @@
 // ─── INDEXEDDB LIBRARY ───────────────────────────────────────
 const DB_NAME = 'stagehand_db';
-const DB_VER  = 5;
+const DB_VER  = 6;
 const STORE   = 'tracks';
 let db = null;
 
@@ -24,6 +24,9 @@ function open() {
       }
       if (!d.objectStoreNames.contains('helix_presets')) {
         d.createObjectStore('helix_presets', { keyPath: 'id' });
+      }
+      if (!d.objectStoreNames.contains('artwork')) {
+        d.createObjectStore('artwork', { keyPath: 'key' });
       }
     };
     req.onsuccess = e => { db = e.target.result; res(db); };
@@ -132,6 +135,33 @@ export function deleteSetting(key) {
   return open().then(d => new Promise((res, rej) => {
     const tx = d.transaction('settings', 'readwrite');
     const req = tx.objectStore('settings').delete(key);
+    req.onsuccess = () => res();
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function getArtwork(key) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('artwork', 'readonly');
+    const req = tx.objectStore('artwork').get(key);
+    req.onsuccess = () => res(req.result ? req.result.dataUrl : null);
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function setArtwork(key, dataUrl) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('artwork', 'readwrite');
+    const req = tx.objectStore('artwork').put({ key, dataUrl });
+    req.onsuccess = () => res();
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function deleteArtwork(key) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('artwork', 'readwrite');
+    const req = tx.objectStore('artwork').delete(key);
     req.onsuccess = () => res();
     req.onerror   = e => rej(e.target.error);
   }));
