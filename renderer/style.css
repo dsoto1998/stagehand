@@ -883,7 +883,7 @@
     transition: background 0.1s;
   }
   .track-row:hover { background: var(--bg-hover); }
-  .track-row.selected { background: var(--bg-hover); outline: 1px solid var(--border-bright); outline-offset: -1px; }
+  .track-row.selected { background: rgba(0,150,199,0.18); outline: 2px solid var(--accent); outline-offset: -2px; }
   .track-row.playing { background: var(--bg-active); outline: none; }
   .track-row.playing .row-name { color: var(--accent); }
 

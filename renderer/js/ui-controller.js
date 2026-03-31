@@ -239,6 +239,14 @@ function readTags(file) {
 // ─── SELECTION STATE ─────────────────────────────────────────
 let selectedIds = new Set();
 let lastSelectedIdx = -1;
+// Ordered list of tracks currently visible in the active view — used for shift-range selection
+let visibleTracks = [];
+
+function updateSelectionClasses() {
+  document.querySelectorAll('#track-list .track-row[data-id]').forEach(r => {
+    r.classList.toggle('selected', selectedIds.has(r.dataset.id));
+  });
+}
 
 // ─── MINIPLAYER ───────────────────────────────────────────────
 let currentPlayingId = null;
@@ -774,6 +782,7 @@ function renderSongsTab() {
   const trackList = document.getElementById('track-list');
 
   if (tracks.length === 0) {
+    visibleTracks = [];
     trackList.innerHTML = `<div class="lib-empty-state">
       <div class="es-icon">\u25C8</div>
       <div class="es-text">No tracks yet</div>
@@ -781,6 +790,7 @@ function renderSongsTab() {
     </div>`;
     return;
   }
+  visibleTracks = tracks;
   renderVirtualList(trackList, tracks, buildTrackRow);
 }
 
@@ -797,6 +807,7 @@ function renderArtistList() {
     return;
   }
 
+  visibleTracks = [];
   const artistItems = groups.map(([name, trks]) => ({ name, count: trks.length }));
   renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count));
 }
@@ -860,6 +871,7 @@ function renderArtistDrillDown(artistName) {
     listContainer.appendChild(buildAlbumSectionHeader(albumName, albumTracks.length, albumReleaseYear(albumTracks)));
     albumTracks.forEach(t => listContainer.appendChild(buildArtistDrillTrackRow(t)));
   });
+  visibleTracks = sortedAlbums.flatMap(([, alTracks]) => alTracks);
 }
 
 function renderArtistsTab() {
@@ -913,6 +925,7 @@ function renderAlbumList() {
     return;
   }
 
+  visibleTracks = [];
   const albumItems = groups.map(([name, trks]) => ({
     name,
     count: trks.length,
@@ -962,6 +975,7 @@ function renderAlbumDrillDown(albumName) {
     if (na !== nb) return na - nb;
     return (a.name || '').localeCompare(b.name || '');
   });
+  visibleTracks = [...albumTracks];
 
   renderVirtualList(listContainer, albumTracks, buildArtistDrillTrackRow);
 
@@ -1073,8 +1087,10 @@ function renderPlaylistsTab() {
 
   const selPl = playlists.find(p => p.id === selectedPlaylistId);
   if (selPl) {
+    visibleTracks = selPl.trackIds.map(tid => tracks.find(t => t.id === tid)).filter(Boolean);
     renderPlaylistDetail(right, selPl);
   } else {
+    visibleTracks = [];
     right.innerHTML = `<div class="pl-empty-right">← Select a playlist</div>`;
   }
   container.appendChild(right);
@@ -1351,7 +1367,9 @@ function performLibraryDrop(pl, insertIdx) {
 
 function buildPlaylistTrackRow(track, idx, pl) {
   const row = document.createElement('div');
-  row.className = 'track-row' + (track.id === currentPlayingId && activePlaylistId === pl.id ? ' playing' : '');
+  row.className = 'track-row'
+    + (track.id === currentPlayingId && activePlaylistId === pl.id ? ' playing' : '')
+    + (selectedIds.has(track.id) ? ' selected' : '');
   row.dataset.id = track.id;
   row.dataset.plIdx = idx;
   row.style.height = ROW_H + 'px';
@@ -1959,6 +1977,14 @@ document.addEventListener('keydown', e => {
     settingsPopup.classList.add('hidden');
     settingsBtn.classList.remove('active');
   }
+  if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+    const active = document.activeElement;
+    if (!active || active === document.body || active.closest('#panel-library')) {
+      e.preventDefault();
+      visibleTracks.forEach(t => selectedIds.add(t.id));
+      updateSelectionClasses();
+    }
+  }
 });
 
 // ─── NAVIGATION ──────────────────────────────────────────────
@@ -1981,6 +2007,8 @@ document.querySelectorAll('.lib-tab').forEach(btn => {
     activeTab = btn.dataset.tab;
     if (activeTab !== 'artists') currentArtistView = null;
     if (activeTab !== 'albums') currentAlbumView = null;
+    selectedIds.clear();
+    lastSelectedIdx = -1;
     renderCurrentTab();
   });
 
@@ -2051,6 +2079,8 @@ trackList.addEventListener('click', e => {
   const artistRow = e.target.closest('.artist-row[data-artist]');
   if (artistRow) {
     currentArtistView = artistRow.dataset.artist;
+    selectedIds.clear();
+    lastSelectedIdx = -1;
     renderCurrentTab();
     return;
   }
@@ -2059,6 +2089,8 @@ trackList.addEventListener('click', e => {
   const albumRow = e.target.closest('.album-row[data-album]');
   if (albumRow) {
     currentAlbumView = albumRow.dataset.album;
+    selectedIds.clear();
+    lastSelectedIdx = -1;
     renderCurrentTab();
     return;
   }
@@ -2068,6 +2100,8 @@ trackList.addEventListener('click', e => {
   if (backBtn) {
     if (activeTab === 'albums') currentAlbumView = null;
     else currentArtistView = null;
+    selectedIds.clear();
+    lastSelectedIdx = -1;
     renderCurrentTab();
     return;
   }
@@ -2110,7 +2144,7 @@ trackList.addEventListener('click', e => {
     // Clicked empty space — deselect all
     selectedIds.clear();
     lastSelectedIdx = -1;
-    renderCurrentTab();
+    updateSelectionClasses();
     return;
   }
   const id = row.dataset.id;
@@ -2124,21 +2158,21 @@ trackList.addEventListener('click', e => {
   }
   lastClickId = id;
   lastClickTime = now;
-  const idx = tracks.findIndex(t => t.id === id);
+  const idx = visibleTracks.findIndex(t => t.id === id);
   if (e.ctrlKey || e.metaKey) {
     if (selectedIds.has(id)) selectedIds.delete(id);
     else selectedIds.add(id);
-    lastSelectedIdx = idx;
-  } else if (e.shiftKey && lastSelectedIdx !== -1) {
+    if (idx !== -1) lastSelectedIdx = idx;
+  } else if (e.shiftKey && lastSelectedIdx !== -1 && idx !== -1) {
     const start = Math.min(lastSelectedIdx, idx);
     const end   = Math.max(lastSelectedIdx, idx);
-    for (let i = start; i <= end; i++) selectedIds.add(tracks[i].id);
+    for (let i = start; i <= end; i++) selectedIds.add(visibleTracks[i].id);
   } else {
     selectedIds.clear();
     selectedIds.add(id);
-    lastSelectedIdx = idx;
+    lastSelectedIdx = idx !== -1 ? idx : 0;
   }
-  renderCurrentTab();
+  updateSelectionClasses();
 });
 
 trackList.addEventListener('contextmenu', e => {
@@ -2167,8 +2201,8 @@ function showCtxMenu(e, trackId, plContext = null) {
   if (!selectedIds.has(trackId)) {
     selectedIds.clear();
     selectedIds.add(trackId);
-    lastSelectedIdx = tracks.findIndex(t => t.id === trackId);
-    renderCurrentTab();
+    lastSelectedIdx = visibleTracks.findIndex(t => t.id === trackId);
+    updateSelectionClasses();
   }
   ctxMenuTrackId = trackId;
   // Rename only available for a single selection
@@ -2216,8 +2250,8 @@ ctxMenu.addEventListener('click', e => {
       renderCurrentTab();
     }
   } else if (action === 'select-all') {
-    tracks.forEach(t => selectedIds.add(t.id));
-    renderCurrentTab();
+    visibleTracks.forEach(t => selectedIds.add(t.id));
+    updateSelectionClasses();
   }
 });
 
