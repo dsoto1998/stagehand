@@ -281,7 +281,10 @@ function getSortedFilteredTracks() {
       }
       case 'album': {
         const c = (a.album || '').localeCompare(b.album || '');
-        return c !== 0 ? dir * c : (a.name || '').localeCompare(b.name || '');
+        if (c !== 0) return dir * c;
+        const ta = a.trackNumber || 0, tb = b.trackNumber || 0;
+        if (ta !== tb) return ta - tb;
+        return (a.name || '').localeCompare(b.name || '');
       }
       case 'addedAt':  return dir * ((a.addedAt  || 0) - (b.addedAt  || 0));
       case 'duration': return dir * ((a.duration || 0) - (b.duration || 0));
