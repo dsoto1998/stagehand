@@ -717,7 +717,7 @@ function buildTrackRow(track) {
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
-  `;
+  `);
 
   if (playlistEditMode) {
     const pl = playlists.find(p => p.id === playlistEditTargetId);
