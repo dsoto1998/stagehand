@@ -236,6 +236,9 @@ function readTags(file) {
 }
 
 
+// ─── LIBRARY LOAD STATE ──────────────────────────────────────
+let libraryLoaded = false;
+
 // ─── SELECTION STATE ─────────────────────────────────────────
 let selectedIds = new Set();
 let lastSelectedIdx = -1;
@@ -492,10 +495,12 @@ async function loadLibrary() {
         }).catch(e => console.warn('Background load failed:', t.name, e));
       }
     });
+    libraryLoaded = true;
     renderCurrentTab();
   } catch(e) {
     console.warn('IndexedDB load failed:', e);
     tracks = [];
+    libraryLoaded = true;
     renderCurrentTab();
   }
 }
@@ -1747,6 +1752,11 @@ function showAddToPlaylistSubmenu(e, trackIds) {
 document.addEventListener('click', () => plSubmenu.classList.remove('show'));
 
 function renderCurrentTab() {
+  if (!libraryLoaded) {
+    document.getElementById('track-list').innerHTML =
+      '<div class="lib-empty-state"><div class="es-icon">⟳</div><div class="es-text">Loading Library…</div></div>';
+    return;
+  }
   // Manage the edit-mode banner — visible on all tabs while edit mode is active
   const existingBanner = document.getElementById('pl-edit-banner');
   if (playlistEditMode) {
