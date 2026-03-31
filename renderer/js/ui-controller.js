@@ -579,8 +579,20 @@ async function loadLibrary() {
     });
     libraryLoaded = true;
     renderCurrentTab();
-    // Warm artwork cache from IDB (no network), then repaint rows
-    ArtworkManager.warmCache(tracks).then(() => refreshRowArt()).catch(() => {});
+    // Warm artwork cache from IDB, repaint, then background-resolve any still-missing art
+    ArtworkManager.warmCache(tracks).then(() => {
+      refreshRowArt();
+      const seen = new Set();
+      tracks.forEach(t => {
+        if (ArtworkManager.getCachedArtwork(t)) return;
+        const key = ArtworkManager.artworkKeyFor(t);
+        if (seen.has(key)) return;
+        seen.add(key);
+        ArtworkManager.resolveAndStoreArtwork(t, t.arrayBuffer?.slice(0))
+          .then(() => refreshRowArt())
+          .catch(() => {});
+      });
+    }).catch(() => {});
   } catch(e) {
     console.warn('IndexedDB load failed:', e);
     tracks = [];

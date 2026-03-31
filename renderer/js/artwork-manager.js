@@ -147,8 +147,8 @@ export async function warmCache(tracks) {
     const key = artworkKeyFor(t);
     try {
       const stored = await LibraryManager.getArtwork(key);
-      _cache.set(key, stored || null);
-    } catch { _cache.set(key, null); }
+      if (stored) _cache.set(key, stored);
+    } catch { /* leave absent so resolveAndStoreArtwork can retry */ }
   }));
 }
 
