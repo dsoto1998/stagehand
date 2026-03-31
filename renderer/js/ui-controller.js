@@ -315,21 +315,69 @@ function updateLocateBtn() {
   if (btn) btn.style.display = currentPlayingId ? '' : 'none';
 }
 
+function buildMarqueeInner(text, dist, gap) {
+  const inner = document.createElement('span');
+  inner.className = 'mp-marquee-inner';
+  inner.appendChild(document.createTextNode(text));
+  const spacer = document.createElement('span');
+  spacer.style.cssText = `display:inline-block;width:${gap}px`;
+  inner.appendChild(spacer);
+  inner.appendChild(document.createTextNode(text));
+  const scrollDur = Math.max(dist / 17.5, 12) * 1000;
+  inner.animate([
+    { transform: 'translateX(0)', offset: 0 },
+    { transform: 'translateX(0)', offset: 1000 / (scrollDur + 1000) },
+    { transform: `translateX(-${dist}px)`, offset: 1 },
+  ], { duration: scrollDur + 1000, iterations: Infinity, easing: 'linear' });
+  return inner;
+}
+
 function setMarqueeText(el, text) {
   el.classList.remove('mp-marquee');
   el.textContent = text;
   requestAnimationFrame(() => {
     if (el.scrollWidth <= el.offsetWidth) return;
-    const dist = el.scrollWidth - el.offsetWidth;
-    const dur = Math.max(dist / 35, 8).toFixed(1);
-    el.style.setProperty('--mp-marquee-dist', `-${dist}px`);
-    el.style.setProperty('--mp-marquee-dur', `${dur}s`);
-    const span = document.createElement('span');
-    span.className = 'mp-marquee-inner';
-    span.textContent = text;
+    const textWidth = el.scrollWidth;
+    const gap = Math.round(parseFloat(getComputedStyle(el).fontSize) * 1.8); // ~3 chars
+    const dist = textWidth + gap;
     el.textContent = '';
-    el.appendChild(span);
+    el.appendChild(buildMarqueeInner(text, dist, gap));
     el.classList.add('mp-marquee');
+  });
+}
+
+function setSyncedMarqueeTexts(pairs) {
+  pairs.forEach(({ el, text }) => {
+    el.classList.remove('mp-marquee');
+    el.textContent = text;
+  });
+  requestAnimationFrame(() => {
+    const configs = pairs.map(({ el, text }) => {
+      if (el.scrollWidth <= el.offsetWidth) return null;
+      const textWidth = el.scrollWidth;
+      const gap = Math.round(parseFloat(getComputedStyle(el).fontSize) * 1.8);
+      const dist = textWidth + gap;
+      return { el, text, dist, gap };
+    }).filter(Boolean);
+    if (configs.length === 0) return;
+    const maxScrollDur = Math.max(...configs.map(c => Math.max(c.dist / 17.5, 12))) * 1000;
+    const totalDur = maxScrollDur + 1000;
+    const pauseFraction = 1000 / totalDur;
+    const startTime = document.timeline.currentTime;
+    configs.forEach(({ el, text, dist, gap }) => {
+      el.textContent = '';
+      const inner = buildMarqueeInner(text, dist, gap);
+      el.appendChild(inner);
+      el.classList.add('mp-marquee');
+      // Override animation with shared duration and start time for sync
+      inner.getAnimations().forEach(a => a.cancel());
+      const anim = inner.animate([
+        { transform: 'translateX(0)', offset: 0 },
+        { transform: 'translateX(0)', offset: pauseFraction },
+        { transform: `translateX(-${dist}px)`, offset: 1 },
+      ], { duration: totalDur, iterations: Infinity, easing: 'linear' });
+      anim.startTime = startTime;
+    });
   });
 }
 
@@ -338,9 +386,11 @@ function showMiniplayer(trackId) {
   if (!track) return;
   currentPlayingId = trackId;
   updateLocateBtn();
-  setMarqueeText(document.getElementById('mp-track-name'), track.name);
   const mpAlbum = track.album ? (track.releaseDate ? `${track.album} (${track.releaseDate})` : track.album) : '';
-  setMarqueeText(document.getElementById('mp-track-sub'), (track.artist && mpAlbum) ? track.artist + ' \u2014 ' + mpAlbum : (track.artist || mpAlbum || '—'));
+  setSyncedMarqueeTexts([
+    { el: document.getElementById('mp-track-name'), text: track.name },
+    { el: document.getElementById('mp-track-sub'), text: (track.artist && mpAlbum) ? track.artist + ' \u2014 ' + mpAlbum : (track.artist || mpAlbum || '—') },
+  ]);
   const st = track.semitones || 0;
   const mpStVal = document.getElementById('mp-semitones-val');
   mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
@@ -565,6 +615,41 @@ document.getElementById('mp-xpose-inc').addEventListener('click', () => {
 document.getElementById('mp-xpose-reset').addEventListener('click', () => {
   if (!currentPlayingId) return;
   applyTranspose(currentPlayingId, 0);
+});
+
+document.getElementById('mp-semitones-val').addEventListener('dblclick', () => {
+  if (!currentPlayingId) return;
+  const track = tracks.find(t => t.id === currentPlayingId);
+  if (!track) return;
+  const valEl = document.getElementById('mp-semitones-val');
+  const current = track.semitones || 0;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = current;
+  input.className = 'xpose-inline-input';
+  input.setAttribute('aria-label', 'Semitones (-12 to +12)');
+
+  valEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function commit() {
+    const raw = input.value.trim();
+    const parsed = parseInt(raw, 10);
+    const val = isNaN(parsed) ? current : Math.max(-12, Math.min(12, parsed));
+    input.replaceWith(valEl);
+    applyTranspose(track.id, val);
+  }
+  function cancel() {
+    input.replaceWith(valEl);
+  }
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', cancel);
 });
 
 document.getElementById('mp-vol').addEventListener('input', function() {
@@ -2478,6 +2563,9 @@ trackList.addEventListener('click', e => {
     return;
   }
 
+  // Clicks on the semitone value are handled by the dblclick listener — don't trigger play
+  if (e.target.closest('.xpose-val')) return;
+
   // Track row click -> select (File Explorer style), double-click -> play
   const row = e.target.closest('.track-row[data-id]');
   if (!row) {
@@ -2515,6 +2603,45 @@ trackList.addEventListener('click', e => {
     lastSelectedIdx = idx !== -1 ? idx : 0;
   }
   updateSelectionClasses();
+});
+
+// Semitone value double-click → inline edit (library rows)
+trackList.addEventListener('dblclick', e => {
+  const valEl = e.target.closest('.xpose-val');
+  if (!valEl) return;
+  const row = valEl.closest('.track-row[data-id]');
+  if (!row) return;
+  e.stopPropagation();
+  const track = tracks.find(t => t.id === row.dataset.id);
+  if (!track) return;
+  const current = track.semitones || 0;
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.value = current;
+  input.className = 'xpose-inline-input';
+  input.setAttribute('aria-label', 'Semitones (-12 to +12)');
+
+  valEl.replaceWith(input);
+  input.focus();
+  input.select();
+
+  function commit() {
+    const raw = input.value.trim();
+    const parsed = parseInt(raw, 10);
+    const val = isNaN(parsed) ? current : Math.max(-12, Math.min(12, parsed));
+    input.replaceWith(valEl);
+    applyTranspose(track.id, val);
+  }
+  function cancel() {
+    input.replaceWith(valEl);
+  }
+
+  input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  });
+  input.addEventListener('blur', cancel);
 });
 
 // Album row right-click → Set Artwork

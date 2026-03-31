@@ -1118,6 +1118,21 @@
     text-align: center;
   }
   .xpose-val.xpose-active { color: var(--cyan); }
+  .xpose-val { cursor: pointer; }
+  .xpose-val:hover { color: var(--accent); }
+  .xpose-inline-input {
+    width: 36px;
+    background: var(--bg-base);
+    border: 1px solid var(--cyan);
+    border-radius: 3px;
+    color: var(--cyan);
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
+    font-size: 11px;
+    text-align: center;
+    padding: 1px 2px;
+    outline: none;
+    user-select: text;
+  }
 
   /* ── CONTEXT MENU ────────────────────────────────────── */
   #ctx-menu {
@@ -1285,11 +1300,6 @@
   }
   .mp-marquee-inner {
     display: inline-block;
-    animation: mp-marquee var(--mp-marquee-dur, 8s) linear infinite;
-  }
-  @keyframes mp-marquee {
-    0%, 15%  { transform: translateX(0); }
-    85%, 100% { transform: translateX(var(--mp-marquee-dist, 0px)); }
   }
 
   #mp-transport {
@@ -1328,7 +1338,8 @@
   .mp-row-center { justify-content: center; }
   .mp-xpose-row { position: relative; }
   .mp-xpose-row #mp-xpose-reset { position: absolute; left: 0; }
-  .mp-row-center input[type=range] { width: 120px; flex: none; }
+  .mp-row-center input[type=range] { width: 130px; flex: none; }
+  #mp-vol, #mm-vol { width: 130px; flex: none; }
 
   .mp-vol-icon {
     font-size: 13px;
