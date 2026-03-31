@@ -1429,6 +1429,20 @@
     font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-weight: 300;
   }
+  .info-art-preview { display: flex; align-items: center; gap: 10px; flex: 1; }
+  .info-art-thumb-box {
+    width: 52px; height: 52px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim);
+    font-size: 20px;
+  }
+  .info-art-thumb-box img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .info-art-btn { font-size: 12px; padding: 5px 12px; }
   .info-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
 
 /* ── SCRUB BAR ──────────────────────────────────────── */

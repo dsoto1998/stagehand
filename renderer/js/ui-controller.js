@@ -131,6 +131,23 @@ function showInfoModal(trackIds) {
   titleEl.textContent = isSingle ? 'Song Info' : `Info — ${selected.length} Songs`;
   rowName.style.display  = isSingle ? '' : 'none';
   readonly.style.display = isSingle ? '' : 'none';
+  const artRow   = document.getElementById('info-art-row');
+  const thumbBox = document.getElementById('info-art-thumb');
+  artRow.style.display = isSingle ? '' : 'none';
+  if (isSingle) {
+    thumbBox.innerHTML = '';
+    const cached = ArtworkManager.getCachedArtwork(selected[0]);
+    if (cached) {
+      const img = document.createElement('img'); img.src = cached; thumbBox.appendChild(img);
+    } else {
+      thumbBox.textContent = '♪';
+    }
+    document.getElementById('info-art-btn').onclick = () => {
+      artFileInputKey = ArtworkManager.artworkKeyFor(selected[0]);
+      artFileInput.value = '';
+      artFileInput.click();
+    };
+  }
 
   if (isSingle) {
     const t = selected[0];
@@ -2432,9 +2449,15 @@ artFileInput.addEventListener('change', async () => {
   const file = artFileInput.files[0];
   if (!file || !artFileInputKey) return;
   try {
-    await ArtworkManager.storeManualArtwork(artFileInputKey, file);
+    const dataUrl = await ArtworkManager.storeManualArtwork(artFileInputKey, file);
     renderCurrentTab();
     refreshRowArt();
+    // Refresh info modal thumbnail if still open
+    const thumbBox = document.getElementById('info-art-thumb');
+    if (thumbBox && document.getElementById('info-overlay').classList.contains('show')) {
+      thumbBox.innerHTML = '';
+      const img = document.createElement('img'); img.src = dataUrl; thumbBox.appendChild(img);
+    }
   } catch(e) {
     notify('Could not set artwork: ' + (e.message || 'unknown'), 'error');
   }
