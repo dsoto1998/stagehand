@@ -239,6 +239,39 @@ function readTags(file) {
 // ─── LIBRARY LOAD STATE ──────────────────────────────────────
 let libraryLoaded = false;
 
+// ─── SORT / SEARCH STATE ─────────────────────────────────────
+let songsSortField = localStorage.getItem('songs_sort_field') || 'name';
+let songsSortDir   = localStorage.getItem('songs_sort_dir')   || 'asc';
+let searchQuery    = '';
+
+function matchesSearch(track) {
+  if (!searchQuery) return true;
+  const q = searchQuery.toLowerCase();
+  return (track.name   || '').toLowerCase().includes(q)
+      || (track.artist || '').toLowerCase().includes(q)
+      || (track.album  || '').toLowerCase().includes(q);
+}
+
+function getSortedFilteredTracks() {
+  const source = searchQuery ? tracks.filter(matchesSearch) : tracks;
+  const dir = songsSortDir === 'asc' ? 1 : -1;
+  return [...source].sort((a, b) => {
+    switch (songsSortField) {
+      case 'artist': {
+        const c = (a.artist || '').localeCompare(b.artist || '');
+        return c !== 0 ? dir * c : (a.name || '').localeCompare(b.name || '');
+      }
+      case 'album': {
+        const c = (a.album || '').localeCompare(b.album || '');
+        return c !== 0 ? dir * c : (a.name || '').localeCompare(b.name || '');
+      }
+      case 'addedAt':  return dir * ((a.addedAt  || 0) - (b.addedAt  || 0));
+      case 'duration': return dir * ((a.duration || 0) - (b.duration || 0));
+      default:         return dir * (a.name || '').localeCompare(b.name || '');
+    }
+  });
+}
+
 // ─── SELECTION STATE ─────────────────────────────────────────
 let selectedIds = new Set();
 let lastSelectedIdx = -1;
@@ -256,10 +289,16 @@ let currentPlayingId = null;
 let seeking = false;
 let seekFrac = 0;
 
+function updateLocateBtn() {
+  const btn = document.getElementById('lib-locate-btn');
+  if (btn) btn.style.display = currentPlayingId ? '' : 'none';
+}
+
 function showMiniplayer(trackId) {
   const track = tracks.find(t => t.id === trackId);
   if (!track) return;
   currentPlayingId = trackId;
+  updateLocateBtn();
   document.getElementById('mp-track-name').textContent = track.name;
   const mpAlbum = track.album ? (track.releaseDate ? `${track.album} (${track.releaseDate})` : track.album) : '';
   document.getElementById('mp-track-sub').textContent = (track.artist && mpAlbum) ? track.artist + ' \u2014 ' + mpAlbum : (track.artist || mpAlbum || '—');
@@ -761,8 +800,9 @@ function buildArtistDrillTrackRow(track) {
 
 // ─── ARTIST GROUPING ─────────────────────────────────────────
 function getArtistGroups() {
+  const source = searchQuery ? tracks.filter(matchesSearch) : tracks;
   const map = new Map();
-  tracks.forEach(t => {
+  source.forEach(t => {
     const key = (t.artist && t.artist.trim()) ? t.artist.trim() : 'Unknown Artist';
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(t);
@@ -785,18 +825,27 @@ function buildArtistRow(artistName, trackCount) {
 // ─── TAB RENDERERS ───────────────────────────────────────────
 function renderSongsTab() {
   const trackList = document.getElementById('track-list');
+  const sorted = getSortedFilteredTracks();
 
-  if (tracks.length === 0) {
+  if (sorted.length === 0) {
     visibleTracks = [];
-    trackList.innerHTML = `<div class="lib-empty-state">
-      <div class="es-icon">\u25C8</div>
-      <div class="es-text">No tracks yet</div>
-      <div class="es-sub">Import audio files to get started</div>
-    </div>`;
+    if (searchQuery && tracks.length > 0) {
+      trackList.innerHTML = `<div class="lib-empty-state">
+        <div class="es-icon">\u2315</div>
+        <div class="es-text">No results</div>
+        <div class="es-sub">No tracks match &ldquo;${escHtml(searchQuery)}&rdquo;</div>
+      </div>`;
+    } else {
+      trackList.innerHTML = `<div class="lib-empty-state">
+        <div class="es-icon">\u25C8</div>
+        <div class="es-text">No tracks yet</div>
+        <div class="es-sub">Import audio files to get started</div>
+      </div>`;
+    }
     return;
   }
-  visibleTracks = tracks;
-  renderVirtualList(trackList, tracks, buildTrackRow);
+  visibleTracks = sorted;
+  renderVirtualList(trackList, sorted, buildTrackRow);
 }
 
 function renderArtistList() {
@@ -889,8 +938,9 @@ function renderArtistsTab() {
 
 // ─── ALBUM GROUPING ──────────────────────────────────────────
 function getAlbumGroups() {
+  const source = searchQuery ? tracks.filter(matchesSearch) : tracks;
   const map = new Map();
-  tracks.forEach(t => {
+  source.forEach(t => {
     const key = (t.album && t.album.trim()) ? t.album.trim() : 'Unknown Album';
     if (!map.has(key)) map.set(key, []);
     map.get(key).push(t);
@@ -1790,6 +1840,22 @@ function renderCurrentTab() {
   badge.textContent = tracks.length;
   countLabel.textContent = tracks.length + ' track' + (tracks.length !== 1 ? 's' : '');
 
+  // Show sort bar only on Songs tab; update active button + direction
+  const sortBar = document.getElementById('lib-sort-bar');
+  sortBar.classList.toggle('hidden', activeTab !== 'songs');
+  document.querySelectorAll('.lib-sort-btn').forEach(btn => {
+    const isActive = btn.dataset.sort === songsSortField;
+    btn.classList.toggle('active', isActive);
+    btn.innerHTML = btn.dataset.sort === 'name'    ? 'Name'
+      : btn.dataset.sort === 'artist'  ? 'Artist'
+      : btn.dataset.sort === 'album'   ? 'Album'
+      : btn.dataset.sort === 'addedAt' ? 'Date Added'
+      : 'Duration';
+    if (isActive) {
+      btn.innerHTML += `<span class="lib-sort-dir">${songsSortDir === 'asc' ? '↑' : '↓'}</span>`;
+    }
+  });
+
   if (activeTab === 'songs') renderSongsTab();
   else if (activeTab === 'artists') renderArtistsTab();
   else if (activeTab === 'albums') renderAlbumsTab();
@@ -1999,6 +2065,78 @@ document.addEventListener('keydown', e => {
       visibleTracks.forEach(t => selectedIds.add(t.id));
       updateSelectionClasses();
     }
+  }
+  // Delete key — remove selected tracks when focus is in library (not in an input)
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0) {
+    const active = document.activeElement;
+    if (!active || active === document.body || (active.closest('#panel-library') && !active.matches('input, textarea'))) {
+      e.preventDefault();
+      deleteSelectedTracks([...selectedIds]);
+    }
+  }
+  // Escape clears search
+  if (e.key === 'Escape' && searchQuery) {
+    searchQuery = '';
+    const input = document.getElementById('lib-search');
+    if (input) input.value = '';
+    document.getElementById('lib-search-clear')?.classList.remove('visible');
+    renderCurrentTab();
+  }
+});
+
+// ─── SEARCH ──────────────────────────────────────────────────
+document.getElementById('lib-search').addEventListener('input', e => {
+  searchQuery = e.target.value.trim();
+  document.getElementById('lib-search-clear').classList.toggle('visible', searchQuery.length > 0);
+  renderCurrentTab();
+});
+document.getElementById('lib-search-clear').addEventListener('click', () => {
+  searchQuery = '';
+  document.getElementById('lib-search').value = '';
+  document.getElementById('lib-search-clear').classList.remove('visible');
+  document.getElementById('lib-search').focus();
+  renderCurrentTab();
+});
+
+// ─── SORT BAR ────────────────────────────────────────────────
+document.getElementById('lib-sort-bar').addEventListener('click', e => {
+  const btn = e.target.closest('.lib-sort-btn');
+  if (!btn) return;
+  const field = btn.dataset.sort;
+  if (songsSortField === field) {
+    songsSortDir = songsSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    songsSortField = field;
+    songsSortDir = 'asc';
+  }
+  localStorage.setItem('songs_sort_field', songsSortField);
+  localStorage.setItem('songs_sort_dir', songsSortDir);
+  renderCurrentTab();
+});
+
+// ─── LOCATE NOW PLAYING ──────────────────────────────────────
+document.getElementById('lib-locate-btn').addEventListener('click', () => {
+  if (!currentPlayingId) return;
+  // Switch to Songs tab
+  document.querySelectorAll('.lib-tab').forEach(b => b.classList.remove('active'));
+  document.querySelector('.lib-tab[data-tab="songs"]').classList.add('active');
+  activeTab = 'songs';
+  currentArtistView = null;
+  currentAlbumView = null;
+  // Clear search if it would filter out the playing track
+  const playing = tracks.find(t => t.id === currentPlayingId);
+  if (playing && searchQuery && !matchesSearch(playing)) {
+    searchQuery = '';
+    document.getElementById('lib-search').value = '';
+    document.getElementById('lib-search-clear').classList.remove('visible');
+  }
+  renderCurrentTab();
+  // Scroll to playing track
+  const sorted = getSortedFilteredTracks();
+  const idx = sorted.findIndex(t => t.id === currentPlayingId);
+  if (idx !== -1) {
+    const tl = document.getElementById('track-list');
+    tl.scrollTop = Math.max(0, idx * ROW_H - tl.clientHeight / 2);
   }
 });
 

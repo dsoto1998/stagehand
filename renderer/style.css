@@ -843,6 +843,99 @@
     letter-spacing: 0;
   }
 
+  /* ── LIBRARY SEARCH ──────────────────────────────────── */
+  .lib-search-row {
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+  }
+  #lib-search {
+    flex: 1;
+    min-width: 0;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 400;
+    padding: 5px 10px;
+    outline: none;
+    transition: border-color 0.1s;
+  }
+  #lib-search:focus { border-color: var(--border-bright); }
+  #lib-search::placeholder { color: var(--text-dim); }
+  .lib-search-clear {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 3px 5px;
+    border-radius: 3px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.1s, color 0.1s;
+    flex-shrink: 0;
+  }
+  .lib-search-clear.visible { opacity: 1; pointer-events: auto; }
+  .lib-search-clear:hover { color: var(--text-primary); }
+
+  /* ── LIBRARY SORT BAR ────────────────────────────────── */
+  .lib-sort-bar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 5px 12px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .lib-sort-bar.hidden { display: none; }
+  .lib-sort-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-right: 4px;
+    flex-shrink: 0;
+  }
+  .lib-sort-btn {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: none;
+    border: 1px solid transparent;
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+    letter-spacing: 0.03em;
+    transition: color 0.1s, border-color 0.1s;
+    white-space: nowrap;
+  }
+  .lib-sort-btn:hover { color: var(--text-primary); }
+  .lib-sort-btn.active {
+    color: var(--accent);
+    border-color: rgba(232,255,71,0.25);
+  }
+  .lib-sort-dir {
+    font-size: 9px;
+    margin-left: 2px;
+    opacity: 0.8;
+  }
+  .btn-ghost {
+    background: none;
+    border-color: var(--border);
+    color: var(--text-secondary);
+    font-size: 11px;
+  }
+  .btn-ghost:hover { color: var(--text-primary); border-color: var(--border-bright); }
+
   /* ── LIBRARY TABS ────────────────────────────────────── */
   .lib-tab-bar {
     display: flex;

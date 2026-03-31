@@ -175,9 +175,15 @@
           <div class="panel-subtitle">// Audio Files</div>
           <div class="panel-header-actions">
             <span class="library-count" id="lib-count-label">0 tracks</span>
+            <button class="btn btn-sm btn-ghost" id="lib-locate-btn" title="Jump to now playing" style="display:none">⊙ Now Playing</button>
             <button class="btn btn-sm" id="import-btn">⊕ Import</button>
             <input type="file" id="file-input" accept=".wav,.mp3,.flac,.ogg,.opus" multiple>
           </div>
+        </div>
+
+        <div class="lib-search-row">
+          <input type="text" id="lib-search" placeholder="Search tracks, artists, albums…" autocomplete="off" spellcheck="false">
+          <button id="lib-search-clear" class="lib-search-clear" aria-label="Clear search">✕</button>
         </div>
 
         <div class="lib-tab-bar">
@@ -185,6 +191,15 @@
           <button class="lib-tab" data-tab="artists">Artists</button>
           <button class="lib-tab" data-tab="albums">Albums</button>
           <button class="lib-tab" data-tab="playlists">Playlists</button>
+        </div>
+
+        <div id="lib-sort-bar" class="lib-sort-bar">
+          <span class="lib-sort-label">Sort:</span>
+          <button class="lib-sort-btn active" data-sort="name">Name</button>
+          <button class="lib-sort-btn" data-sort="artist">Artist</button>
+          <button class="lib-sort-btn" data-sort="album">Album</button>
+          <button class="lib-sort-btn" data-sort="addedAt">Date Added</button>
+          <button class="lib-sort-btn" data-sort="duration">Duration</button>
         </div>
 
         <div id="track-list">
