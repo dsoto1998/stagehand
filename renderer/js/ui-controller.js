@@ -367,9 +367,22 @@ function showMiniplayer(trackId) {
       mpArtImg.style.display = 'none';
       if (mpArtPlaceholder) mpArtPlaceholder.style.display = '';
     }
+    updateMediaSessionMetadata(track, dataUrl);
   }).catch(() => {
     mpArtImg.style.display = 'none';
     if (mpArtPlaceholder) mpArtPlaceholder.style.display = '';
+    updateMediaSessionMetadata(track, null);
+  });
+}
+
+function updateMediaSessionMetadata(track, artDataUrl) {
+  if (!('mediaSession' in navigator)) return;
+  const artwork = artDataUrl ? [{ src: artDataUrl }] : [];
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: track.name,
+    artist: track.artist || '',
+    album: track.album || '',
+    artwork,
   });
 }
 
@@ -397,6 +410,9 @@ function syncMiniplayerPlayBtn(isPlaying) {
   btn.textContent = isPlaying ? '⏸' : '▶';
   btn.classList.toggle('is-paused', isPlaying);
   btn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
+  if ('mediaSession' in navigator) {
+    navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+  }
 }
 
 function updateMiniplayerProgress(frac, t, duration) {
@@ -438,6 +454,28 @@ document.addEventListener('keydown', (e) => {
   e.preventDefault();
   document.getElementById('mp-play').click();
 });
+
+if ('mediaSession' in navigator) {
+  navigator.mediaSession.setActionHandler('play', () => {
+    document.getElementById('mp-play').click();
+  });
+  navigator.mediaSession.setActionHandler('pause', () => {
+    document.getElementById('mp-play').click();
+  });
+  navigator.mediaSession.setActionHandler('stop', () => {
+    if (!currentPlayingId) return;
+    const player = players[currentPlayingId];
+    if (!player) return;
+    if (player.isPlaying) { player.pause(); syncMiniplayerPlayBtn(false); renderCurrentTab(); }
+    player.seek(0);
+  });
+  navigator.mediaSession.setActionHandler('previoustrack', () => {
+    document.getElementById('mp-prev').click();
+  });
+  navigator.mediaSession.setActionHandler('nexttrack', () => {
+    document.getElementById('mp-next').click();
+  });
+}
 
 // Returns the next track to auto-play when the current track ends,
 // based on the active tab context at the time of the call.
