@@ -1,5 +1,6 @@
 // ─── UI CONTROLLER ───────────────────────────────────────────
 import { resume, setMasterVolume } from './audio-engine.js';
+import { ICONS } from './icons.js';
 import * as LibraryManager from './library-manager.js';
 import { TrackPlayer, players } from './track-player.js';
 import { Metronome, TapTempo } from './metronome.js';
@@ -49,6 +50,13 @@ function formatTime(sec) {
 function formatSize(bytes) {
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
   return (bytes / (1024*1024)).toFixed(1) + ' MB';
+}
+
+function updateRangeFill(el) {
+  const min = parseFloat(el.min) || 0;
+  const max = parseFloat(el.max) || 100;
+  const pct = ((parseFloat(el.value) - min) / (max - min)) * 100;
+  el.style.setProperty('--range-val', pct + '%');
 }
 
 let notifTimer = null;
@@ -396,7 +404,7 @@ function showMiniplayer(trackId) {
   mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
   mpStVal.classList.toggle('xpose-active', st !== 0);
   document.getElementById('mp-xpose-reset').classList.toggle('xpose-reset-visible', st !== 0);
-  document.getElementById('mp-play').textContent = '⏸';
+  document.getElementById('mp-play').innerHTML = ICONS.pause;
   document.getElementById('mp-play').setAttribute('aria-label', 'Pause');
   document.getElementById('mp-play').classList.add('is-paused');
   const player = players[trackId];
@@ -440,7 +448,7 @@ function hideMiniplayer() {
   currentPlayingId = null;
   setMarqueeText(document.getElementById('mp-track-name'), '—');
   setMarqueeText(document.getElementById('mp-track-sub'), '—');
-  document.getElementById('mp-play').textContent = '▶';
+  document.getElementById('mp-play').innerHTML = ICONS.play;
   document.getElementById('mp-play').setAttribute('aria-label', 'Play');
   document.getElementById('mp-play').classList.remove('is-paused');
   const mpStVal = document.getElementById('mp-semitones-val');
@@ -457,7 +465,7 @@ function hideMiniplayer() {
 
 function syncMiniplayerPlayBtn(isPlaying) {
   const btn = document.getElementById('mp-play');
-  btn.textContent = isPlaying ? '⏸' : '▶';
+  btn.innerHTML = isPlaying ? ICONS.pause : ICONS.play;
   btn.classList.toggle('is-paused', isPlaying);
   btn.setAttribute('aria-label', isPlaying ? 'Pause' : 'Play');
   if ('mediaSession' in navigator) {
@@ -655,6 +663,7 @@ document.getElementById('mp-semitones-val').addEventListener('dblclick', () => {
 document.getElementById('mp-vol').addEventListener('input', function() {
   setMasterVolume(this.value / 100);
   localStorage.setItem('masterVolume', this.value);
+  updateRangeFill(this);
 });
 
 // ─── SCRUB BAR ──────────────────────────────────────────────
@@ -885,14 +894,14 @@ function buildTrackRow(track) {
   row.insertAdjacentHTML('beforeend', `
     <div class="row-play-area">
       <div class="row-play-indicator"></div>
-      <button class="row-play-btn" data-id="${escHtml(track.id)}">${track.id === currentPlayingId ? '⏸' : '▶'}</button>
+      <button class="row-play-btn" data-id="${escHtml(track.id)}">${track.id === currentPlayingId ? ICONS.pause : ICONS.play}</button>
     </div>
     <div class="row-info">
       <div class="row-name">${escHtml(track.name)}</div>
       ${sub ? `<div class="row-sub">${escHtml(sub)}</div>` : ''}
     </div>
     <div class="row-xpose">
-      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose">↺</button>
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
       <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
       <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
@@ -1007,13 +1016,13 @@ function buildArtistDrillTrackRow(track) {
     <div class="track-num">${escHtml(trackNum)}</div>
     <div class="row-play-area">
       <div class="row-play-indicator"></div>
-      <button class="row-play-btn" data-id="${escHtml(track.id)}">${track.id === currentPlayingId ? '⏸' : '▶'}</button>
+      <button class="row-play-btn" data-id="${escHtml(track.id)}">${track.id === currentPlayingId ? ICONS.pause : ICONS.play}</button>
     </div>
     <div class="row-info">
       <div class="row-name">${escHtml(track.name)}</div>
     </div>
     <div class="row-xpose">
-      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose">↺</button>
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
       <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
       <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
@@ -1697,14 +1706,14 @@ function buildPlaylistTrackRow(track, idx, pl) {
   row.insertAdjacentHTML('beforeend', `
     <div class="row-play-area">
       <div class="row-play-indicator"></div>
-      <button class="row-play-btn" data-id="${escHtml(track.id)}">${(track.id === currentPlayingId && activePlaylistId === pl.id) ? '⏸' : '▶'}</button>
+      <button class="row-play-btn" data-id="${escHtml(track.id)}">${(track.id === currentPlayingId && activePlaylistId === pl.id) ? ICONS.pause : ICONS.play}</button>
     </div>
     <div class="row-info">
       <div class="row-name">${escHtml(track.name)}</div>
       ${sub ? `<div class="row-sub">${escHtml(sub)}</div>` : ''}
     </div>
     <div class="row-xpose">
-      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose">↺</button>
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
       <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
       <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
@@ -2265,6 +2274,8 @@ if (storedMetroVol !== null) {
   document.getElementById('mm-vol').value = storedMetroVol;
   Metronome.setVolume(parseInt(storedMetroVol) / 100);
 }
+updateRangeFill(document.getElementById('mp-vol'));
+updateRangeFill(document.getElementById('mm-vol'));
 
 function applyScale() {
   const scale = uiScale / 100;
@@ -2858,7 +2869,7 @@ Metronome.onBeat(() => {
 function syncMetroMini() {
   document.querySelector('#mm-bpm-display .mm-bpm-num').textContent = Metronome.getBpm();
   const active = Metronome.isActive();
-  document.getElementById('mm-play-btn').textContent = active ? '⏹' : '▶';
+  document.getElementById('mm-play-btn').innerHTML = active ? ICONS.stop : ICONS.play;
   document.getElementById('mm-play-btn').classList.toggle('running', active);
 }
 
@@ -2870,7 +2881,7 @@ document.getElementById('mm-play-btn').addEventListener('click', async function(
   syncMetroMini();
   // sync full-panel button
   const fullBtn = document.getElementById('metro-play-btn');
-  fullBtn.textContent = Metronome.isActive() ? '⏹ Stop' : '▶ Start';
+  fullBtn.innerHTML = Metronome.isActive() ? `${ICONS.stop} Stop` : `${ICONS.play} Start`;
   fullBtn.classList.toggle('running', Metronome.isActive());
 });
 
@@ -2937,6 +2948,7 @@ document.getElementById('mm-subdiv-select').addEventListener('change', function(
 document.getElementById('mm-vol').addEventListener('input', function() {
   Metronome.setVolume(this.value / 100);
   localStorage.setItem('metronomeVolume', this.value);
+  updateRangeFill(this);
 });
 
 // ─── METRONOME FULL-PANEL BINDINGS ───────────────────────────
@@ -2963,11 +2975,11 @@ document.getElementById('metro-play-btn').addEventListener('click', async functi
   if (ctx.state === 'suspended') await ctx.resume();
   if (Metronome.isActive()) {
     Metronome.stop();
-    this.textContent = '▶ Start';
+    this.innerHTML = `${ICONS.play} Start`;
     this.classList.remove('running');
   } else {
     Metronome.start();
-    this.textContent = '⏹ Stop';
+    this.innerHTML = `${ICONS.stop} Stop`;
     this.classList.add('running');
   }
   syncMetroMini();

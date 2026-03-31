@@ -14,7 +14,7 @@
     <div class="logo">Stage<span>hand</span></div>
     <div class="tagline">Rehearsal Tool v1.0</div>
     <div id="topbar-right">
-      <button id="settings-btn" title="Settings">☰</button>
+      <button id="settings-btn" title="Settings"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg></button>
     </div>
     <div id="settings-popup" class="hidden">
       <div class="sp-section-label">Display</div>
@@ -76,22 +76,22 @@
         <div class="nav-section-label">Navigation</div>
 
         <div class="nav-item active" data-panel="library">
-          <span class="nav-icon">◈</span>
+          <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
           <span>Library</span>
           <span class="nav-badge" id="lib-badge">0</span>
         </div>
 
 <div class="nav-section-label" style="margin-top:8px;">Coming Soon</div>
         <div class="nav-item" style="opacity:0.4;pointer-events:none;">
-          <span class="nav-icon">⬡</span>
+          <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="21" y1="4" x2="14" y2="4"/><line x1="10" y1="4" x2="3" y2="4"/><line x1="21" y1="12" x2="12" y2="12"/><line x1="8" y1="12" x2="3" y2="12"/><line x1="21" y1="20" x2="16" y2="20"/><line x1="12" y1="20" x2="3" y2="20"/><line x1="14" y1="2" x2="14" y2="6"/><line x1="8" y1="10" x2="8" y2="14"/><line x1="16" y1="18" x2="16" y2="22"/></svg></span>
           <span>VST Plugins</span>
         </div>
         <div class="nav-item" style="opacity:0.4;pointer-events:none;">
-          <span class="nav-icon">⊕</span>
+          <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg></span>
           <span>Live Input</span>
         </div>
         <div class="nav-item" style="opacity:0.4;pointer-events:none;">
-          <span class="nav-icon">♩</span>
+          <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7z"/><polyline points="14 2 14 8 20 8"/><circle cx="10" cy="16" r="2"/><path d="M12 16V12l4-1"/></svg></span>
           <span>Chord Charts</span>
         </div>
       </div>
@@ -100,7 +100,7 @@
         <!-- METRONOME MINIPLAYER -->
         <div id="metro-mini">
           <div class="mm-play-row">
-            <button id="mm-play-btn" class="mm-play" title="Start / Stop metronome">▶</button>
+            <button id="mm-play-btn" class="mm-play" title="Start / Stop metronome"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
           </div>
           <div class="mm-bpm-section">
             <button id="mm-bpm-minus" class="mm-adj" title="BPM −1">−</button>
@@ -115,17 +115,17 @@
           </div>
           <div class="mm-vol-group">
             <div class="mp-row mp-row-center">
-              <span class="mp-vol-icon">🔈</span>
+              <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
               <input type="range" id="mm-vol" min="0" max="100" value="80" title="Metronome volume">
-              <span class="mp-vol-icon">🔊</span>
+              <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
             </div>
           </div>
           <div class="mm-subdiv-row">
             <select id="mm-subdiv-select" title="Subdivision">
-              <option value="1">♩  Quarter (1/4)</option>
-              <option value="2">♪  Eighth (1/8)</option>
-              <option value="3">♪  Triplet</option>
-              <option value="4">𝅘𝅥𝅯  Sixteenth (1/16)</option>
+              <option value="1">Quarter (1/4)</option>
+              <option value="2">Eighth (1/8)</option>
+              <option value="3">Triplet</option>
+              <option value="4">Sixteenth (1/16)</option>
             </select>
           </div>
           <div class="mm-timesig-row">
@@ -157,19 +157,19 @@
         </div>
         <div id="mp-time-display">0:00 / --:--</div>
         <div id="mp-transport">
-          <button id="mp-prev" title="Previous track" aria-label="Previous track">⏮</button>
-          <button id="mp-play" title="Play / Pause" aria-label="Play">▶</button>
-          <button id="mp-next" title="Next track" aria-label="Next track">⏭</button>
+          <button id="mp-prev" title="Previous track" aria-label="Previous track"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg></button>
+          <button id="mp-play" title="Play / Pause" aria-label="Play"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+          <button id="mp-next" title="Next track" aria-label="Next track"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg></button>
         </div>
         <div class="mp-vol-group">
           <div class="mp-row mp-row-center">
-            <span class="mp-vol-icon">🔈</span>
+            <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
             <input type="range" id="mp-vol" min="0" max="100" value="100">
-            <span class="mp-vol-icon">🔊</span>
+            <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
           </div>
         </div>
         <div class="mp-row mp-row-center mp-xpose-row">
-          <button class="xpose-reset" id="mp-xpose-reset" title="Reset transpose">↺</button>
+          <button class="xpose-reset" id="mp-xpose-reset" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
           <button class="xpose-btn" id="mp-xpose-dec">−</button>
           <span id="mp-semitones-val" class="xpose-val">0st</span>
           <button class="xpose-btn" id="mp-xpose-inc">+</button>
@@ -187,15 +187,15 @@
           <div class="panel-subtitle">// Audio Files</div>
           <div class="panel-header-actions">
             <span class="library-count" id="lib-count-label">0 tracks</span>
-            <button class="btn btn-sm btn-ghost" id="lib-locate-btn" title="Jump to now playing" style="display:none">⊙ Now Playing</button>
-            <button class="btn btn-sm" id="import-btn">⊕ Import</button>
+            <button class="btn btn-sm btn-ghost" id="lib-locate-btn" title="Jump to now playing" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/></svg> Now Playing</button>
+            <button class="btn btn-sm" id="import-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Import</button>
             <input type="file" id="file-input" accept=".wav,.mp3,.flac,.ogg,.opus" multiple>
           </div>
         </div>
 
         <div class="lib-search-row">
           <input type="text" id="lib-search" placeholder="Search tracks, artists, albums…" autocomplete="off" spellcheck="false">
-          <button id="lib-search-clear" class="lib-search-clear" aria-label="Clear search">✕</button>
+          <button id="lib-search-clear" class="lib-search-clear" aria-label="Clear search"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
         </div>
 
         <div class="lib-tab-bar">
@@ -251,17 +251,17 @@
           <div class="metro-card full">
             <div class="metro-card-title">Transport</div>
             <div id="beat-grid"></div>
-            <button id="metro-play-btn">▶ Start</button>
+            <button id="metro-play-btn"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg> Start</button>
           </div>
 
           <!-- Subdivision Card -->
           <div class="metro-card">
             <div class="metro-card-title">Subdivision</div>
             <div class="subdiv-grid">
-              <button class="subdiv-btn active" data-subdiv="1" data-label="Quarter">♩<br><span style="font-size:10px">1/4</span></button>
-              <button class="subdiv-btn" data-subdiv="2" data-label="Eighth">♪<br><span style="font-size:10px">1/8</span></button>
-              <button class="subdiv-btn" data-subdiv="3" data-label="Triplet">♪♪♪<br><span style="font-size:10px">Trip</span></button>
-              <button class="subdiv-btn" data-subdiv="4" data-label="Sixteenth"><span style="font-size:9px">𝅘𝅥𝅯</span><br><span style="font-size:10px">1/16</span></button>
+              <button class="subdiv-btn active" data-subdiv="1" data-label="Quarter">1/4</button>
+              <button class="subdiv-btn" data-subdiv="2" data-label="Eighth">1/8</button>
+              <button class="subdiv-btn" data-subdiv="3" data-label="Triplet">Trip</button>
+              <button class="subdiv-btn" data-subdiv="4" data-label="Sixteenth">1/16</button>
             </div>
             <div class="accent-toggle-row">
               <button id="accent-toggle-btn" class="accent-toggle-btn active" title="Toggle accent on beat 1">Accent</button>
