@@ -36,7 +36,8 @@
       "Bash(sed -i \"s/''Rajdhani''/''Bebas Neue''/g; s/''JetBrains Mono''/''Bebas Neue''/g; s/''Barlow Condensed''/''Bebas Neue''/g\" style.css)",
       "Bash(grep -c \"''Bebas Neue''\" style.css)",
       "Bash(cd:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Skill(gsd:progress)"
     ],
     "defaultMode": "bypassPermissions"
   },
