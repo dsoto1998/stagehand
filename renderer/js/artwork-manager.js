@@ -80,17 +80,9 @@ async function fetchItunesArt(artist, album) {
     if (!parsed.hostname.endsWith('mzstatic.com')) return null;
   } catch { return null; }
 
-  // Upgrade to 600×600
-  const artUrl = rawUrl.replace('100x100bb', '600x600bb');
-
-  // Fetch image, validate it's actually an image, convert to data URL
-  try {
-    const imgRes = await fetch(artUrl, { method: 'GET', credentials: 'omit' });
-    if (!imgRes.ok) return null;
-    const blob = await imgRes.blob();
-    if (!blob.type.startsWith('image/')) return null;
-    return await blobToDataUrl(blob);
-  } catch { return null; }
+  // Upgrade to 600×600 and return URL directly — mzstatic.com blocks fetch() via CORS
+  // but the URL works fine as an <img src>, so skip the image download step
+  return rawUrl.replace('100x100bb', '600x600bb');
 }
 
 // Resolve artwork for a track: IDB cache → embedded → iTunes → null
