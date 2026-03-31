@@ -1677,8 +1677,8 @@ document.addEventListener('click', () => plCtxMenu.classList.remove('show'));
 const plSubmenu = document.getElementById('pl-submenu');
 let submenuTrackId = null;
 
-function showAddToPlaylistSubmenu(e, trackId) {
-  submenuTrackId = trackId;
+function showAddToPlaylistSubmenu(e, trackIds) {
+  submenuTrackId = trackIds;
   plSubmenu.innerHTML = '';
 
   if (playlists.length > 0) {
@@ -1687,11 +1687,16 @@ function showAddToPlaylistSubmenu(e, trackId) {
       item.className = 'pl-submenu-item';
       item.textContent = pl.name;
       item.addEventListener('click', () => {
-        pl.trackIds.push(trackId);
+        const idsToAdd = trackIds.filter(id => !pl.trackIds.includes(id));
+        const skipped = trackIds.length - idsToAdd.length;
+        pl.trackIds.push(...idsToAdd);
         LibraryManager.savePlaylist(pl).catch(e => console.warn('Playlist save failed:', e));
         plSubmenu.classList.remove('show');
         if (activeTab === 'playlists' && selectedPlaylistId === pl.id) renderCurrentTab();
-        notify(`Added to "${pl.name}"`, 'success');
+        const msg = idsToAdd.length === 1
+          ? `Added to "${pl.name}"`
+          : `Added ${idsToAdd.length} tracks to "${pl.name}"${skipped > 0 ? ` (${skipped} already in playlist)` : ''}`;
+        notify(msg, 'success');
       });
       plSubmenu.appendChild(item);
     });
@@ -1708,7 +1713,7 @@ function showAddToPlaylistSubmenu(e, trackId) {
     const pl = {
       id: LibraryManager.genPlaylistId(),
       name: 'New Playlist',
-      trackIds: [trackId],
+      trackIds: [...trackIds],
       createdAt: Date.now(),
       date: null
     };
@@ -2149,7 +2154,7 @@ trackList.addEventListener('click', e => {
   }
   const id = row.dataset.id;
   const now = Date.now();
-  if (lastClickId === id && (now - lastClickTime) < DBL_CLICK_MS) {
+  if (!e.ctrlKey && !e.metaKey && !e.shiftKey && lastClickId === id && (now - lastClickTime) < DBL_CLICK_MS) {
     // Double-click detected — play
     lastClickId = null;
     lastClickTime = 0;
@@ -2229,7 +2234,7 @@ ctxMenu.addEventListener('click', e => {
   if (!action || !ctxMenuTrackId) return;
   if (action === 'add-to-playlist') {
     e.stopPropagation(); // prevent document click from closing menus immediately
-    showAddToPlaylistSubmenu(e, ctxMenuTrackId);
+    showAddToPlaylistSubmenu(e, selectedIds.size > 0 ? [...selectedIds] : [ctxMenuTrackId]);
     return;
   }
   ctxMenu.classList.remove('show');
