@@ -431,6 +431,14 @@ document.getElementById('mp-play').addEventListener('click', () => {
   }
 });
 
+document.addEventListener('keydown', (e) => {
+  if (e.code !== 'Space') return;
+  const tag = e.target.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
+  e.preventDefault();
+  document.getElementById('mp-play').click();
+});
+
 // Returns the next track to auto-play when the current track ends,
 // based on the active tab context at the time of the call.
 function getAutoNextTrack(currentId) {
@@ -2722,6 +2730,7 @@ function commitBpmInline() {
 }
 document.getElementById('mm-bpm-inline').addEventListener('blur', commitBpmInline);
 document.getElementById('mm-bpm-inline').addEventListener('keydown', (e) => {
+  if (['e', 'E', '+', '-', '.'].includes(e.key)) e.preventDefault();
   if (e.key === 'Enter') { e.preventDefault(); commitBpmInline(); }
   if (e.key === 'Escape') {
     const input = document.getElementById('mm-bpm-inline');
@@ -2781,6 +2790,7 @@ document.getElementById('bpm-input').addEventListener('change', function() {
 });
 document.getElementById('bpm-input').addEventListener('keydown', function(e) {
   if (e.key === 'Enter') this.blur();
+  if (['e', 'E', '+', '-', '.'].includes(e.key)) e.preventDefault();
 });
 
 document.getElementById('metro-play-btn').addEventListener('click', async function() {
