@@ -131,6 +131,9 @@ export async function resolveAndStoreArtwork(track, arrayBuffer) {
   }
 }
 
+// Clear in-memory cache (call after clearing IDB artwork store)
+export function clearCache() { _cache.clear(); }
+
 // Synchronous cache read for row rendering (returns null if not yet loaded)
 export function getCachedArtwork(track) {
   return _cache.get(artworkKeyFor(track)) ?? null;

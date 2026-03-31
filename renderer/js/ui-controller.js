@@ -2133,6 +2133,21 @@ document.getElementById('scale-plus').addEventListener('click', () => {
 
 applyScale();
 
+// ─── CLEAR ARTWORK ───────────────────────────────────────────
+document.getElementById('clear-artwork-btn').addEventListener('click', async () => {
+  const ok = await confirm('Clear All Artwork?', 'This removes every cached artwork image. Art will be re-fetched from iTunes (or re-embedded) next time tracks are loaded.');
+  if (!ok) return;
+  try {
+    await LibraryManager.clearAllArtwork();
+    ArtworkManager.clearCache();
+    renderCurrentTab();
+    refreshRowArt();
+    notify('Artwork cache cleared', '');
+  } catch(e) {
+    notify('Failed to clear artwork', 'error');
+  }
+});
+
 // ─── SETTINGS POPUP ──────────────────────────────────────────
 const settingsBtn   = document.getElementById('settings-btn');
 const settingsPopup = document.getElementById('settings-popup');

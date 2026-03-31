@@ -166,3 +166,12 @@ export function deleteArtwork(key) {
     req.onerror   = e => rej(e.target.error);
   }));
 }
+
+export function clearAllArtwork() {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('artwork', 'readwrite');
+    const req = tx.objectStore('artwork').clear();
+    req.onsuccess = () => res();
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
