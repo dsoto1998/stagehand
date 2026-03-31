@@ -663,7 +663,7 @@
   .accent-toggle-btn {
     padding: 4px 12px;
     font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     background: var(--bg-active);
     border: 1px solid var(--border);
     border-radius: 3px;
@@ -859,7 +859,7 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     color: var(--text-primary);
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 13px;
     font-weight: 400;
     padding: 5px 10px;
@@ -896,7 +896,7 @@
   }
   .lib-sort-bar.hidden { display: none; }
   .lib-sort-label {
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 10px;
     color: var(--text-dim);
     text-transform: uppercase;
@@ -905,7 +905,7 @@
     flex-shrink: 0;
   }
   .lib-sort-btn {
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     font-weight: 500;
     color: var(--text-secondary);
@@ -1349,7 +1349,7 @@
     width: 68px;
     flex-shrink: 0;
     text-align: right;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-weight: 400;
   }
   .info-input {
@@ -1359,7 +1359,7 @@
     border-radius: 3px;
     color: var(--text-primary);
     font-size: 13px;
-    font-family: 'Barlow Condensed', sans-serif;
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-weight: 400;
     padding: 5px 8px;
     outline: none;
@@ -1373,7 +1373,7 @@
   .info-value {
     font-size: 12px;
     color: var(--text-secondary);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-weight: 300;
   }
   .info-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
@@ -1490,7 +1490,7 @@
 
 /* ── TRACK NUMBER BADGE ──────────────────────────────── */
 .track-num {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   width: 22px;
@@ -1631,7 +1631,7 @@
 }
 
 .pl-list-header-title {
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -1678,7 +1678,7 @@
 .pl-row.active .pl-row-name { color: var(--accent); }
 
 .pl-row-name {
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
@@ -1688,7 +1688,7 @@
 }
 
 .pl-row-count {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
@@ -1701,7 +1701,7 @@
   border: 1px solid var(--accent);
   border-radius: 3px;
   color: var(--text-primary);
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   font-weight: 500;
   padding: 2px 5px;
@@ -1723,7 +1723,7 @@
   border: 1px solid var(--border);
   border-radius: 3px;
   color: var(--text-dim);
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -1748,7 +1748,7 @@
 }
 
 .pl-row-date {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 10px;
   color: var(--text-dim);
   white-space: nowrap;
@@ -1776,7 +1776,7 @@
 }
 
 .pl-detail-date-label {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 10px;
   color: var(--text-dim);
   text-transform: uppercase;
@@ -1797,7 +1797,7 @@
 .pl-detail-date:focus { outline: none; border-color: var(--accent); color: var(--text-primary); }
 
 .pl-detail-title {
-  font-family: 'Rajdhani', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 16px;
   font-weight: 700;
   color: var(--text-primary);
@@ -1809,7 +1809,7 @@
 }
 
 .pl-detail-count {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
@@ -1820,7 +1820,7 @@
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-secondary);
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 13px;
   font-weight: 500;
   padding: 3px 9px;
@@ -1860,7 +1860,7 @@
 
 /* Row number in playlist */
 .row-pl-num {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   width: 22px;
@@ -1911,7 +1911,7 @@
   align-items: center;
   justify-content: center;
   color: var(--text-dim);
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
 }
 
@@ -1937,7 +1937,7 @@
 }
 
 .add-tracks-title {
-  font-family: 'Rajdhani', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
@@ -1960,7 +1960,7 @@
   border: 1px solid var(--border);
   border-radius: 5px;
   color: var(--text-primary);
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   padding: 5px 10px;
   outline: none;
@@ -1985,7 +1985,7 @@
 .add-track-row:hover { background: var(--bg-hover); }
 
 .add-track-name {
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
@@ -1997,7 +1997,7 @@
 }
 
 .add-track-sub {
-  font-family: 'JetBrains Mono', monospace;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   white-space: nowrap;
@@ -2028,7 +2028,7 @@
   padding: 7px 14px;
   background: var(--bg-active);
   border-bottom: 1px solid var(--border-bright);
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 13px;
   color: var(--text-secondary);
   flex-shrink: 0;
@@ -2041,7 +2041,7 @@
   color: #000;
   border: none;
   border-radius: 4px;
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -2054,7 +2054,7 @@
   color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 13px;
   cursor: pointer;
   transition: all 0.12s;
@@ -2121,7 +2121,7 @@
 
 .pl-submenu-item {
   padding: 7px 14px;
-  font-family: 'Barlow Condensed', sans-serif;
+  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
@@ -2199,7 +2199,7 @@
   .click-type-label {
     font-size: 10px;
     color: var(--text-secondary);
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     white-space: nowrap;
   }
   .click-sound-name {
@@ -2368,7 +2368,7 @@
     flex: 1;
     padding: 5px 8px;
     font-size: 11px;
-    font-family: 'JetBrains Mono', monospace;
+    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     background: var(--bg-active);
     border: 1px solid var(--border-bright);
     border-radius: 5px;
