@@ -315,14 +315,32 @@ function updateLocateBtn() {
   if (btn) btn.style.display = currentPlayingId ? '' : 'none';
 }
 
+function setMarqueeText(el, text) {
+  el.classList.remove('mp-marquee');
+  el.textContent = text;
+  requestAnimationFrame(() => {
+    if (el.scrollWidth <= el.offsetWidth) return;
+    const dist = el.scrollWidth - el.offsetWidth;
+    const dur = Math.max(dist / 35, 8).toFixed(1);
+    el.style.setProperty('--mp-marquee-dist', `-${dist}px`);
+    el.style.setProperty('--mp-marquee-dur', `${dur}s`);
+    const span = document.createElement('span');
+    span.className = 'mp-marquee-inner';
+    span.textContent = text;
+    el.textContent = '';
+    el.appendChild(span);
+    el.classList.add('mp-marquee');
+  });
+}
+
 function showMiniplayer(trackId) {
   const track = tracks.find(t => t.id === trackId);
   if (!track) return;
   currentPlayingId = trackId;
   updateLocateBtn();
-  document.getElementById('mp-track-name').textContent = track.name;
+  setMarqueeText(document.getElementById('mp-track-name'), track.name);
   const mpAlbum = track.album ? (track.releaseDate ? `${track.album} (${track.releaseDate})` : track.album) : '';
-  document.getElementById('mp-track-sub').textContent = (track.artist && mpAlbum) ? track.artist + ' \u2014 ' + mpAlbum : (track.artist || mpAlbum || '—');
+  setMarqueeText(document.getElementById('mp-track-sub'), (track.artist && mpAlbum) ? track.artist + ' \u2014 ' + mpAlbum : (track.artist || mpAlbum || '—'));
   const st = track.semitones || 0;
   const mpStVal = document.getElementById('mp-semitones-val');
   mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
@@ -357,8 +375,8 @@ function showMiniplayer(trackId) {
 
 function hideMiniplayer() {
   currentPlayingId = null;
-  document.getElementById('mp-track-name').textContent = '—';
-  document.getElementById('mp-track-sub').textContent = '—';
+  setMarqueeText(document.getElementById('mp-track-name'), '—');
+  setMarqueeText(document.getElementById('mp-track-sub'), '—');
   document.getElementById('mp-play').textContent = '▶';
   document.getElementById('mp-play').setAttribute('aria-label', 'Play');
   document.getElementById('mp-play').classList.remove('is-paused');
@@ -1994,7 +2012,7 @@ function startRenameById(trackId) {
     saveTrackMeta(track);
     renderCurrentTab();
     if (currentPlayingId === trackId) {
-      document.getElementById('mp-track-name').textContent = newName;
+      setMarqueeText(document.getElementById('mp-track-name'), newName);
     }
     notify('Renamed to "' + newName + '"', 'success');
   }

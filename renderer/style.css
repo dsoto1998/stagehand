@@ -1277,6 +1277,21 @@
     margin-top: 2px;
   }
 
+  /* Marquee scrolling for long track/sub text */
+  #mp-track-name.mp-marquee,
+  #mp-track-sub.mp-marquee {
+    text-align: left;
+    text-overflow: clip;
+  }
+  .mp-marquee-inner {
+    display: inline-block;
+    animation: mp-marquee var(--mp-marquee-dur, 8s) linear infinite;
+  }
+  @keyframes mp-marquee {
+    0%, 15%  { transform: translateX(0); }
+    85%, 100% { transform: translateX(var(--mp-marquee-dist, 0px)); }
+  }
+
   #mp-transport {
     display: flex;
     align-items: center;
