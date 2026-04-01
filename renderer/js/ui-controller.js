@@ -101,11 +101,11 @@ function promptChoice(title, msg, okLabel, altLabel) {
     const cancel = document.getElementById('conf-cancel');
     ok.textContent  = okLabel;
     alt.textContent = altLabel;
-    alt.style.display = '';
+    alt.classList.remove('hidden');
     overlay.classList.add('show');
     function cleanup(v) {
       overlay.classList.remove('show');
-      alt.style.display = 'none';
+      alt.classList.add('hidden');
       ok.removeEventListener('click', onOk);
       alt.removeEventListener('click', onAlt);
       cancel.removeEventListener('click', onCancel);
@@ -320,7 +320,7 @@ let seekFrac = 0;
 
 function updateLocateBtn() {
   const btn = document.getElementById('lib-locate-btn');
-  if (btn) btn.style.display = currentPlayingId ? '' : 'none';
+  if (btn) btn.classList.toggle('hidden', !currentPlayingId);
 }
 
 function buildMarqueeInner(text, dist, gap) {
@@ -2890,8 +2890,8 @@ document.getElementById('mm-bpm-display').addEventListener('dblclick', () => {
   const display = document.getElementById('mm-bpm-display');
   const input = document.getElementById('mm-bpm-inline');
   input.value = Metronome.getBpm();
-  display.style.display = 'none';
-  input.style.display = '';
+  display.classList.add('hidden');
+  input.classList.remove('hidden');
   input.focus();
   input.select();
 });
@@ -2901,8 +2901,8 @@ function commitBpmInline() {
   const input = document.getElementById('mm-bpm-inline');
   const val = parseInt(input.value);
   if (!isNaN(val)) { Metronome.setBpm(val); document.getElementById('bpm-input').value = Metronome.getBpm(); syncMetroMini(); }
-  input.style.display = 'none';
-  display.style.display = '';
+  input.classList.add('hidden');
+  display.classList.remove('hidden');
 }
 document.getElementById('mm-bpm-inline').addEventListener('blur', commitBpmInline);
 document.getElementById('mm-bpm-inline').addEventListener('keydown', (e) => {
@@ -2910,8 +2910,8 @@ document.getElementById('mm-bpm-inline').addEventListener('keydown', (e) => {
   if (e.key === 'Enter') { e.preventDefault(); commitBpmInline(); }
   if (e.key === 'Escape') {
     const input = document.getElementById('mm-bpm-inline');
-    input.style.display = 'none';
-    document.getElementById('mm-bpm-display').style.display = '';
+    input.classList.add('hidden');
+    document.getElementById('mm-bpm-display').classList.remove('hidden');
   }
 });
 
@@ -3101,7 +3101,7 @@ document.getElementById('tap-btn').addEventListener('click', () => {
     }
     Metronome.setCustomBuffer(activeType, buf);
     document.querySelector(`.click-sound-name[data-type="${activeType}"]`).textContent = file.name;
-    document.querySelector(`.clear-click-btn[data-type="${activeType}"]`).style.display = '';
+    document.querySelector(`.clear-click-btn[data-type="${activeType}"]`).classList.remove('hidden');
     try {
       await LibraryManager.putSetting({ key: 'click_' + activeType, name: file.name, data: abForStore });
     } catch(e) {
@@ -3117,7 +3117,7 @@ document.getElementById('tap-btn').addEventListener('click', () => {
       const type = btn.dataset.type;
       Metronome.setCustomBuffer(type, null);
       document.querySelector(`.click-sound-name[data-type="${type}"]`).textContent = 'Default';
-      btn.style.display = 'none';
+      btn.classList.add('hidden');
       LibraryManager.deleteSetting('click_' + type);
     });
   });
@@ -3163,7 +3163,7 @@ document.getElementById('tap-btn').addEventListener('click', () => {
       const buf = await ctx.decodeAudioData(record.data.slice(0));
       Metronome.setCustomBuffer(type, buf);
       document.querySelector(`.click-sound-name[data-type="${type}"]`).textContent = record.name;
-      document.querySelector(`.clear-click-btn[data-type="${type}"]`).style.display = '';
+      document.querySelector(`.clear-click-btn[data-type="${type}"]`).classList.remove('hidden');
     } catch(e) {
       console.error('Failed to restore click sound:', type, e);
     }

@@ -108,7 +108,6 @@
     z-index: 200;
     animation: sp-in 0.15s ease;
   }
-  #settings-popup.hidden { display: none; }
   @keyframes sp-in {
     from { opacity: 0; transform: translateY(-6px) scale(0.97); }
     to   { opacity: 1; transform: translateY(0)   scale(1); }
@@ -276,6 +275,24 @@
     letter-spacing: 0;
     text-transform: uppercase;
   }
+
+  /* ── UTILITY ─────────────────────────────────────────── */
+  .hidden { display: none !important; }
+
+  /* ── FOCUS RINGS ─────────────────────────────────────── */
+  :focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  /* suppress focus ring on elements that have custom focus styles */
+  #lib-search:focus-visible,
+  #bpm-input:focus-visible,
+  .timesig-input:focus-visible,
+  .timesig-den-select:focus-visible,
+  .info-input:focus-visible,
+  .add-tracks-filter:focus-visible,
+  #mm-subdiv-select:focus-visible,
+  #mm-timesig-select:focus-visible { outline: none; }
 
   /* ── BUTTONS ─────────────────────────────────────────── */
   .btn {
@@ -625,12 +642,13 @@
     letter-spacing: 0;
     cursor: pointer;
     border-radius: 3px;
-    transition: all 0.15s;
+    transition: background-color 0.15s, border-color 0.15s, color 0.15s;
     text-transform: uppercase;
     display: flex; align-items: center; justify-content: center;
     gap: 8px;
   }
   #metro-play-btn:hover { border-color: var(--accent); color: var(--accent); }
+  #metro-play-btn:active { transform: scale(0.97); }
   #metro-play-btn.running {
     background: var(--accent);
     border-color: var(--accent);
@@ -901,7 +919,6 @@
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
   }
-  .lib-sort-bar.hidden { display: none; }
   .lib-sort-label {
     font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 10px;
@@ -1331,8 +1348,11 @@
     flex-shrink: 0;
   }
   #mp-transport button:hover { color: var(--accent); }
-  #mp-play { font-size: 20px; color: var(--accent); }
+  #mp-play { width: 48px; height: 48px; font-size: 18px; color: var(--accent); }
+  #mp-play svg { width: 18px; height: 18px; }
   #mp-play:hover { color: var(--accent-dim); }
+  #mp-transport button:active { transform: scale(0.92); }
+  #mp-play:active { transform: none; }
 
   .mp-row {
     display: flex;
@@ -2359,6 +2379,7 @@
     display: flex; align-items: center; justify-content: center;
   }
   .mm-play:hover { border-color: var(--accent); color: var(--accent); }
+  .mm-play:active { transform: scale(0.95); }
   .mm-play.running { color: var(--accent); border-color: var(--accent); background: var(--accent-glow); }
 
   .mm-bpm-section {

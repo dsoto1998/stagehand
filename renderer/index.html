@@ -35,27 +35,27 @@
             <span class="click-type-label">Accent</span>
             <span class="click-sound-name" data-type="accent">Default</span>
             <button class="sp-btn-small load-click-btn" data-type="accent">Load…</button>
-            <button class="sp-btn-small clear-click-btn" data-type="accent" style="display:none">Clear</button>
+            <button class="sp-btn-small clear-click-btn hidden" data-type="accent">Clear</button>
           </div>
           <div class="click-sound-row">
             <span class="click-type-label">Quarter</span>
             <span class="click-sound-name" data-type="quarter">Default</span>
             <button class="sp-btn-small load-click-btn" data-type="quarter">Load…</button>
-            <button class="sp-btn-small clear-click-btn" data-type="quarter" style="display:none">Clear</button>
+            <button class="sp-btn-small clear-click-btn hidden" data-type="quarter">Clear</button>
           </div>
           <div class="click-sound-row">
             <span class="click-type-label">Eighth</span>
             <span class="click-sound-name" data-type="eighth">Default</span>
             <button class="sp-btn-small load-click-btn" data-type="eighth">Load…</button>
-            <button class="sp-btn-small clear-click-btn" data-type="eighth" style="display:none">Clear</button>
+            <button class="sp-btn-small clear-click-btn hidden" data-type="eighth">Clear</button>
           </div>
           <div class="click-sound-row">
             <span class="click-type-label">16th / Trip</span>
             <span class="click-sound-name" data-type="subdivision">Default</span>
             <button class="sp-btn-small load-click-btn" data-type="subdivision">Load…</button>
-            <button class="sp-btn-small clear-click-btn" data-type="subdivision" style="display:none">Clear</button>
+            <button class="sp-btn-small clear-click-btn hidden" data-type="subdivision">Clear</button>
           </div>
-          <input type="file" id="click-file-input" accept=".wav,.mp3,.ogg" style="display:none">
+          <input type="file" id="click-file-input" accept=".wav,.mp3,.ogg" class="hidden">
         </div>
       </div>
       <div class="sp-divider"></div>
@@ -94,7 +94,7 @@
               <button id="mm-bpm-display" class="mm-bpm-display" title="Double-click to type BPM">
                 <span class="mm-bpm-num">120</span>
               </button>
-              <input type="number" id="mm-bpm-inline" class="mm-bpm-inline" min="20" max="300" style="display:none">
+              <input type="number" id="mm-bpm-inline" class="mm-bpm-inline hidden" min="20" max="300">
             </div>
             <button id="mm-bpm-plus" class="mm-adj" title="BPM +1">+</button>
             <button id="mm-tap-btn" class="mm-tap-btn" title="Tap tempo">TAP</button>
@@ -144,7 +144,7 @@
         <div id="mp-time-display">0:00 / --:--</div>
         <div id="mp-transport">
           <button id="mp-prev" title="Previous track" aria-label="Previous track"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg></button>
-          <button id="mp-play" title="Play / Pause" aria-label="Play"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+          <button id="mp-play" title="Play / Pause" aria-label="Play"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
           <button id="mp-next" title="Next track" aria-label="Next track"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg></button>
         </div>
         <div class="mp-vol-group">
@@ -172,7 +172,7 @@
           <div class="panel-title">Library</div>
           <div class="panel-header-actions">
             <span class="library-count" id="lib-count-label">0 tracks</span>
-            <button class="btn btn-sm btn-ghost" id="lib-locate-btn" title="Jump to now playing" style="display:none"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/></svg> Now Playing</button>
+            <button class="btn btn-sm btn-ghost hidden" id="lib-locate-btn" title="Jump to now playing" aria-label="Jump to now playing"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2v3"/><path d="M12 19v3"/><path d="M2 12h3"/><path d="M19 12h3"/></svg> Now Playing</button>
             <button class="btn btn-sm" id="import-btn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg> Import</button>
             <input type="file" id="file-input" accept=".wav,.mp3,.flac,.ogg,.opus" multiple>
           </div>
@@ -294,7 +294,7 @@
     <div class="conf-msg" id="conf-msg"></div>
     <div class="conf-actions">
       <button class="btn" id="conf-cancel">Cancel</button>
-      <button class="btn" id="conf-alt" style="display:none"></button>
+      <button class="btn hidden" id="conf-alt"></button>
       <button class="btn btn-danger" id="conf-ok">Delete</button>
     </div>
   </div>
