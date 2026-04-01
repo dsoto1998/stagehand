@@ -90,41 +90,12 @@ function scheduler() {
   }
 }
 
-function updateBeatDots(subdivSteps) {
-  const grid = document.getElementById('beat-grid');
-  grid.innerHTML = '';
-  const count = beatsPerBar * subdivSteps;
-  for (let i = 0; i < count; i++) {
-    const beatIdx = Math.floor(i / subdivSteps);
-    const isBoundary = i % subdivSteps === 0;
-    const d = document.createElement('div');
-    const classes = ['beat-dot'];
-    if (isBoundary) {
-      classes.push('beat-boundary');
-      if (beatAccents[beatIdx]) classes.push('accent');
-      d.title = 'Click to toggle accent';
-      d.addEventListener('click', () => {
-        beatAccents[beatIdx] = !beatAccents[beatIdx];
-        updateBeatDots(subdivision);
-      });
-    }
-    d.className = classes.join(' ');
-    d.id = 'dot-' + i;
-    grid.appendChild(d);
-  }
-}
-
 function flashLoop() {
   if (!isRunning) { flashRaf = null; return; }
   const c = getCtx();
   const now = c.currentTime;
   while (flashQueue.length && flashQueue[0].time <= now + 0.02) {
     const item = flashQueue.shift();
-    const dot = document.getElementById('dot-' + item.beat);
-    if (dot) {
-      dot.classList.add('flash');
-      setTimeout(() => dot.classList.remove('flash'), 80);
-    }
     if (item.beat % item.subdivSteps === 0 && beatCallback) {
       beatCallback();
     }
@@ -150,20 +121,16 @@ function stop() {
   flashQueue = [];
   cancelAnimationFrame(flashRaf);
   flashRaf = null;
-  // Clear all dots
-  document.querySelectorAll('.beat-dot').forEach(d => d.classList.remove('flash'));
 }
 
 function setBpm(v) {
   bpm = Math.max(20, Math.min(300, v));
-  document.getElementById('bpm-input').value = bpm;
 }
 
 function getBpm() { return bpm; }
 function setVolume(v) { volume = v; }
 function setSubdivision(s) {
   subdivision = s;
-  updateBeatDots(s);
   if (isRunning) {
     const c = getCtx();
     const secPerBeat = (beatUnit === 8) ? 30 / bpm : 60 / bpm;
@@ -178,7 +145,6 @@ function setTimeSignature(numerator, denominator) {
   beatsPerBar = numerator;
   beatUnit = denominator;
   beatAccents = Array.from({ length: numerator }, (_, i) => i === 0);
-  updateBeatDots(subdivision);
 }
 function setBeatAccent(beatIdx, v) { beatAccents[beatIdx] = v; }
 function getTimeSignature() { return { numerator: beatsPerBar, denominator: beatUnit }; }
@@ -189,7 +155,7 @@ function setAccent(enabled) { accentEnabled = enabled; }
 function getAccent() { return accentEnabled; }
 function isActive() { return isRunning; }
 
-export const Metronome = { start, stop, setBpm, getBpm, setVolume, setSubdivision, setTimeSignature, setBeatAccent, getTimeSignature, getBeatAccents, setCustomBuffer, getCustomBuffer, setAccent, getAccent, isActive, updateBeatDots, onBeat };
+export const Metronome = { start, stop, setBpm, getBpm, setVolume, setSubdivision, setTimeSignature, setBeatAccent, getTimeSignature, getBeatAccents, setCustomBuffer, getCustomBuffer, setAccent, getAccent, isActive, onBeat };
 
 
 // ─── TAP TEMPO ───────────────────────────────────────────────

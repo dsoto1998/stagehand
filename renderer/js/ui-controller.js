@@ -2879,10 +2879,6 @@ document.getElementById('mm-play-btn').addEventListener('click', async function(
   if (ctx.state === 'suspended') await ctx.resume();
   if (Metronome.isActive()) { Metronome.stop(); } else { Metronome.start(); }
   syncMetroMini();
-  // sync full-panel button
-  const fullBtn = document.getElementById('metro-play-btn');
-  fullBtn.innerHTML = Metronome.isActive() ? `${ICONS.stop} Stop` : `${ICONS.play} Start`;
-  fullBtn.classList.toggle('running', Metronome.isActive());
 });
 
 // BPM display — double-click to type BPM inline
@@ -2900,7 +2896,7 @@ function commitBpmInline() {
   const display = document.getElementById('mm-bpm-display');
   const input = document.getElementById('mm-bpm-inline');
   const val = parseInt(input.value);
-  if (!isNaN(val)) { Metronome.setBpm(val); document.getElementById('bpm-input').value = Metronome.getBpm(); syncMetroMini(); }
+  if (!isNaN(val)) { Metronome.setBpm(val); syncMetroMini(); }
   input.classList.add('hidden');
   display.classList.remove('hidden');
 }
@@ -2919,29 +2915,22 @@ document.getElementById('mm-bpm-inline').addEventListener('keydown', (e) => {
 document.getElementById('mm-tap-btn').addEventListener('click', () => {
   resume();
   const bpm = TapTempo.tap();
-  const count = TapTempo.count();
-  if (bpm) { Metronome.setBpm(bpm); document.getElementById('bpm-input').value = bpm; }
+  if (bpm) { Metronome.setBpm(bpm); }
   syncMetroMini();
-  const countEl = document.getElementById('tap-count');
-  countEl.textContent = count < 2 ? 'tap again...' : `${count} taps · ${bpm} BPM`;
 });
 
 document.getElementById('mm-bpm-minus').addEventListener('click', () => {
   Metronome.setBpm(Metronome.getBpm() - 1);
   syncMetroMini();
-  document.getElementById('bpm-input').value = Metronome.getBpm();
 });
 document.getElementById('mm-bpm-plus').addEventListener('click', () => {
   Metronome.setBpm(Metronome.getBpm() + 1);
   syncMetroMini();
-  document.getElementById('bpm-input').value = Metronome.getBpm();
 });
 
 document.getElementById('mm-subdiv-select').addEventListener('change', function() {
   const subdiv = parseInt(this.value);
   Metronome.setSubdivision(subdiv);
-  // sync full-panel subdivision buttons
-  document.querySelectorAll('.subdiv-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.subdiv) === subdiv));
   localStorage.setItem('metronomeSubdiv', subdiv);
 });
 
@@ -2951,63 +2940,10 @@ document.getElementById('mm-vol').addEventListener('input', function() {
   updateRangeFill(this);
 });
 
-// ─── METRONOME FULL-PANEL BINDINGS ───────────────────────────
-document.getElementById('bpm-minus').addEventListener('click', () => {
-  Metronome.setBpm(Metronome.getBpm() - 1);
-  syncMetroMini();
-});
-document.getElementById('bpm-plus').addEventListener('click', () => {
-  Metronome.setBpm(Metronome.getBpm() + 1);
-  syncMetroMini();
-});
-
-document.getElementById('bpm-input').addEventListener('change', function() {
-  Metronome.setBpm(parseInt(this.value) || 120);
-  syncMetroMini();
-});
-document.getElementById('bpm-input').addEventListener('keydown', function(e) {
-  if (e.key === 'Enter') this.blur();
-  if (['e', 'E', '+', '-', '.'].includes(e.key)) e.preventDefault();
-});
-
-document.getElementById('metro-play-btn').addEventListener('click', async function() {
-  const ctx = resume();
-  if (ctx.state === 'suspended') await ctx.resume();
-  if (Metronome.isActive()) {
-    Metronome.stop();
-    this.innerHTML = `${ICONS.play} Start`;
-    this.classList.remove('running');
-  } else {
-    Metronome.start();
-    this.innerHTML = `${ICONS.stop} Stop`;
-    this.classList.add('running');
-  }
-  syncMetroMini();
-});
-
-document.querySelectorAll('.subdiv-btn').forEach(btn => {
-  btn.addEventListener('click', function() {
-    document.querySelectorAll('.subdiv-btn').forEach(b => b.classList.remove('active'));
-    this.classList.add('active');
-    const subdiv = parseInt(this.dataset.subdiv);
-    Metronome.setSubdivision(subdiv);
-    // sync miniplayer select
-    document.getElementById('mm-subdiv-select').value = subdiv;
-    localStorage.setItem('metronomeSubdiv', subdiv);
-  });
-});
-
-// Accent toggle (synced between full panel and miniplayer)
+// Accent toggle
 function syncAccentBtns(enabled) {
-  document.getElementById('accent-toggle-btn').classList.toggle('active', enabled);
   document.getElementById('mm-accent-btn').classList.toggle('active', enabled);
 }
-document.getElementById('accent-toggle-btn').addEventListener('click', function() {
-  const enabled = !Metronome.getAccent();
-  Metronome.setAccent(enabled);
-  syncAccentBtns(enabled);
-  localStorage.setItem('metronomeAccent', enabled);
-});
 document.getElementById('mm-accent-btn').addEventListener('click', function() {
   const enabled = !Metronome.getAccent();
   Metronome.setAccent(enabled);
@@ -3017,11 +2953,6 @@ document.getElementById('mm-accent-btn').addEventListener('click', function() {
 
 // ─── TIME SIGNATURE ───────────────────────────────────────────
 function syncTimeSigUI(num, den) {
-  document.querySelectorAll('.timesig-btn').forEach(b =>
-    b.classList.toggle('active', parseInt(b.dataset.num) === num && parseInt(b.dataset.den) === den)
-  );
-  document.getElementById('timesig-num').value = num;
-  document.getElementById('timesig-den').value = den;
   const sel = document.getElementById('mm-timesig-select');
   const key = `${num}/${den}`;
   const opt = sel.querySelector(`option[value="${key}"]`);
@@ -3041,37 +2972,10 @@ function applyTimeSignature(num, den) {
   localStorage.setItem('metronomeTimeSig', JSON.stringify({ num, den }));
 }
 
-document.querySelectorAll('.timesig-btn').forEach(btn => {
-  btn.addEventListener('click', function() {
-    applyTimeSignature(parseInt(this.dataset.num), parseInt(this.dataset.den));
-  });
-});
-
-document.getElementById('timesig-apply-btn').addEventListener('click', () => {
-  const num = parseInt(document.getElementById('timesig-num').value);
-  const den = parseInt(document.getElementById('timesig-den').value);
-  if (num >= 2 && num <= 16) applyTimeSignature(num, den);
-});
-
 document.getElementById('mm-timesig-select').addEventListener('change', function() {
   if (this.value === 'custom') return;
   const [num, den] = this.value.split('/').map(Number);
   applyTimeSignature(num, den);
-});
-
-// Tap tempo (full-panel button)
-document.getElementById('tap-btn').addEventListener('click', () => {
-  resume();
-  const bpm = TapTempo.tap();
-  const count = TapTempo.count();
-  if (bpm) Metronome.setBpm(bpm);
-  syncMetroMini();
-  const countEl = document.getElementById('tap-count');
-  if (count < 2) {
-    countEl.textContent = 'tap again...';
-  } else {
-    countEl.textContent = `${count} taps · ${bpm} BPM`;
-  }
 });
 
 // Custom click sounds (4 slots: accent, quarter, eighth, subdivision)
@@ -3139,7 +3043,6 @@ document.getElementById('tap-btn').addEventListener('click', () => {
   const storedSubdiv = parseInt(localStorage.getItem('metronomeSubdiv'));
   const subdiv = [1, 2, 3, 4].includes(storedSubdiv) ? storedSubdiv : 1;
   Metronome.setSubdivision(subdiv);
-  document.querySelectorAll('.subdiv-btn').forEach(b => b.classList.toggle('active', parseInt(b.dataset.subdiv) === subdiv));
   document.getElementById('mm-subdiv-select').value = subdiv;
 
   // Restore accent toggle
