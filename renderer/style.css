@@ -478,7 +478,7 @@
     position: absolute;
     top: 0; left: 0; bottom: 0;
     width: 0%;
-    background: rgba(232,255,71,0.08);
+    background: var(--accent-glow);
     border-right: 1px solid var(--accent);
     pointer-events: none;
     transition: width 0.05s linear;
@@ -620,7 +620,7 @@
     border: 1px solid var(--border-bright);
     transition: all 0.05s;
   }
-  .beat-dot.accent { border-color: var(--accent); background: rgba(232,255,71,0.1); }
+  .beat-dot.accent { border-color: var(--accent); background: var(--accent-glow); }
   .beat-dot.flash {
     background: var(--accent) !important;
     border-color: var(--accent) !important;
@@ -945,7 +945,7 @@
   .lib-sort-btn:hover { color: var(--text-primary); }
   .lib-sort-btn.active {
     color: var(--accent);
-    border-color: rgba(232,255,71,0.25);
+    border-color: rgba(0,150,199,0.25);
   }
   .lib-sort-dir {
     font-size: 9px;
@@ -1192,7 +1192,13 @@
     padding: 60px 20px;
     color: var(--text-dim);
   }
-  .lib-empty-state .es-icon { font-size: 40px; margin-bottom: 12px; }
+  .lib-empty-state .es-icon {
+    display: flex; align-items: center; justify-content: center;
+    width: 48px; height: 48px;
+    margin: 0 auto 12px;
+    color: var(--text-dim);
+  }
+  .lib-empty-state .es-icon svg { width: 40px; height: 40px; }
   .lib-empty-state .es-text {
     font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 20px;

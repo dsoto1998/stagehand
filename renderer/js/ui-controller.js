@@ -1082,13 +1082,13 @@ function renderSongsTab() {
     visibleTracks = [];
     if (searchQuery && tracks.length > 0) {
       trackList.innerHTML = `<div class="lib-empty-state">
-        <div class="es-icon">\u2315</div>
+        <div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg></div>
         <div class="es-text">No results</div>
         <div class="es-sub">No tracks match &ldquo;${escHtml(searchQuery)}&rdquo;</div>
       </div>`;
     } else {
       trackList.innerHTML = `<div class="lib-empty-state">
-        <div class="es-icon">\u25C8</div>
+        <div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
         <div class="es-text">No tracks yet</div>
         <div class="es-sub">Import audio files to get started</div>
       </div>`;
@@ -1105,7 +1105,7 @@ function renderArtistList() {
 
   if (groups.length === 0) {
     trackList.innerHTML = `<div class="lib-empty-state">
-      <div class="es-icon">\u25C8</div>
+      <div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
       <div class="es-text">No artists</div>
       <div class="es-sub">Import tracks with artist tags</div>
     </div>`;
@@ -1233,7 +1233,7 @@ function renderAlbumList() {
 
   if (groups.length === 0) {
     trackList.innerHTML = `<div class="lib-empty-state">
-      <div class="es-icon">\u25C8</div>
+      <div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></div>
       <div class="es-text">No albums</div>
       <div class="es-sub">Import tracks with album tags</div>
     </div>`;
@@ -2067,7 +2067,7 @@ document.addEventListener('click', () => plSubmenu.classList.remove('show'));
 function renderCurrentTab() {
   if (!libraryLoaded) {
     document.getElementById('track-list').innerHTML =
-      '<div class="lib-empty-state"><div class="es-icon">⟳</div><div class="es-text">Loading Library…</div></div>';
+      '<div class="lib-empty-state"><div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></div><div class="es-text">Loading Library…</div></div>';
     return;
   }
   // Manage the edit-mode banner — visible on all tabs while edit mode is active
@@ -3152,7 +3152,7 @@ document.getElementById('tap-btn').addEventListener('click', () => {
 
   syncMetroMini();
   document.getElementById('track-list').innerHTML =
-    '<div class="lib-empty-state"><div class="es-icon">⟳</div><div class="es-text">Loading Library…</div></div>';
+    '<div class="lib-empty-state"><div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></div><div class="es-text">Loading Library…</div></div>';
   await loadLibrary();
   // Restore persisted click sounds
   const ctx = resume();

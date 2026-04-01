@@ -30,12 +30,12 @@ export function renderWaveform(canvas, audioBuffer) {
     const yMin = mid + min * mid * 0.9;
     const yMax = mid + max * mid * 0.9;
     const bright = Math.min(1, (yMax - yMin) / H * 4);
-    ctx.fillStyle = `rgba(${55 + bright*177},${55 + bright*200},${55 + bright*16},${0.5 + bright*0.5})`;
+    ctx.fillStyle = `rgba(${Math.round(bright*0)},${Math.round(55 + bright*95)},${Math.round(55 + bright*144)},${0.5 + bright*0.5})`;
     ctx.fillRect(i, yMin, 1, Math.max(1, yMax - yMin));
   }
 
   // Center line
-  ctx.strokeStyle = 'rgba(232,255,71,0.1)';
+  ctx.strokeStyle = 'rgba(0,150,199,0.1)';
   ctx.lineWidth = 1;
   ctx.setLineDash([2, 4]);
   ctx.beginPath();
