@@ -29,6 +29,7 @@
   }
 
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  button, input, select, textarea { font-family: inherit; }
 
   html, body {
     height: 100%;
@@ -56,7 +57,6 @@
   }
 
   #topbar .logo {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-weight: 600;
     font-size: 22px;
     letter-spacing: 0;
@@ -66,7 +66,6 @@
   #topbar .logo span { color: var(--text-secondary); }
 
   #topbar .tagline {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 12px;
     color: var(--text-dim);
     letter-spacing: 0;
@@ -114,7 +113,6 @@
   }
 
   .sp-section-label {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 10px;
     font-weight: 600;
     letter-spacing: 0.08em;
@@ -130,7 +128,6 @@
   }
   .sp-row:hover { background: var(--bg-hover); }
   .sp-label {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 13px;
     color: var(--text-secondary);
   }
@@ -148,7 +145,6 @@
   }
   .sp-adj:hover { border-color: var(--accent); color: var(--accent); }
   .sp-val {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 13px;
     color: var(--accent);
     min-width: 38px;
@@ -176,7 +172,6 @@
   }
 
   .nav-section-label {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     letter-spacing: 0;
     color: var(--text-dim);
@@ -210,7 +205,6 @@
     border-radius: 10px;
     font-size: 12px;
     padding: 1px 7px;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     color: var(--text-dim);
   }
 
@@ -255,7 +249,6 @@
     display: flex; align-items: center; gap: 10px;
   }
   .panel-title {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-weight: 600;
     font-size: 28px;
     letter-spacing: 0;
@@ -285,7 +278,6 @@
     background: var(--bg-card);
     color: var(--text-primary);
     cursor: pointer;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 14px;
     font-weight: 500;
     letter-spacing: 0;
@@ -337,7 +329,6 @@
   #file-input { display: none; }
 
   .library-count {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     color: var(--text-dim);
     letter-spacing: 0;
@@ -397,7 +388,6 @@
   .track-info { flex: 1; min-width: 0; }
 
   .track-name {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 17px;
     font-weight: 600;
     letter-spacing: 0;
@@ -411,7 +401,6 @@
 
   /* ── TRACK SUBTITLE ─────────────────────────────────── */
   .track-subtitle {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 12px;
     font-weight: 400;
     color: var(--text-dim);
@@ -426,7 +415,6 @@
     background: var(--bg-base);
     border: 1px solid var(--accent);
     color: var(--text-primary);
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 17px;
     font-weight: 600;
     letter-spacing: 0;
@@ -437,7 +425,6 @@
   }
 
   .track-meta {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 12px;
     color: var(--text-dim);
     margin-top: 2px;
@@ -486,7 +473,6 @@
   }
   .ctrl-group.wide { flex: 1; }
   .ctrl-label {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     color: var(--text-dim);
     letter-spacing: 0;
@@ -496,7 +482,6 @@
   .ctrl-val { color: var(--text-secondary); }
 
   .time-display {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     color: var(--text-secondary);
     letter-spacing: 0;
@@ -505,7 +490,6 @@
 
   /* Semitone badge */
   .semitone-display {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 13px;
     color: var(--cyan);
     letter-spacing: 0;
@@ -529,7 +513,6 @@
     border: 1px solid var(--border);
     border-radius: 4px;
     color: var(--text-primary);
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 13px;
     font-weight: 400;
     padding: 5px 10px;
@@ -565,7 +548,6 @@
     flex-shrink: 0;
   }
   .lib-sort-label {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 10px;
     color: var(--text-dim);
     text-transform: uppercase;
@@ -574,7 +556,6 @@
     flex-shrink: 0;
   }
   .lib-sort-btn {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     font-weight: 500;
     color: var(--text-secondary);
@@ -616,7 +597,6 @@
     padding: 8px 16px;
     border: none;
     background: none;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 14px;
     font-weight: 500;
     letter-spacing: 0;
@@ -711,7 +691,6 @@
 
   .row-info { flex: 1; min-width: 0; }
   .row-name {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 15px;
     font-weight: 500;
     white-space: nowrap;
@@ -719,7 +698,6 @@
     text-overflow: ellipsis;
   }
   .row-sub {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 12px;
     color: var(--text-dim);
     white-space: nowrap;
@@ -728,7 +706,6 @@
     margin-top: 1px;
   }
   .row-dur {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     color: var(--text-dim);
     flex-shrink: 0;
@@ -780,7 +757,6 @@
   }
   .xpose-btn:hover { border-color: var(--accent); color: var(--accent); }
   .xpose-val {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     color: var(--text-dim);
     min-width: 24px;
@@ -795,7 +771,6 @@
     border: 1px solid var(--cyan);
     border-radius: 3px;
     color: var(--cyan);
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     text-align: center;
     padding: 1px 2px;
@@ -817,7 +792,6 @@
   #ctx-menu.show { display: block; }
   .ctx-item {
     padding: 8px 14px;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 14px;
     letter-spacing: 0;
     cursor: pointer;
@@ -845,14 +819,12 @@
   }
   .lib-empty-state .es-icon svg { width: 40px; height: 40px; }
   .lib-empty-state .es-text {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 20px;
     font-weight: 600;
     letter-spacing: 0;
     color: var(--text-secondary);
   }
   .lib-empty-state .es-sub {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 12px;
     margin-top: 6px;
     letter-spacing: 0;
@@ -863,7 +835,6 @@
     background: var(--bg-base);
     border: 1px solid var(--accent);
     color: var(--text-primary);
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 15px;
     font-weight: 500;
     letter-spacing: 0;
@@ -887,7 +858,6 @@
     border: 1px solid var(--border-bright);
     border-radius: 4px;
     padding: 10px 16px;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     color: var(--text-primary);
     letter-spacing: 0;
@@ -907,7 +877,6 @@
     background: rgba(10,10,12,0.7);
     display: flex; align-items: center; justify-content: center;
     border-radius: 3px;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 12px;
     color: var(--accent);
     letter-spacing: 0;
@@ -948,7 +917,6 @@
     margin-bottom: 10px;
   }
   #mp-track-name {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 14px;
     font-weight: 600;
     letter-spacing: 0;
@@ -958,7 +926,6 @@
     text-overflow: ellipsis;
   }
   #mp-track-sub {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 11px;
     color: var(--text-dim);
     white-space: nowrap;
@@ -1031,7 +998,6 @@
   .mp-row input[type=range] { flex: 1; }
 
   .mp-val {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 12px;
     color: var(--text-secondary);
     min-width: 32px;
@@ -1056,7 +1022,6 @@
     width: 340px;
   }
   #confirm-box .conf-title {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 20px;
     font-weight: 600;
     letter-spacing: 0;
@@ -1087,7 +1052,6 @@
     width: 380px;
   }
   .info-header {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 18px;
     font-weight: 600;
     margin-bottom: 16px;
@@ -1105,7 +1069,6 @@
     width: 68px;
     flex-shrink: 0;
     text-align: right;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-weight: 400;
   }
   .info-input {
@@ -1115,7 +1078,6 @@
     border-radius: 3px;
     color: var(--text-primary);
     font-size: 13px;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-weight: 400;
     padding: 5px 8px;
     outline: none;
@@ -1129,7 +1091,6 @@
   .info-value {
     font-size: 12px;
     color: var(--text-secondary);
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-weight: 300;
   }
   .info-art-preview { display: flex; align-items: center; gap: 10px; flex: 1; }
@@ -1188,7 +1149,6 @@
 
 /* ── TIME DISPLAY ───────────────────────────────────── */
 #mp-time-display {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 12px;
   font-weight: 400;
   color: var(--text-secondary);
@@ -1213,7 +1173,6 @@
 
 .artist-row-name {
   flex: 1;
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 15px;
   font-weight: 500;
   white-space: nowrap;
@@ -1221,7 +1180,6 @@
   text-overflow: ellipsis;
 }
 .artist-row-count {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
@@ -1241,7 +1199,6 @@
 }
 .album-section-header-name {
   flex: 1;
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
@@ -1252,7 +1209,6 @@
   text-overflow: ellipsis;
 }
 .album-section-header-count {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
@@ -1260,7 +1216,6 @@
 
 /* ── TRACK NUMBER BADGE ──────────────────────────────── */
 .track-num {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   width: 22px;
@@ -1297,7 +1252,6 @@
   color: var(--accent);
 }
 .artist-drill-title {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 16px;
   font-weight: 600;
   letter-spacing: 0;
@@ -1307,7 +1261,6 @@
   text-overflow: ellipsis;
 }
 .artist-drill-count {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
@@ -1366,7 +1319,6 @@
   overflow: hidden;
 }
 .album-row-name {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 15px;
   font-weight: 500;
   white-space: nowrap;
@@ -1374,7 +1326,6 @@
   text-overflow: ellipsis;
 }
 .album-row-artist {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-secondary);
   white-space: nowrap;
@@ -1383,7 +1334,6 @@
   margin-top: 1px;
 }
 .album-row-count {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
@@ -1424,7 +1374,6 @@
 }
 
 .pl-list-header-title {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -1471,7 +1420,6 @@
 .pl-row.active .pl-row-name { color: var(--accent); }
 
 .pl-row-name {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
@@ -1481,7 +1429,6 @@
 }
 
 .pl-row-count {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
@@ -1494,7 +1441,6 @@
   border: 1px solid var(--accent);
   border-radius: 3px;
   color: var(--text-primary);
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   font-weight: 500;
   padding: 2px 5px;
@@ -1516,7 +1462,6 @@
   border: 1px solid var(--border);
   border-radius: 3px;
   color: var(--text-dim);
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -1541,7 +1486,6 @@
 }
 
 .pl-row-date {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 10px;
   color: var(--text-dim);
   white-space: nowrap;
@@ -1569,7 +1513,6 @@
 }
 
 .pl-detail-date-label {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 10px;
   color: var(--text-dim);
   text-transform: uppercase;
@@ -1590,7 +1533,6 @@
 .pl-detail-date:focus { outline: none; border-color: var(--accent); color: var(--text-primary); }
 
 .pl-detail-title {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 16px;
   font-weight: 700;
   color: var(--text-primary);
@@ -1602,7 +1544,6 @@
 }
 
 .pl-detail-count {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   flex-shrink: 0;
@@ -1613,7 +1554,6 @@
   border: 1px solid var(--border);
   border-radius: 4px;
   color: var(--text-secondary);
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 13px;
   font-weight: 500;
   padding: 3px 9px;
@@ -1653,7 +1593,6 @@
 
 /* Row number in playlist */
 .row-pl-num {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   width: 22px;
@@ -1704,7 +1643,6 @@
   align-items: center;
   justify-content: center;
   color: var(--text-dim);
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
 }
 
@@ -1730,7 +1668,6 @@
 }
 
 .add-tracks-title {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 15px;
   font-weight: 700;
   color: var(--text-primary);
@@ -1753,7 +1690,6 @@
   border: 1px solid var(--border);
   border-radius: 5px;
   color: var(--text-primary);
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   padding: 5px 10px;
   outline: none;
@@ -1778,7 +1714,6 @@
 .add-track-row:hover { background: var(--bg-hover); }
 
 .add-track-name {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
@@ -1790,7 +1725,6 @@
 }
 
 .add-track-sub {
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 11px;
   color: var(--text-dim);
   white-space: nowrap;
@@ -1821,7 +1755,6 @@
   padding: 7px 14px;
   background: var(--bg-active);
   border-bottom: 1px solid var(--border-bright);
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 13px;
   color: var(--text-secondary);
   flex-shrink: 0;
@@ -1834,7 +1767,6 @@
   color: #000;
   border: none;
   border-radius: 4px;
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -1847,7 +1779,6 @@
   color: var(--text-secondary);
   border: 1px solid var(--border);
   border-radius: 4px;
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 13px;
   cursor: pointer;
   transition: all 0.12s;
@@ -1914,7 +1845,6 @@
 
 .pl-submenu-item {
   padding: 7px 14px;
-  font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
   font-size: 14px;
   font-weight: 500;
   color: var(--text-primary);
@@ -1933,7 +1863,6 @@
   }
 
   .settings-label {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 13px;
     color: var(--text-secondary);
     letter-spacing: 0;
@@ -1946,7 +1875,6 @@
   }
 
   .settings-val {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 18px;
     color: var(--accent);
     min-width: 52px;
@@ -1994,7 +1922,6 @@
   .click-type-label {
     font-size: 10px;
     color: var(--text-secondary);
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     white-space: nowrap;
   }
   .click-sound-name {
@@ -2083,7 +2010,6 @@
     border: 1px solid var(--accent);
     border-radius: 5px;
     color: var(--accent);
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 16px;
     font-weight: 700;
     text-align: center;
@@ -2111,7 +2037,6 @@
   .mm-tap-btn:hover { border-color: var(--border-bright); color: var(--text-secondary); }
   .mm-tap-btn:active { background: var(--bg-hover); color: var(--accent); border-color: var(--accent); }
   .mm-bpm-num {
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 16px;
     font-weight: 700;
     color: var(--accent);
@@ -2128,7 +2053,6 @@
     border: 1px solid var(--border-bright);
     border-radius: 5px;
     color: var(--text-secondary);
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 12px;
     padding: 5px 8px;
     cursor: pointer;
@@ -2147,7 +2071,6 @@
     border: 1px solid var(--border-bright);
     border-radius: 5px;
     color: var(--text-secondary);
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     font-size: 12px;
     padding: 5px 8px;
     cursor: pointer;
@@ -2164,7 +2087,6 @@
     flex: 1;
     padding: 5px 8px;
     font-size: 11px;
-    font-family: 'Segoe UI Variable', 'Segoe UI', sans-serif;
     background: var(--bg-active);
     border: 1px solid var(--border-bright);
     border-radius: 5px;

@@ -30,7 +30,7 @@ export function renderWaveform(canvas, audioBuffer) {
     const yMin = mid + min * mid * 0.9;
     const yMax = mid + max * mid * 0.9;
     const bright = Math.min(1, (yMax - yMin) / H * 4);
-    ctx.fillStyle = `rgba(${Math.round(bright*0)},${Math.round(55 + bright*95)},${Math.round(55 + bright*144)},${0.5 + bright*0.5})`;
+    ctx.fillStyle = `rgba(0,${Math.round(55 + bright*95)},${Math.round(55 + bright*144)},${0.5 + bright*0.5})`;
     ctx.fillRect(i, yMin, 1, Math.max(1, yMax - yMin));
   }
 

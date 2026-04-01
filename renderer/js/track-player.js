@@ -31,6 +31,7 @@ export class TrackPlayer {
     this.loopStart = 0;
     this.loopEnd = 1;
     this._rafId = null;
+    this._semitoneDebounce = null;
     this.onProgress = null;
     this.onEnd = null;
   }
