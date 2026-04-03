@@ -22,8 +22,8 @@
     --cyan-dim:      #30b8aa;
     --purple:        #9b6dff;
     --text-primary:  #eeeef5;
-    --text-secondary:#8888a8;
-    --text-dim:      #55556a;
+    --text-secondary:#9595b5;
+    --text-dim:      #686880;
     --sidebar-w:     220px;
     --topbar-h:      52px;
   }
@@ -947,13 +947,19 @@
   }
 
   /* ── MINIPLAYER (sidebar-bottom) ────────────────────── */
+  #mp-art-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
   #mp-art {
-    width: 100%;
-    aspect-ratio: 1 / 1;
+    width: 72px;
+    height: 72px;
+    flex-shrink: 0;
     border-radius: 6px;
     overflow: hidden;
     background: var(--bg-active);
-    margin-bottom: 12px;
     position: relative;
   }
   #mp-art-img {
@@ -973,12 +979,16 @@
   .mp-art-placeholder::after {
     content: '♪';
     color: var(--text-dim);
-    font-size: 36px;
+    font-size: 22px;
   }
 
   #mp-track-info {
-    text-align: center;
-    margin-bottom: 10px;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 3px;
   }
   #mp-track-name {
     font-size: 14px;
@@ -995,7 +1005,6 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    margin-top: 2px;
   }
 
   /* Marquee scrolling for long track/sub text */
@@ -1063,7 +1072,6 @@
   .mp-speed-group .mp-row { margin-bottom: 0; }
   #mp-speed { width: 130px; flex: none; }
   .mp-speed-val {
-    font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
     color: var(--text-secondary);
     width: 13px;
@@ -1091,6 +1099,23 @@
   .speed-reset svg { width: 10px; height: 10px; }
   .speed-reset:hover { opacity: 0.7; }
   .speed-reset.speed-reset-visible { display: flex; }
+
+  .mp-speed-warn {
+    display: block;
+    text-align: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 300;
+    color: var(--purple);
+    margin-top: 2px;
+    letter-spacing: 0.02em;
+  }
+
+  .mp-loop-btn-row {
+    display: flex;
+    justify-content: center;
+    margin: 2px 0;
+  }
 
   .mp-row input[type=range] { flex: 1; }
 
@@ -1898,7 +1923,6 @@
 .pl-edit-add-btn:hover { color: var(--accent); border-color: var(--accent); }
 .pl-edit-add-btn.added { color: var(--accent); border-color: var(--accent); cursor: default; }
 .pl-edit-count {
-  font-family: 'JetBrains Mono', monospace;
   font-size: 11px;
   color: var(--accent);
   flex-shrink: 0;
@@ -2036,10 +2060,51 @@
     min-width: 0;
   }
 
+  /* ── SECTION COLLAPSE HEADERS ───────────────────────── */
+  .section-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    padding: 2px 0 4px;
+    user-select: none;
+  }
+  .section-hdr:hover .section-hdr-label { color: var(--text-secondary); }
+  .section-hdr-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    font-weight: 500;
+    transition: color 0.1s;
+  }
+  .section-collapse-btn {
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    align-items: center;
+    transition: color 0.1s;
+    flex-shrink: 0;
+  }
+  .section-collapse-btn:hover { color: var(--text-secondary); }
+  .section-collapse-btn svg { transition: transform 0.15s ease; }
+  .section-collapse-btn.collapsed svg { transform: rotate(-90deg); }
+
+  #metro-body.collapsed,
+  #mp-body.collapsed { display: none; }
+
+  #mp-section {
+    margin: 0 -12px -12px;
+    padding: 8px 14px 12px;
+  }
+
   /* ── METRONOME MINIPLAYER ────────────────────────────── */
   #metro-mini {
-    margin: -12px -12px 12px;
-    padding: 12px 14px 14px;
+    margin: -12px -12px 0;
+    padding: 8px 14px 14px;
     border-bottom: 3px solid var(--border-bright);
     display: flex;
     flex-direction: column;
@@ -2065,16 +2130,37 @@
   .mm-play:active { transform: scale(0.95); }
   .mm-play.running { color: var(--accent); border-color: var(--accent); background: var(--accent-glow); }
 
+  .mm-beat-dots {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    padding: 6px 0 2px;
+  }
+  .mm-beat-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    transition: background 0.05s, border-color 0.05s;
+  }
+  .mm-beat-dot.active {
+    background: var(--accent);
+    border-color: var(--accent);
+  }
+
   .mm-bpm-section {
     display: grid;
     grid-template-columns: 36px 1fr 36px;
-    grid-template-rows: 26px auto;
+    grid-template-rows: 26px;
     gap: 5px 6px;
   }
   #mm-bpm-minus { grid-area: 1 / 1; }
   .mm-bpm-display-wrap { grid-area: 1 / 2; position: relative; }
   #mm-bpm-plus { grid-area: 1 / 3; }
-  #mm-tap-btn { grid-area: 2 / 2; margin-top: 6px; }
+
+  .mm-tap-row { display: flex; }
+  .mm-tap-row .mm-tap-btn { flex: 1; }
 
   .mm-adj {
     width: 100%; height: 100%;
@@ -2128,12 +2214,13 @@
 
   .mm-tap-btn {
     width: 100%;
-    padding: 3px 0;
+    padding: 7px 0;
+    min-height: 28px;
     background: var(--bg-active);
     border: 1px solid var(--border);
     border-radius: 4px;
     color: var(--text-dim);
-    font-size: 10px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.1em;
     cursor: pointer;
@@ -2149,41 +2236,25 @@
     transition: color 0.1s;
   }
 
-  .mm-subdiv-row {
+  .mm-selects-row {
     display: flex;
+    gap: 6px;
   }
-  #mm-subdiv-select {
+  .mm-selects-row select {
     flex: 1;
     background: var(--bg-active);
-    border: 1px solid var(--border-bright);
-    border-radius: 5px;
-    color: var(--text-secondary);
-    font-size: 12px;
-    padding: 5px 8px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 400;
+    padding: 5px 6px;
     cursor: pointer;
-    outline: none;
     appearance: auto;
   }
-  #mm-subdiv-select:hover { border-color: var(--accent); color: var(--text-primary); }
-  #mm-subdiv-select:focus { border-color: var(--accent); }
-
-  .mm-timesig-row {
-    display: flex;
-  }
-  #mm-timesig-select {
-    flex: 1;
-    background: var(--bg-active);
-    border: 1px solid var(--border-bright);
-    border-radius: 5px;
-    color: var(--text-secondary);
-    font-size: 12px;
-    padding: 5px 8px;
-    cursor: pointer;
-    outline: none;
-    appearance: auto;
-  }
-  #mm-timesig-select:hover { border-color: var(--accent); color: var(--text-primary); }
-  #mm-timesig-select:focus { border-color: var(--accent); }
+  .mm-selects-row select:hover { border-color: var(--accent); color: var(--text-primary); }
+  .mm-selects-row select:focus { border-color: var(--accent); }
 
   .mm-accent-row {
     display: flex;
@@ -2206,3 +2277,84 @@
     background: var(--accent-glow);
     color: var(--accent);
   }
+
+/* ── LOOP REGION ON SCRUB BAR ───────────────────────── */
+
+/* Loop region: tinted strip sitting on the 3px track */
+.mp-loop-region {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  height: 3px;
+  background: var(--accent);
+  opacity: 0.35;
+  pointer-events: none;
+  border-radius: 2px;
+  z-index: 1;
+}
+.mp-loop-region.loop-active {
+  opacity: 0.65;
+}
+
+/* Handles: wide hit area, thin visible bar */
+.mp-loop-handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 14px;
+  transform: translateX(-50%);
+  cursor: ew-resize;
+  z-index: 3;
+  display: none;
+}
+.mp-loop-handle.loop-active {
+  display: block;
+}
+
+.mp-loop-handle::before {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 2px;
+  height: 14px;
+  background: var(--accent);
+  border-radius: 1px;
+  box-shadow: 0 0 4px var(--accent-glow);
+}
+
+/* Loop time display — appears below scrub bar when loop is active */
+.mp-loop-times {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: -1px;
+  margin-bottom: 2px;
+}
+
+.mp-loop-time-val {
+  color: var(--accent);
+  letter-spacing: 0.02em;
+}
+
+.mp-loop-arrow { color: var(--text-dim); }
+
+/* Loop button in transport */
+#mp-loop-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px 5px;
+  border-radius: 3px;
+  transition: color 0.12s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+#mp-loop-btn:hover { color: var(--text-secondary); }
+#mp-loop-btn.loop-active { color: var(--accent); }

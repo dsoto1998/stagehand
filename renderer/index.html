@@ -85,88 +85,118 @@
       <div id="sidebar-bottom">
         <!-- METRONOME MINIPLAYER -->
         <div id="metro-mini">
-          <div class="mm-play-row">
-            <button id="mm-play-btn" class="mm-play" title="Start / Stop metronome"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+          <div class="section-hdr" id="metro-hdr">
+            <span class="section-hdr-label">Metronome</span>
+            <button class="section-collapse-btn" id="metro-collapse-btn" title="Toggle metronome" aria-label="Toggle metronome"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
           </div>
-          <div class="mm-bpm-section">
-            <button id="mm-bpm-minus" class="mm-adj" title="BPM −1">−</button>
-            <div class="mm-bpm-display-wrap">
-              <button id="mm-bpm-display" class="mm-bpm-display" title="Double-click to type BPM">
-                <span class="mm-bpm-num">120</span>
-              </button>
-              <input type="number" id="mm-bpm-inline" class="mm-bpm-inline hidden" min="20" max="300">
+          <div id="metro-body">
+            <div class="mm-play-row">
+              <button id="mm-play-btn" class="mm-play" title="Start / Stop metronome"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
             </div>
-            <button id="mm-bpm-plus" class="mm-adj" title="BPM +1">+</button>
-            <button id="mm-tap-btn" class="mm-tap-btn" title="Tap tempo">TAP</button>
-          </div>
-          <div class="mm-vol-group">
-            <div class="mp-row mp-row-center">
-              <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
-              <input type="range" id="mm-vol" min="0" max="100" value="80" title="Metronome volume">
-              <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
+            <div class="mm-beat-dots" id="mm-beat-dots"></div>
+            <div class="mm-bpm-section">
+              <button id="mm-bpm-minus" class="mm-adj" title="BPM −1">−</button>
+              <div class="mm-bpm-display-wrap">
+                <button id="mm-bpm-display" class="mm-bpm-display" title="Click to type BPM">
+                  <span class="mm-bpm-num">120</span>
+                </button>
+                <input type="number" id="mm-bpm-inline" class="mm-bpm-inline hidden" min="20" max="300">
+              </div>
+              <button id="mm-bpm-plus" class="mm-adj" title="BPM +1">+</button>
+            </div>
+            <div class="mm-tap-row">
+              <button id="mm-tap-btn" class="mm-tap-btn" title="Tap tempo">TAP</button>
+            </div>
+            <div class="mm-vol-group">
+              <div class="mp-row mp-row-center">
+                <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
+                <input type="range" id="mm-vol" min="0" max="100" value="80" title="Metronome volume">
+                <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
+              </div>
+            </div>
+            <div class="mm-selects-row">
+              <select id="mm-timesig-select" title="Time signature">
+                <option value="2/4">2/4</option>
+                <option value="3/4">3/4</option>
+                <option value="4/4" selected>4/4</option>
+                <option value="5/4">5/4</option>
+                <option value="6/8">6/8</option>
+                <option value="7/8">7/8</option>
+                <option value="12/8">12/8</option>
+                <option value="custom" disabled>Custom</option>
+              </select>
+              <select id="mm-subdiv-select" title="Subdivision">
+                <option value="1">Quarter (1/4)</option>
+                <option value="2">Eighth (1/8)</option>
+                <option value="3">Triplet</option>
+                <option value="4">Sixteenth (1/16)</option>
+              </select>
+            </div>
+            <div class="mm-accent-row">
+              <button id="mm-accent-btn" class="mm-accent-btn active" title="Toggle beat accents">Accent</button>
             </div>
           </div>
-          <div class="mm-subdiv-row">
-            <select id="mm-subdiv-select" title="Subdivision">
-              <option value="1">Quarter (1/4)</option>
-              <option value="2">Eighth (1/8)</option>
-              <option value="3">Triplet</option>
-              <option value="4">Sixteenth (1/16)</option>
-            </select>
+        </div>
+        <!-- TRACK MINIPLAYER -->
+        <div id="mp-section">
+          <div class="section-hdr" id="mp-hdr">
+            <span class="section-hdr-label">Player</span>
+            <button class="section-collapse-btn" id="mp-collapse-btn" title="Toggle player" aria-label="Toggle player"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg></button>
           </div>
-          <div class="mm-timesig-row">
-            <select id="mm-timesig-select" title="Time signature">
-              <option value="2/4">2/4</option>
-              <option value="3/4">3/4</option>
-              <option value="4/4" selected>4/4</option>
-              <option value="5/4">5/4</option>
-              <option value="6/8">6/8</option>
-              <option value="7/8">7/8</option>
-              <option value="12/8">12/8</option>
-              <option value="custom" disabled>Custom</option>
-            </select>
+          <div id="mp-body">
+            <div id="mp-art-row">
+              <div id="mp-art">
+                <div class="mp-art-placeholder"></div>
+                <img id="mp-art-img" alt="">
+              </div>
+              <div id="mp-track-info">
+                <div id="mp-track-name">—</div>
+                <div id="mp-track-sub">—</div>
+              </div>
+            </div>
+            <div id="mp-scrub-bar" aria-label="Playback position">
+              <div id="mp-scrub-fill"></div>
+              <div id="mp-loop-region" class="mp-loop-region hidden"></div>
+              <div id="mp-loop-handle-in"  class="mp-loop-handle" data-handle="in"></div>
+              <div id="mp-loop-handle-out" class="mp-loop-handle" data-handle="out"></div>
+            </div>
+            <div id="mp-time-display">0:00 / --:--</div>
+            <div class="mp-loop-btn-row">
+              <button id="mp-loop-btn" title="Loop editor" aria-label="Loop editor"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg></button>
+            </div>
+            <div id="mp-loop-times" class="mp-loop-times hidden">
+              <span id="mp-loop-in-disp" class="mp-loop-time-val"></span>
+              <span class="mp-loop-arrow">→</span>
+              <span id="mp-loop-out-disp" class="mp-loop-time-val"></span>
+            </div>
+            <div id="mp-transport">
+              <button id="mp-prev" title="Previous track" aria-label="Previous track"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg></button>
+              <button id="mp-play" title="Play / Pause" aria-label="Play"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
+              <button id="mp-next" title="Next track" aria-label="Next track"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg></button>
+            </div>
+            <div class="mp-vol-group">
+              <div class="mp-row mp-row-center">
+                <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
+                <input type="range" id="mp-vol" min="0" max="100" value="100">
+                <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
+              </div>
+            </div>
+            <div class="mp-speed-group">
+              <div class="mp-row mp-row-center">
+                <button class="speed-reset" id="mp-speed-reset" title="Reset speed"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
+                <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 18a9 9 0 0 1 18 0"/><line x1="12" y1="18" x2="17" y2="10"/><circle cx="12" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg></span>
+                <input type="range" id="mp-speed" min="0" max="100" value="50" step="1" title="Playback speed (resets on seek)">
+                <span id="mp-speed-val" class="mp-speed-val">1×</span>
+              </div>
+              <span id="mp-speed-warn" class="mp-speed-warn hidden">(resets on seek)</span>
+            </div>
+            <div class="mp-row mp-row-center mp-xpose-row">
+              <button class="xpose-reset" id="mp-xpose-reset" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
+              <button class="xpose-btn" id="mp-xpose-dec">−</button>
+              <span id="mp-semitones-val" class="xpose-val">0st</span>
+              <button class="xpose-btn" id="mp-xpose-inc">+</button>
+            </div>
           </div>
-          <div class="mm-accent-row">
-            <button id="mm-accent-btn" class="mm-accent-btn active" title="Toggle beat accents">Accent</button>
-          </div>
-        </div>
-        <div id="mp-art">
-          <div class="mp-art-placeholder"></div>
-          <img id="mp-art-img" alt="">
-        </div>
-        <div id="mp-track-info">
-          <div id="mp-track-name">—</div>
-          <div id="mp-track-sub">—</div>
-        </div>
-        <div id="mp-scrub-bar" aria-label="Playback position">
-          <div id="mp-scrub-fill"></div>
-        </div>
-        <div id="mp-time-display">0:00 / --:--</div>
-        <div id="mp-transport">
-          <button id="mp-prev" title="Previous track" aria-label="Previous track"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="19 20 9 12 19 4 19 20"/><line x1="5" y1="19" x2="5" y2="5"/></svg></button>
-          <button id="mp-play" title="Play / Pause" aria-label="Play"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></button>
-          <button id="mp-next" title="Next track" aria-label="Next track"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 4 15 12 5 20 5 4"/><line x1="19" y1="5" x2="19" y2="19"/></svg></button>
-        </div>
-        <div class="mp-vol-group">
-          <div class="mp-row mp-row-center">
-            <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
-            <input type="range" id="mp-vol" min="0" max="100" value="100">
-            <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg></span>
-          </div>
-        </div>
-        <div class="mp-speed-group">
-          <div class="mp-row mp-row-center">
-            <button class="speed-reset" id="mp-speed-reset" title="Reset speed"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
-            <span class="mp-vol-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M3 18a9 9 0 0 1 18 0"/><line x1="12" y1="18" x2="17" y2="10"/><circle cx="12" cy="18" r="1.5" fill="currentColor" stroke="none"/></svg></span>
-            <input type="range" id="mp-speed" min="0" max="100" value="50" step="1" title="Playback speed (resets on seek)">
-            <span id="mp-speed-val" class="mp-speed-val">1×</span>
-          </div>
-        </div>
-        <div class="mp-row mp-row-center mp-xpose-row">
-          <button class="xpose-reset" id="mp-xpose-reset" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
-          <button class="xpose-btn" id="mp-xpose-dec">−</button>
-          <span id="mp-semitones-val" class="xpose-val">0st</span>
-          <button class="xpose-btn" id="mp-xpose-inc">+</button>
         </div>
       </div>
     </div>
@@ -319,6 +349,7 @@
 <div id="album-ctx-menu">
   <div class="ctx-item" data-album-action="info">Edit Info</div>
 </div>
+
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
 <script type="module" src="./js/ui-controller.js"></script>

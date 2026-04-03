@@ -324,6 +324,9 @@ function updateSelectionClasses() {
 let currentPlayingId = null;
 let seeking = false;
 let seekFrac = 0;
+let loopDragHandle = null;
+let loopDragStartX = 0;
+let loopDragStartFrac = 0;
 
 function updateLocateBtn() {
   const btn = document.getElementById('lib-locate-btn');
@@ -418,6 +421,13 @@ function showMiniplayer(trackId) {
   document.getElementById('mp-time-display').textContent = '0:00 / ' + totalStr;
   document.getElementById('mp-scrub-fill').style.width = '0%';
 
+  // Sync loop handles and state for this track
+  if (player) {
+    updateLoopOverlays(player);
+    syncLoopActiveState(player);
+    syncLoopTimesDisplay(player);
+  }
+
   // Load artwork
   const mpArtImg = document.getElementById('mp-art-img');
   const mpArtPlaceholder = document.querySelector('.mp-art-placeholder');
@@ -462,6 +472,12 @@ function hideMiniplayer() {
   document.getElementById('mp-xpose-reset').classList.remove('xpose-reset-visible');
   document.getElementById('mp-time-display').textContent = '0:00 / --:--';
   document.getElementById('mp-scrub-fill').style.width = '0%';
+  document.getElementById('mp-loop-times').classList.add('hidden');
+  document.getElementById('mp-loop-btn').classList.remove('loop-active');
+  document.getElementById('mp-loop-region').classList.remove('loop-active');
+  document.getElementById('mp-loop-region').classList.add('hidden');
+  document.getElementById('mp-loop-handle-in').classList.remove('loop-active');
+  document.getElementById('mp-loop-handle-out').classList.remove('loop-active');
   resetSpeedSlider();
   const mpArtImg = document.getElementById('mp-art-img');
   if (mpArtImg) { mpArtImg.src = ''; mpArtImg.style.display = 'none'; }
@@ -476,6 +492,7 @@ function resetSpeedSlider() {
   valEl.textContent = '1×';
   valEl.classList.remove('speed-active');
   document.getElementById('mp-speed-reset').classList.remove('speed-reset-visible');
+  document.getElementById('mp-speed-warn').classList.add('hidden');
   updateRangeFill(sl);
 }
 
@@ -553,6 +570,31 @@ document.addEventListener('keydown', (e) => {
       document.getElementById('mp-prev').click();
       return;
   }
+  // Loop in/out point shortcuts
+  if (currentPlayingId) {
+    const tag = e.target.tagName;
+    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !e.target.isContentEditable) {
+      const lp = players[currentPlayingId];
+      if (lp) {
+        const minGap = Math.max(0.005, 0.1 / (lp.duration || 1));
+        if (e.key === 'i' || e.key === 'I') {
+          e.preventDefault();
+          const frac = Math.min(lp.currentTime / lp.duration, lp.loopEnd - minGap);
+          lp.setLoopPoints(frac, lp.loopEnd);
+          updateLoopOverlays(lp); syncLoopTimesDisplay(lp);
+          return;
+        }
+        if (e.key === 'o' || e.key === 'O') {
+          e.preventDefault();
+          const frac = Math.max(lp.currentTime / lp.duration, lp.loopStart + minGap);
+          lp.setLoopPoints(lp.loopStart, frac);
+          updateLoopOverlays(lp); syncLoopTimesDisplay(lp);
+          return;
+        }
+      }
+    }
+  }
+
   if (e.code !== 'Space') return;
   const tag = e.target.tagName;
   if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
@@ -734,6 +776,7 @@ document.getElementById('mp-speed').addEventListener('input', function() {
   valEl.textContent = rate.toFixed(2).replace(/\.?0+$/, '') + '×';
   valEl.classList.toggle('speed-active', isActive);
   document.getElementById('mp-speed-reset').classList.toggle('speed-reset-visible', isActive);
+  document.getElementById('mp-speed-warn').classList.toggle('hidden', !isActive);
   updateRangeFill(this);
   if (currentPlayingId && players[currentPlayingId]) {
     players[currentPlayingId].setSpeed(rate);
@@ -743,7 +786,11 @@ document.getElementById('mp-speed').addEventListener('input', function() {
 document.getElementById('mp-speed-reset').addEventListener('click', () => {
   resetSpeedSlider();
   if (currentPlayingId && players[currentPlayingId]) {
-    players[currentPlayingId].setSpeed(1.0);
+    const player = players[currentPlayingId];
+    player.setSpeed(1.0);
+    // Restart to flush SoundTouch's internal buffer, which otherwise
+    // drains slowly and keeps playing at the old tempo for a moment.
+    if (player.isPlaying) player.play(player.currentTime);
   }
 });
 
@@ -762,7 +809,13 @@ function onScrubUp() {
   document.removeEventListener('mouseup', onScrubUp);
   seeking = false;
   if (currentPlayingId && players[currentPlayingId]) {
-    players[currentPlayingId].seek(seekFrac);
+    const player = players[currentPlayingId];
+    // Call seek() directly — do NOT call setLoopEnabled() here because it
+    // internally calls play() again, which races seek's own async play()
+    // and snaps the playhead back to the pre-seek position. Loop state
+    // (loopEnabled, loopStart, loopEnd) must be left untouched so the
+    // user's loop region is preserved across scrubs.
+    player.seek(seekFrac);
   }
 }
 
@@ -810,6 +863,9 @@ async function loadLibrary() {
         players[t.id] = new TrackPlayer(t.id);
         players[t.id].semitones = t.semitones || 0;
         players[t.id].volume = t.volume !== undefined ? t.volume : 1.0;
+        players[t.id].loopEnabled = false;
+        players[t.id].loopStart   = 0;
+        players[t.id].loopEnd     = 1;
       }
     });
     // Start background buffer loads (non-blocking)
@@ -868,6 +924,9 @@ async function playTrack(id, fromPlaylistId, slotIdx) {
     players[id] = new TrackPlayer(id);
     players[id].semitones = track.semitones || 0;
     players[id].volume = track.volume !== undefined ? track.volume : 1.0;
+    players[id].loopEnabled = false;
+    players[id].loopStart   = 0;
+    players[id].loopEnd     = 1;
   }
   const player = players[id];
 
@@ -2366,6 +2425,9 @@ async function importFiles(files) {
     players[id] = new TrackPlayer(id);
     players[id].semitones = 0;
     players[id].volume = 1.0;
+    players[id].loopEnabled = false;
+    players[id].loopStart   = 0;
+    players[id].loopEnd     = 1;
     return { file, track };
   });
   renderTrackList(); // all names appear at once before any I/O
@@ -3064,10 +3126,19 @@ libraryPanel.addEventListener('drop', e => {
 });
 
 // ─── METRONOME MINIPLAYER SYNC ────────────────────────────────
-Metronome.onBeat(() => {
+function renderBeatDots(count) {
+  const container = document.getElementById('mm-beat-dots');
+  if (!container) return;
+  container.innerHTML = Array.from({ length: count }, () => '<span class="mm-beat-dot"></span>').join('');
+}
+
+Metronome.onBeat((beatIdx) => {
   const btn = document.getElementById('mm-bpm-display');
   btn.classList.add('beat-flash');
   setTimeout(() => btn.classList.remove('beat-flash'), 80);
+  const dots = document.querySelectorAll('.mm-beat-dot');
+  dots.forEach(d => d.classList.remove('active'));
+  if (beatIdx !== undefined && dots[beatIdx]) dots[beatIdx].classList.add('active');
 });
 
 function syncMetroMini() {
@@ -3077,16 +3148,44 @@ function syncMetroMini() {
   document.getElementById('mm-play-btn').classList.toggle('running', active);
 }
 
+// ─── SIDEBAR SECTION COLLAPSE ────────────────────────────────
+function applyCollapse(bodyId, btnId, collapsed) {
+  document.getElementById(bodyId).classList.toggle('collapsed', collapsed);
+  document.getElementById(btnId).classList.toggle('collapsed', collapsed);
+}
+
+function initSectionCollapse() {
+  const metroCollapsed = localStorage.getItem('metroCollapsed') === 'true';
+  const mpCollapsed    = localStorage.getItem('mpCollapsed') === 'true';
+  applyCollapse('metro-body', 'metro-collapse-btn', metroCollapsed);
+  applyCollapse('mp-body',    'mp-collapse-btn',    mpCollapsed);
+
+  document.getElementById('metro-hdr').addEventListener('click', () => {
+    const collapsed = !document.getElementById('metro-body').classList.contains('collapsed');
+    localStorage.setItem('metroCollapsed', collapsed);
+    applyCollapse('metro-body', 'metro-collapse-btn', collapsed);
+  });
+
+  document.getElementById('mp-hdr').addEventListener('click', () => {
+    const collapsed = !document.getElementById('mp-body').classList.contains('collapsed');
+    localStorage.setItem('mpCollapsed', collapsed);
+    applyCollapse('mp-body', 'mp-collapse-btn', collapsed);
+  });
+}
+
 // ─── METRONOME MINIPLAYER BINDINGS ────────────────────────────
 document.getElementById('mm-play-btn').addEventListener('click', async function() {
   const ctx = resume();
   if (ctx.state === 'suspended') await ctx.resume();
-  if (Metronome.isActive()) { Metronome.stop(); } else { Metronome.start(); }
+  if (Metronome.isActive()) {
+    Metronome.stop();
+    document.querySelectorAll('.mm-beat-dot').forEach(d => d.classList.remove('active'));
+  } else { Metronome.start(); }
   syncMetroMini();
 });
 
-// BPM display — double-click to type BPM inline
-document.getElementById('mm-bpm-display').addEventListener('dblclick', () => {
+// BPM display — click to type BPM inline
+document.getElementById('mm-bpm-display').addEventListener('click', () => {
   const display = document.getElementById('mm-bpm-display');
   const input = document.getElementById('mm-bpm-inline');
   input.value = Metronome.getBpm();
@@ -3180,6 +3279,7 @@ document.getElementById('mm-timesig-select').addEventListener('change', function
   if (this.value === 'custom') return;
   const [num, den] = this.value.split('/').map(Number);
   applyTimeSignature(num, den);
+  renderBeatDots(num);
 });
 
 // Custom click sounds (4 slots: accent, quarter, eighth, subdivision)
@@ -3232,6 +3332,86 @@ document.getElementById('mm-timesig-select').addEventListener('change', function
 }
 
 
+// ─── LOOP (SCRUB BAR) ────────────────────────────────────────
+function updateLoopOverlays(player) {
+  const W = mpScrubBar.offsetWidth;
+  const inPx  = player.loopStart * W;
+  const outPx = player.loopEnd   * W;
+  document.getElementById('mp-loop-region').style.left  = inPx + 'px';
+  document.getElementById('mp-loop-region').style.width = (outPx - inPx) + 'px';
+  document.getElementById('mp-loop-handle-in').style.left  = inPx  + 'px';
+  document.getElementById('mp-loop-handle-out').style.left = outPx + 'px';
+}
+
+function formatTimeMs(sec) {
+  if (!isFinite(sec) || sec < 0) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60);
+  return `${m}:${s.toString().padStart(2, '0')}`;
+}
+
+function syncLoopTimesDisplay(player) {
+  const isFullLoop = player.loopStart < 0.001 && player.loopEnd > 0.999;
+  document.getElementById('mp-loop-times').classList.toggle('hidden', !player.loopEnabled || isFullLoop);
+  document.getElementById('mp-loop-region').classList.toggle('hidden', isFullLoop);
+  document.getElementById('mp-loop-in-disp').textContent  = formatTimeMs(player.loopStart * player.duration);
+  document.getElementById('mp-loop-out-disp').textContent = formatTimeMs(player.loopEnd   * player.duration);
+}
+
+function syncLoopActiveState(player) {
+  document.getElementById('mp-loop-btn').classList.toggle('loop-active', player.loopEnabled);
+  document.getElementById('mp-loop-region').classList.toggle('loop-active', player.loopEnabled);
+  document.getElementById('mp-loop-handle-in').classList.toggle('loop-active', player.loopEnabled);
+  document.getElementById('mp-loop-handle-out').classList.toggle('loop-active', player.loopEnabled);
+}
+
+
+// Scrub bar mousedown — check for loop handle drag before seeking
+const _origScrubMousedown = mpScrubBar.onmousedown;
+mpScrubBar.addEventListener('mousedown', e => {
+  if (!currentPlayingId) return;
+  const handle = e.target.closest('.mp-loop-handle');
+  if (!handle) return;   // falls through to the existing seek handler
+  const player = players[currentPlayingId];
+  if (!player) return;
+  loopDragHandle    = handle.dataset.handle;
+  loopDragStartFrac = loopDragHandle === 'in' ? player.loopStart : player.loopEnd;
+  loopDragStartX    = e.clientX;
+  document.addEventListener('mousemove', onLoopDragMove);
+  document.addEventListener('mouseup',   onLoopDragUp);
+  e.stopPropagation();   // prevent seek handler from also firing
+  e.preventDefault();
+}, true);  // capture phase so it runs before the seek mousedown
+
+function onLoopDragMove(e) {
+  if (!loopDragHandle || !currentPlayingId) return;
+  const player = players[currentPlayingId];
+  const W = mpScrubBar.offsetWidth;
+  const minGap = Math.max(0.005, 0.1 / (player.duration || 1));
+  const frac = Math.max(0, Math.min(1, loopDragStartFrac + (e.clientX - loopDragStartX) / W));
+  if (loopDragHandle === 'in')
+    player.setLoopPoints(Math.min(frac, player.loopEnd - minGap), player.loopEnd);
+  else
+    player.setLoopPoints(player.loopStart, Math.max(frac, player.loopStart + minGap));
+  updateLoopOverlays(player);
+  syncLoopTimesDisplay(player);
+}
+
+function onLoopDragUp() {
+  document.removeEventListener('mousemove', onLoopDragMove);
+  document.removeEventListener('mouseup',   onLoopDragUp);
+  loopDragHandle = null;
+}
+
+// Loop toggle button
+document.getElementById('mp-loop-btn').addEventListener('click', () => {
+  if (!currentPlayingId) return;
+  const player = players[currentPlayingId];
+  player.setLoopEnabled(!player.loopEnabled);
+  syncLoopActiveState(player);
+  syncLoopTimesDisplay(player);
+});
+
 // ─── INIT ────────────────────────────────────────────────────
 (async function init() {
   // Restore time signature before building beat dots
@@ -3257,6 +3437,10 @@ document.getElementById('mm-timesig-select').addEventListener('change', function
     syncAccentBtns(enabled);
   }
 
+  // Render beat dots for current time signature
+  renderBeatDots(Metronome.getTimeSignature().numerator);
+
+  initSectionCollapse();
   syncMetroMini();
   document.getElementById('track-list').innerHTML =
     '<div class="lib-empty-state"><div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></div><div class="es-text">Loading Library…</div></div>';
