@@ -322,8 +322,17 @@
     transition: transform 0.1s;
   }
   input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.3); }
-  #mp-vol::-webkit-slider-thumb, #mm-vol::-webkit-slider-thumb { width: 7px; height: 7px; }
-  #mp-vol::-moz-range-thumb, #mm-vol::-moz-range-thumb { width: 7px; height: 7px; border-radius: 50%; }
+  #mp-vol::-webkit-slider-thumb, #mm-vol::-webkit-slider-thumb, #mp-speed::-webkit-slider-thumb { width: 8px; height: 8px; }
+  #mp-vol::-moz-range-thumb, #mm-vol::-moz-range-thumb, #mp-speed::-moz-range-thumb { width: 8px; height: 8px; border-radius: 50%; }
+  #mp-speed {
+    background: linear-gradient(
+      to right,
+      var(--purple) 0%,
+      var(--purple) var(--range-val, 0%),
+      var(--border) var(--range-val, 0%),
+      var(--border) 100%
+    );
+  }
 
   /* ── LIBRARY PANEL ───────────────────────────────────── */
   #file-input { display: none; }
@@ -538,41 +547,57 @@
   .lib-search-clear.visible { opacity: 1; pointer-events: auto; }
   .lib-search-clear:hover { color: var(--text-primary); }
 
-  /* ── LIBRARY SORT BAR ────────────────────────────────── */
-  .lib-sort-bar {
+  /* ── LIBRARY COLUMN HEADER ───────────────────────────── */
+  .lib-col-header {
     display: flex;
     align-items: center;
-    gap: 2px;
-    padding: 5px 12px;
+    padding: 0 12px;
+    gap: 10px;
+    height: 28px;
     border-bottom: 1px solid var(--border);
     flex-shrink: 0;
+    background: var(--bg-panel);
   }
-  .lib-sort-label {
+  .lib-col-header.hidden { display: none; }
+  .lib-col-spacer-art  { width: 37px; flex-shrink: 0; }
+  .lib-col-spacer-play { width: 20px; flex-shrink: 0; }
+  .lib-col-spacer-ctx  { width: 28px; flex-shrink: 0; }
+  .lib-col-name   { flex: 2; min-width: 0; text-align: left; }
+  .lib-col-artist { flex: 1.2; min-width: 0; text-align: left; }
+  .lib-col-album  { flex: 1.5; min-width: 0; text-align: left; }
+  .lib-col-xpose-label {
+    width: 82px;
+    flex-shrink: 0;
+    margin-right: 8px;
     font-size: 10px;
+    font-weight: 500;
     color: var(--text-dim);
     text-transform: uppercase;
     letter-spacing: 0.06em;
-    margin-right: 4px;
+    text-align: center;
+  }
+  .lib-col-dur {
+    min-width: 36px;
     flex-shrink: 0;
+    text-align: right;
   }
   .lib-sort-btn {
-    font-size: 11px;
+    font-size: 10px;
     font-weight: 500;
-    color: var(--text-secondary);
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
     background: none;
-    border: 1px solid transparent;
-    border-radius: 3px;
-    padding: 2px 8px;
+    border: none;
+    padding: 0;
     cursor: pointer;
-    letter-spacing: 0.03em;
-    transition: color 0.1s, border-color 0.1s;
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.1s;
   }
-  .lib-sort-btn:hover { color: var(--text-primary); }
-  .lib-sort-btn.active {
-    color: var(--accent);
-    border-color: rgba(0,150,199,0.25);
-  }
+  .lib-sort-btn:hover { color: var(--text-secondary); }
+  .lib-sort-btn.active { color: var(--accent); }
   .lib-sort-dir {
     font-size: 9px;
     margin-left: 2px;
@@ -690,6 +715,7 @@
   .row-play-btn:hover { color: var(--text-primary); }
 
   .row-info { flex: 1; min-width: 0; }
+  .row-name-col { flex: 2; min-width: 0; }
   .row-name {
     font-size: 15px;
     font-weight: 500;
@@ -705,6 +731,24 @@
     text-overflow: ellipsis;
     margin-top: 1px;
   }
+  .row-artist {
+    flex: 1.2;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .row-album {
+    flex: 1.5;
+    min-width: 0;
+    font-size: 13px;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .row-dur {
     font-size: 11px;
     color: var(--text-dim);
@@ -712,6 +756,26 @@
     min-width: 36px;
     text-align: right;
   }
+  .row-ctx-btn {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-size: 15px;
+    letter-spacing: 1px;
+    border-radius: 4px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.1s, color 0.1s, background 0.1s;
+  }
+  .track-row:hover .row-ctx-btn { opacity: 1; }
+  .row-ctx-btn:hover { color: var(--text-primary); background: var(--bg-active); }
 
   /* ── TRANSPOSE INLINE CONTROLS ───────────────────────── */
   .row-xpose {
@@ -993,7 +1057,40 @@
   }
   .mp-vol-group, .mm-vol-group { width: 100%; }
   .mp-vol-group .mp-row, .mm-vol-group .mp-row { margin-bottom: 0; }
-  .mp-vol-group { margin-bottom: 20px; }
+  .mp-vol-group { margin-bottom: 8px; }
+
+  .mp-speed-group { width: 100%; margin-bottom: 8px; position: relative; }
+  .mp-speed-group .mp-row { margin-bottom: 0; }
+  #mp-speed { width: 130px; flex: none; }
+  .mp-speed-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    width: 13px;
+    flex-shrink: 0;
+    overflow: visible;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+  .mp-speed-val.speed-active { color: var(--purple); }
+  .speed-reset {
+    position: absolute;
+    left: calc(25% - 47px);
+    transform: translateX(-50%);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 1px;
+    color: var(--purple);
+    display: none;
+    align-items: center;
+    justify-content: center;
+    opacity: 1;
+    transition: opacity 0.15s;
+  }
+  .speed-reset svg { width: 10px; height: 10px; }
+  .speed-reset:hover { opacity: 0.7; }
+  .speed-reset.speed-reset-visible { display: flex; }
 
   .mp-row input[type=range] { flex: 1; }
 
@@ -1800,6 +1897,14 @@
 }
 .pl-edit-add-btn:hover { color: var(--accent); border-color: var(--accent); }
 .pl-edit-add-btn.added { color: var(--accent); border-color: var(--accent); cursor: default; }
+.pl-edit-count {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--accent);
+  flex-shrink: 0;
+  min-width: 20px;
+  text-align: right;
+}
 
 /* Album context menu */
 #album-ctx-menu {

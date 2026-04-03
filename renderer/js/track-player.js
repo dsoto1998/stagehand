@@ -27,6 +27,7 @@ export class TrackPlayer {
     this.duration = 0;
     this.semitones = 0;
     this.volume = 1.0;
+    this.speed = 1.0;
     this.loopEnabled = false;
     this.loopStart = 0;
     this.loopEnd = 1;
@@ -80,6 +81,7 @@ export class TrackPlayer {
 
     this.source = ctx.createBufferSource();
     this.source.buffer = this.buffer;
+    this.source.playbackRate.value = this.speed;
 
     if (this.loopEnabled) {
       this.source.loop = true;
@@ -134,6 +136,8 @@ export class TrackPlayer {
     const wasPlaying = this.isPlaying;
     const t = fraction * this.duration;
     this.pauseOffset = t;
+    this.speed = 1.0;
+    if (this.onSpeedReset) this.onSpeedReset();
     if (wasPlaying) this.play(t);
     else if (this.onProgress) this.onProgress(fraction, t);
   }
@@ -149,6 +153,11 @@ export class TrackPlayer {
   setVolume(v) {
     this.volume = v;
     if (this.gainNode) this.gainNode.gain.value = v;
+  }
+
+  setSpeed(s) {
+    this.speed = s;
+    if (this.source) this.source.playbackRate.value = s;
   }
 
   setSemitones(s) {
