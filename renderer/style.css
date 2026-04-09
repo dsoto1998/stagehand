@@ -2513,7 +2513,10 @@
   margin: 6px 0 2px;
 }
 .chord-chordpro-actions { display: flex; gap: 8px; margin-top: 4px; }
-.chord-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.chord-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+#chord-save-status { margin-right: auto; font-size: 12px; font-family: var(--font-mono); }
+.chord-save-ok  { color: var(--accent); }
+.chord-save-err { color: var(--red); }
 
 /* Chord icon in track rows — always visible */
 .row-name-col { display: flex; align-items: center; gap: 4px; }

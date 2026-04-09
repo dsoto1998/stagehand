@@ -414,11 +414,20 @@ function showChordModal(trackId) {
     const cpVal = cpInput.value || null;
     t.chordPro = cpVal;
     // Save to IDB: strip only the audio arrayBuffer, pass chordPdf through
+    const statusEl = document.getElementById('chord-save-status');
     try {
       const { arrayBuffer, ...meta } = t;
       if (meta.chordPdf) meta.chordPdf = meta.chordPdf.slice(0);
       await LibraryManager.saveMeta(meta);
-    } catch(e) { console.warn('Chord save failed:', e); }
+      statusEl.textContent = 'Saved.';
+      statusEl.className = 'chord-save-ok';
+    } catch(e) {
+      console.warn('Chord save failed:', e);
+      statusEl.textContent = 'Save failed.';
+      statusEl.className = 'chord-save-err';
+    }
+    if (statusEl._fadeTimer) clearTimeout(statusEl._fadeTimer);
+    statusEl._fadeTimer = setTimeout(() => { statusEl.textContent = ''; statusEl.className = ''; }, 3000);
     renderCurrentTab();
     // Update icon state without closing the modal
     document.querySelectorAll(`.row-chord-btn[data-chord-id="${CSS.escape(t.id)}"]`).forEach(btn => {
