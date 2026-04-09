@@ -419,8 +419,11 @@ function showChordModal(trackId) {
       if (meta.chordPdf) meta.chordPdf = meta.chordPdf.slice(0);
       await LibraryManager.saveMeta(meta);
     } catch(e) { console.warn('Chord save failed:', e); }
-    cleanup();
     renderCurrentTab();
+    // Update icon state without closing the modal
+    document.querySelectorAll(`.row-chord-btn[data-chord-id="${CSS.escape(t.id)}"]`).forEach(btn => {
+      btn.classList.toggle('has-chart', !!(t.chordPdf || t.chordPro));
+    });
   }
 
   function onOverlayClick(e) { if (e.target === overlay) cleanup(); }
