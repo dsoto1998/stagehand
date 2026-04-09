@@ -2487,11 +2487,13 @@
 #chord-chordpro-input:focus { border-color: var(--border-bright); }
 #chord-chordpro-preview {
   min-height: 40px;
-  max-height: 30vh;
+  height: 28vh;
+  max-height: 60vh;
   overflow: auto;
   font-size: 13px;
   padding: 8px 4px;
   color: var(--text-primary);
+  resize: vertical;
 }
 .cp-line { display: flex; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px; }
 .cp-token { display: inline-flex; flex-direction: column; align-items: flex-start; }
