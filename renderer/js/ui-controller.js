@@ -3363,6 +3363,43 @@ function applyCollapse(bodyId, btnId, collapsed) {
   document.getElementById(btnId).classList.toggle('collapsed', collapsed);
 }
 
+function initChordResize() {
+  const box = document.getElementById('chord-box');
+  let drag = null;
+
+  box.querySelectorAll('.chord-resize').forEach(handle => {
+    handle.addEventListener('mousedown', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const cls = [...handle.classList].find(c => c !== 'chord-resize');
+      const dir = cls ? cls.replace('chord-resize-', '') : '';
+      drag = {
+        startX: e.clientX, startY: e.clientY,
+        startW: box.offsetWidth, startH: box.offsetHeight,
+        xDir: /e/.test(dir) ? 1 : /w/.test(dir) ? -1 : 0,
+        yDir: /s/.test(dir) ? 1 : /n/.test(dir) ? -1 : 0,
+      };
+    });
+  });
+
+  document.addEventListener('mousemove', e => {
+    if (!drag) return;
+    const dx = e.clientX - drag.startX;
+    const dy = e.clientY - drag.startY;
+    if (drag.xDir) {
+      const w = Math.max(340, drag.startW + 2 * dx * drag.xDir);
+      box.style.width = w + 'px';
+    }
+    if (drag.yDir) {
+      const h = Math.max(280, drag.startH + 2 * dy * drag.yDir);
+      box.style.height = h + 'px';
+      box.style.maxHeight = 'none';
+    }
+  });
+
+  document.addEventListener('mouseup', () => { drag = null; });
+}
+
 function initSectionCollapse() {
   const metroCollapsed = localStorage.getItem('metroCollapsed') === 'true';
   const mpCollapsed    = localStorage.getItem('mpCollapsed') === 'true';
@@ -3651,6 +3688,7 @@ document.getElementById('mp-loop-btn').addEventListener('click', () => {
 
   initSectionCollapse();
   syncMetroMini();
+  initChordResize();
   document.getElementById('track-list').innerHTML =
     '<div class="lib-empty-state"><div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></div><div class="es-text">Loading Library…</div></div>';
   await loadLibrary();

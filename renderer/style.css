@@ -2369,14 +2369,39 @@
 }
 #chord-overlay.show { display: flex; }
 #chord-box {
+  position: relative;
   background: var(--bg-panel);
   border: 1px solid var(--border-bright);
   border-radius: 4px;
   padding: 20px 24px 16px;
   width: 560px;
   max-height: 80vh;
+  min-width: 340px;
+  min-height: 280px;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
+}
+/* Resize handles */
+.chord-resize { position: absolute; z-index: 10; }
+.chord-resize-n  { top: -4px;    left: 10px;  right: 10px; height: 8px;  cursor: n-resize; }
+.chord-resize-s  { bottom: -4px; left: 10px;  right: 10px; height: 8px;  cursor: s-resize; }
+.chord-resize-e  { right: -4px;  top: 10px; bottom: 10px;  width: 8px;   cursor: e-resize; }
+.chord-resize-w  { left: -4px;   top: 10px; bottom: 10px;  width: 8px;   cursor: w-resize; }
+.chord-resize-ne { top: -4px;    right: -4px; width: 14px;  height: 14px; cursor: ne-resize; }
+.chord-resize-nw { top: -4px;    left: -4px;  width: 14px;  height: 14px; cursor: nw-resize; }
+.chord-resize-se { bottom: -4px; right: -4px; width: 14px;  height: 14px; cursor: se-resize; }
+.chord-resize-sw { bottom: -4px; left: -4px;  width: 14px;  height: 14px; cursor: sw-resize; }
+/* SE corner visual gripper */
+.chord-resize-se::after {
+  content: '';
+  position: absolute;
+  bottom: 6px; right: 6px;
+  width: 8px; height: 8px;
+  border-right: 2px solid var(--border-bright);
+  border-bottom: 2px solid var(--border-bright);
+  border-radius: 0 0 2px 0;
+  opacity: 0.5;
 }
 .chord-header {
   display: flex;
