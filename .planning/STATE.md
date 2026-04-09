@@ -66,7 +66,6 @@ None.
 
 | # | Description | Date | Commit |
 |---|-------------|------|--------|
-| 260403-klh | Six UI improvements: metronome beat dots, full-width TAP, single-click BPM, combined selects row, speed warning, loop btn repositioned | 2026-04-03 | d54e323 |
 | 260327-bza | Make metronome volume slider identical to miniplayer (7px thumb, centered layout, % readout) | 2026-03-27 | 49f9d58 |
 | 260326-un8 | Make metronome play button start immediately — no delay before first beat | 2026-03-27 | 2674cf3 |
 | 260324-wa4 | Fix 5 renderer bugs: rename repeatability, meta-only save, seek time display, transpose debounce, prev/next reset | 2026-03-25 | 5b04a08 |
@@ -79,7 +78,7 @@ None.
 
 ## Session Continuity
 
-Last session: 2026-04-03T19:59:29Z
-Last activity: 2026-04-03 - Completed quick task 260403-klh: metronome and player UI improvements
-Stopped at: Completed quick task 260403-klh
+Last session: 2026-03-26T04:08:21.835Z
+Last activity: 2026-03-27 - Completed quick task 260327-bza: make metronome volume slider identical to miniplayer
+Stopped at: Completed quick task 260327-bza
 Resume file: None
