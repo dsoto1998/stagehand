@@ -328,6 +328,38 @@
   </div>
 </div>
 
+<div id="chord-overlay">
+  <div id="chord-box">
+    <div class="chord-header">
+      <span class="chord-title">Chord Chart</span>
+      <button class="chord-close" id="chord-close">&times;</button>
+    </div>
+    <div class="chord-tabs">
+      <button class="chord-tab active" data-chord-tab="pdf">Upload PDF</button>
+      <button class="chord-tab" data-chord-tab="chordpro">ChordPro</button>
+    </div>
+    <div class="chord-tab-content" id="chord-tab-pdf">
+      <div id="chord-pdf-preview"></div>
+      <div class="chord-pdf-actions">
+        <input type="file" id="chord-pdf-input" accept=".pdf" style="display:none" />
+        <button class="btn" id="chord-pdf-upload">Choose PDF...</button>
+        <button class="btn chord-clear-btn" id="chord-pdf-clear" style="display:none">Remove PDF</button>
+      </div>
+    </div>
+    <div class="chord-tab-content" id="chord-tab-chordpro" style="display:none">
+      <textarea id="chord-chordpro-input" placeholder="Paste or type ChordPro here...&#10;&#10;Example:&#10;[G]Amazing [C]grace, how [G]sweet the sound" rows="10"></textarea>
+      <div id="chord-chordpro-preview"></div>
+      <div class="chord-chordpro-actions">
+        <button class="btn" id="chord-chordpro-clear" style="display:none">Clear</button>
+      </div>
+    </div>
+    <div class="chord-actions">
+      <button class="btn" id="chord-cancel">Close</button>
+      <button class="btn btn-accent" id="chord-save">Save</button>
+    </div>
+  </div>
+</div>
+
 <div id="ctx-menu">
   <div class="ctx-item" data-action="play">Play</div>
   <div class="ctx-item" data-action="info">Info</div>

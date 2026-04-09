@@ -2358,3 +2358,149 @@
 }
 #mp-loop-btn:hover { color: var(--text-secondary); }
 #mp-loop-btn.loop-active { color: var(--accent); }
+
+/* -- CHORD CHART MODAL -- */
+#chord-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  z-index: 200;
+  align-items: center; justify-content: center;
+}
+#chord-overlay.show { display: flex; }
+#chord-box {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-bright);
+  border-radius: 4px;
+  padding: 20px 24px 16px;
+  width: 560px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.chord-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.chord-title {
+  font-size: 18px;
+  font-weight: 600;
+}
+.chord-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 22px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.chord-close:hover { color: var(--text-primary); }
+.chord-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 14px;
+}
+.chord-tab {
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.chord-tab:hover { color: var(--text-primary); }
+.chord-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+.chord-tab-content { flex: 1; min-height: 0; overflow: auto; }
+#chord-pdf-preview {
+  min-height: 100px;
+  max-height: 50vh;
+  border: 1px dashed var(--border);
+  border-radius: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-dim);
+  font-size: 13px;
+  margin-bottom: 10px;
+  overflow: hidden;
+}
+#chord-pdf-preview iframe {
+  width: 100%;
+  height: 50vh;
+  border: none;
+  border-radius: 3px;
+}
+.chord-pdf-actions { display: flex; gap: 8px; align-items: center; }
+.chord-clear-btn { color: var(--red); border-color: var(--red); }
+.chord-clear-btn:hover { background: rgba(255,71,87,0.1); }
+#chord-chordpro-input {
+  width: 100%;
+  min-height: 120px;
+  max-height: 30vh;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  padding: 8px 10px;
+  resize: vertical;
+  outline: none;
+  margin-bottom: 10px;
+  box-sizing: border-box;
+}
+#chord-chordpro-input:focus { border-color: var(--border-bright); }
+#chord-chordpro-preview {
+  min-height: 40px;
+  max-height: 30vh;
+  overflow: auto;
+  font-size: 14px;
+  line-height: 2.2;
+  padding: 8px 4px;
+  color: var(--text-primary);
+}
+.cp-line { white-space: pre-wrap; margin-bottom: 4px; }
+.cp-chord {
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 12px;
+  position: relative;
+  top: -0.5em;
+  margin-right: 1px;
+}
+.cp-directive {
+  color: var(--text-secondary);
+  font-style: italic;
+  font-size: 13px;
+  margin: 6px 0 2px;
+}
+.chord-chordpro-actions { display: flex; gap: 8px; margin-top: 4px; }
+.chord-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+
+/* Chord icon in track rows — always visible */
+.row-name-col { display: flex; align-items: center; gap: 4px; }
+.row-chord-btn {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 0 2px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  transition: color 0.12s, opacity 0.12s;
+  opacity: 0.25;
+}
+.row-chord-btn:hover { color: var(--text-secondary); opacity: 0.6; }
+.row-chord-btn.has-chart { color: var(--accent); opacity: 1; }

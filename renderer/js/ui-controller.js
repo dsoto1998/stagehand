@@ -237,6 +237,188 @@ function showInfoModal(trackIds) {
   overlay.addEventListener('keydown', onKey);
 }
 
+// ─── CHORD CHART MODAL ────────────────────────────────────
+let chordModalTrackId = null;
+let chordBlobUrls = []; // blob URLs created during session, revoked on cleanup
+
+function renderChordProPreview() {
+  const input = document.getElementById('chord-chordpro-input');
+  const preview = document.getElementById('chord-chordpro-preview');
+  if (!input || !preview) return;
+  const lines = input.value.split('\n');
+  const html = lines.map(line => {
+    // Directive lines
+    const dirMatch = line.match(/^\{(title|t|subtitle|st|comment|c):\s*(.*?)\s*\}$/i);
+    if (dirMatch) {
+      const tag = dirMatch[1].toLowerCase();
+      const val = dirMatch[2];
+      if (tag === 'title' || tag === 't') return `<div class="cp-directive"><strong>${escHtml(val)}</strong></div>`;
+      return `<div class="cp-directive">${escHtml(val)}</div>`;
+    }
+    if (/^\{(start_of_chorus|soc)\}$/i.test(line)) return `<div class="cp-directive">[Chorus]</div>`;
+    if (/^\{(end_of_chorus|eoc)\}$/i.test(line)) return '';
+    // Empty line
+    if (!line.trim()) return `<div class="cp-line">&nbsp;</div>`;
+    // Chord/lyric line — split on [chord] tokens
+    const parts = line.split(/(\[[^\]]*\])/);
+    const spans = parts.map(p => {
+      if (p.startsWith('[') && p.endsWith(']')) {
+        return `<span class="cp-chord">${escHtml(p.slice(1,-1))}</span>`;
+      }
+      return escHtml(p);
+    }).join('');
+    return `<div class="cp-line">${spans}</div>`;
+  }).join('');
+  preview.innerHTML = html;
+}
+
+function showChordModal(trackId) {
+  const track = tracks.find(t => t.id === trackId);
+  if (!track) return;
+  chordModalTrackId = trackId;
+  chordBlobUrls = [];
+
+  let pendingChordPdf = null;
+  let pendingChordPdfCleared = false;
+
+  const overlay = document.getElementById('chord-overlay');
+  overlay.classList.add('show');
+
+  // Reset tab to PDF
+  document.querySelectorAll('.chord-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.chordTab === 'pdf'));
+  document.getElementById('chord-tab-pdf').style.display = '';
+  document.getElementById('chord-tab-chordpro').style.display = 'none';
+
+  // Load existing PDF
+  const pdfPreview = document.getElementById('chord-pdf-preview');
+  const pdfClear = document.getElementById('chord-pdf-clear');
+  if (track.chordPdf) {
+    const blob = new Blob([track.chordPdf], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    chordBlobUrls.push(url);
+    pdfPreview.innerHTML = `<iframe src="${url}"></iframe>`;
+    pdfClear.style.display = '';
+  } else {
+    pdfPreview.textContent = 'No PDF uploaded';
+    pdfClear.style.display = 'none';
+  }
+
+  // Load existing ChordPro
+  const cpInput = document.getElementById('chord-chordpro-input');
+  const cpClear = document.getElementById('chord-chordpro-clear');
+  if (track.chordPro) {
+    cpInput.value = track.chordPro;
+    renderChordProPreview();
+    cpClear.style.display = '';
+  } else {
+    cpInput.value = '';
+    document.getElementById('chord-chordpro-preview').innerHTML = '';
+    cpClear.style.display = 'none';
+  }
+
+  // Tab switching
+  function onTabClick(e) {
+    const btn = e.target.closest('.chord-tab');
+    if (!btn) return;
+    const tab = btn.dataset.chordTab;
+    document.querySelectorAll('.chord-tab').forEach(b => b.classList.toggle('active', b.dataset.chordTab === tab));
+    document.getElementById('chord-tab-pdf').style.display = tab === 'pdf' ? '' : 'none';
+    document.getElementById('chord-tab-chordpro').style.display = tab === 'chordpro' ? '' : 'none';
+  }
+  document.querySelector('.chord-tabs').addEventListener('click', onTabClick);
+
+  // PDF upload
+  const pdfInput = document.getElementById('chord-pdf-input');
+  function onUploadClick() { pdfInput.value = ''; pdfInput.click(); }
+  function onFileChange() {
+    const file = pdfInput.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = ev => {
+      pendingChordPdf = ev.target.result;
+      const blob = new Blob([pendingChordPdf], { type: 'application/pdf' });
+      const url = URL.createObjectURL(blob);
+      chordBlobUrls.push(url);
+      pdfPreview.innerHTML = `<iframe src="${url}"></iframe>`;
+      pdfClear.style.display = '';
+    };
+    reader.readAsArrayBuffer(file);
+  }
+  document.getElementById('chord-pdf-upload').addEventListener('click', onUploadClick);
+  pdfInput.addEventListener('change', onFileChange);
+
+  // PDF clear
+  function onPdfClear() {
+    pendingChordPdf = null;
+    pendingChordPdfCleared = true;
+    pdfPreview.textContent = 'No PDF uploaded';
+    pdfClear.style.display = 'none';
+  }
+  pdfClear.addEventListener('click', onPdfClear);
+
+  // ChordPro live preview
+  cpInput.addEventListener('input', renderChordProPreview);
+
+  // ChordPro clear
+  function onCpClear() {
+    cpInput.value = '';
+    document.getElementById('chord-chordpro-preview').innerHTML = '';
+    cpClear.style.display = 'none';
+  }
+  cpClear.addEventListener('click', onCpClear);
+
+  // Show/hide ChordPro clear based on input content
+  cpInput.addEventListener('input', () => {
+    cpClear.style.display = cpInput.value.trim() ? '' : 'none';
+  });
+
+  function cleanup() {
+    overlay.classList.remove('show');
+    chordBlobUrls.forEach(u => URL.revokeObjectURL(u));
+    chordBlobUrls = [];
+    document.querySelector('.chord-tabs').removeEventListener('click', onTabClick);
+    document.getElementById('chord-pdf-upload').removeEventListener('click', onUploadClick);
+    pdfInput.removeEventListener('change', onFileChange);
+    pdfClear.removeEventListener('click', onPdfClear);
+    cpInput.removeEventListener('input', renderChordProPreview);
+    cpClear.removeEventListener('click', onCpClear);
+    document.getElementById('chord-save').removeEventListener('click', onSave);
+    document.getElementById('chord-cancel').removeEventListener('click', cleanup);
+    document.getElementById('chord-close').removeEventListener('click', cleanup);
+    overlay.removeEventListener('click', onOverlayClick);
+    overlay.removeEventListener('keydown', onKey);
+  }
+
+  async function onSave() {
+    const t = tracks.find(x => x.id === chordModalTrackId);
+    if (!t) { cleanup(); return; }
+    if (pendingChordPdf) {
+      t.chordPdf = pendingChordPdf;
+    } else if (pendingChordPdfCleared) {
+      t.chordPdf = null;
+    }
+    const cpVal = cpInput.value || null;
+    t.chordPro = cpVal;
+    // Save to IDB: strip only the audio arrayBuffer, pass chordPdf through
+    try {
+      const { arrayBuffer, ...meta } = t;
+      if (meta.chordPdf) meta.chordPdf = meta.chordPdf.slice(0);
+      await LibraryManager.saveMeta(meta);
+    } catch(e) { console.warn('Chord save failed:', e); }
+    cleanup();
+    renderCurrentTab();
+  }
+
+  function onOverlayClick(e) { if (e.target === overlay) cleanup(); }
+  function onKey(e) { if (e.key === 'Escape') cleanup(); }
+
+  document.getElementById('chord-save').addEventListener('click', onSave);
+  document.getElementById('chord-cancel').addEventListener('click', cleanup);
+  document.getElementById('chord-close').addEventListener('click', cleanup);
+  overlay.addEventListener('click', onOverlayClick);
+  overlay.addEventListener('keydown', onKey);
+}
+
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
@@ -1061,6 +1243,7 @@ function buildTrackRow(track) {
       <button class="row-play-btn" data-id="${escHtml(track.id)}">${track.id === currentPlayingId && players[track.id]?.isPlaying ? ICONS.pause : ICONS.play}</button>
     </div>
     <div class="row-name-col">
+      <button class="row-chord-btn${!!(track.chordPdf || track.chordPro) ? ' has-chart' : ''}" data-chord-id="${escHtml(track.id)}" title="Chord chart">${ICONS.chord}</button>
       <div class="row-name">${escHtml(track.name)}</div>
     </div>
     <div class="row-artist">${escHtml(artist)}</div>
@@ -1908,6 +2091,7 @@ function buildPlaylistTrackRow(slot, idx, pl) {
       <button class="row-play-btn" data-id="${escHtml(track.id)}">${isPlaying ? ICONS.pause : ICONS.play}</button>
     </div>
     <div class="row-name-col">
+      <button class="row-chord-btn${!!(track.chordPdf || track.chordPro) ? ' has-chart' : ''}" data-chord-id="${escHtml(track.id)}" title="Chord chart">${ICONS.chord}</button>
       <div class="row-name">${escHtml(track.name)}</div>
     </div>
     <div class="row-artist">${escHtml(artist)}</div>
@@ -2760,6 +2944,14 @@ trackList.addEventListener('click', e => {
     selectedIds.clear();
     lastSelectedIdx = -1;
     renderCurrentTab();
+    return;
+  }
+
+  // Chord icon button
+  const chordBtn = e.target.closest('.row-chord-btn[data-chord-id]');
+  if (chordBtn) {
+    e.stopPropagation();
+    showChordModal(chordBtn.dataset.chordId);
     return;
   }
 
