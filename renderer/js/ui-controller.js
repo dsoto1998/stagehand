@@ -258,15 +258,29 @@ function renderChordProPreview() {
     if (/^\{(start_of_chorus|soc)\}$/i.test(line)) return `<div class="cp-directive">[Chorus]</div>`;
     if (/^\{(end_of_chorus|eoc)\}$/i.test(line)) return '';
     // Empty line
-    if (!line.trim()) return `<div class="cp-line">&nbsp;</div>`;
-    // Chord/lyric line — split on [chord] tokens
+    if (!line.trim()) return `<div class="cp-spacer"></div>`;
+    // Split into [chord] / lyric parts and build stacked tokens
     const parts = line.split(/(\[[^\]]*\])/);
-    const spans = parts.map(p => {
+    const tokens = [];
+    let pendingChord = '';
+    parts.forEach(p => {
       if (p.startsWith('[') && p.endsWith(']')) {
-        return `<span class="cp-chord">${escHtml(p.slice(1,-1))}</span>`;
+        if (pendingChord) tokens.push({ chord: pendingChord, lyric: '' });
+        pendingChord = p.slice(1, -1);
+      } else {
+        tokens.push({ chord: pendingChord, lyric: p });
+        pendingChord = '';
       }
-      return escHtml(p);
-    }).join('');
+    });
+    if (pendingChord) tokens.push({ chord: pendingChord, lyric: '' });
+    // Plain lyric line (no chords)
+    if (tokens.every(t => !t.chord)) return `<div class="cp-line"><span class="cp-token"><span class="cp-chord cp-chord-empty">​</span><span class="cp-lyric">${escHtml(line)}</span></span></div>`;
+    const spans = tokens.map(t =>
+      `<span class="cp-token">` +
+      (t.chord ? `<span class="cp-chord">${escHtml(t.chord)}</span>` : `<span class="cp-chord cp-chord-empty">​</span>`) +
+      `<span class="cp-lyric">${escHtml(t.lyric) || '\u00a0'}</span>` +
+      `</span>`
+    ).join('');
     return `<div class="cp-line">${spans}</div>`;
   }).join('');
   preview.innerHTML = html;
