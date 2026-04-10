@@ -246,19 +246,48 @@ function renderChordProPreview() {
   const preview = document.getElementById('chord-chordpro-preview');
   if (!input || !preview) return;
 
+  // Returns true if s looks like a chord name (B, C#m, G#m, Gmaj7, D/F#, etc.)
+  function isChordName(s) {
+    return /^[A-G][#b]?(?:m(?:aj)?|min|dim|aug|sus[24]?|add\d*|no\d*|\d+|[#b]|\/[A-G][#b]?)*$/i.test(s.trim());
+  }
+
+  // A line like [Verse 1] or [Intro] but NOT [B] or [C#m] or [B C#m G#m E]
+  function isSectionHeader(line) {
+    const m = line.trim().match(/^\[([^\]]+)\]$/);
+    if (!m) return false;
+    return !m[1].trim().split(/\s+/).every(w => isChordName(w));
+  }
+
+  // Map common section name keywords to a type for color-coding
+  function sectionType(label) {
+    const l = label.toLowerCase();
+    if (/chorus|refrain/.test(l)) return 'chorus';
+    if (/verse/.test(l))          return 'verse';
+    if (/bridge/.test(l))         return 'bridge';
+    return '';
+  }
+
   function renderLyricLine(line) {
     const parts = line.split(/(\[[^\]]*\])/);
     const tokens = [];
     let pendingChord = '';
-    parts.forEach(p => {
+    for (const p of parts) {
       if (p.startsWith('[') && p.endsWith(']')) {
-        if (pendingChord) tokens.push({ chord: pendingChord, lyric: '' });
-        pendingChord = p.slice(1, -1);
+        const inner = p.slice(1, -1);
+        const words = inner.trim().split(/\s+/);
+        // Multi-chord bracket [B C#m G#m E] → split into individual tokens
+        if (words.length > 1 && words.every(w => isChordName(w))) {
+          if (pendingChord) { tokens.push({ chord: pendingChord, lyric: '' }); pendingChord = ''; }
+          words.forEach((c, i) => tokens.push({ chord: c, lyric: i < words.length - 1 ? '\u2002' : '' }));
+        } else {
+          if (pendingChord) { tokens.push({ chord: pendingChord, lyric: '' }); }
+          pendingChord = inner;
+        }
       } else {
         tokens.push({ chord: pendingChord, lyric: p });
         pendingChord = '';
       }
-    });
+    }
     if (pendingChord) tokens.push({ chord: pendingChord, lyric: '' });
     if (tokens.every(t => !t.chord)) return `<div class="cp-line"><span class="cp-token"><span class="cp-chord cp-chord-empty">​</span><span class="cp-lyric">${escHtml(line)}</span></span></div>`;
     const spans = tokens.map(t =>
@@ -275,11 +304,9 @@ function renderChordProPreview() {
   let inSection = false;
 
   for (const line of lines) {
-    // Section start: {start_of_chorus}, {start_of_verse:Label}, {soc}, etc.
+    // Explicit ChordPro section directives
     const secStart = line.match(/^\{start_of_(\w+)(?::\s*([^}]*))?\}$/i) ||
-                     line.match(/^\{(soc)\}$/i) ||
-                     line.match(/^\{(sov)\}$/i) ||
-                     line.match(/^\{(sob)\}$/i);
+                     line.match(/^\{(soc|sov|sob)\}$/i);
     if (secStart) {
       if (inSection) { html += '</div>'; }
       const raw = secStart[1].toLowerCase();
@@ -289,11 +316,21 @@ function renderChordProPreview() {
       inSection = true;
       continue;
     }
-    // Section end
     if (/^\{end_of_\w+\}$/i.test(line) || /^\{(eoc|eov|eob)\}$/i.test(line)) {
       if (inSection) { html += '</div>'; inSection = false; }
       continue;
     }
+
+    // Auto-detect [Section Name] headers
+    if (isSectionHeader(line)) {
+      if (inSection) { html += '</div>'; }
+      const label = line.trim().slice(1, -1).trim();
+      const type = sectionType(label);
+      html += `<div class="cp-section${type ? ' cp-section-' + type : ''}"><div class="cp-section-label">${escHtml(label)}</div>`;
+      inSection = true;
+      continue;
+    }
+
     // Metadata directives
     const dirMatch = line.match(/^\{(title|t|subtitle|st|comment|c):\s*(.*?)\s*\}$/i);
     if (dirMatch) {
@@ -304,9 +341,8 @@ function renderChordProPreview() {
         : `<div class="cp-directive">${escHtml(val)}</div>`;
       continue;
     }
-    // Empty line
+
     if (!line.trim()) { html += `<div class="cp-spacer"></div>`; continue; }
-    // Lyric / chord line
     html += renderLyricLine(line);
   }
   if (inSection) html += '</div>';
