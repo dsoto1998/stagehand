@@ -245,21 +245,8 @@ function renderChordProPreview() {
   const input = document.getElementById('chord-chordpro-input');
   const preview = document.getElementById('chord-chordpro-preview');
   if (!input || !preview) return;
-  const lines = input.value.split('\n');
-  const html = lines.map(line => {
-    // Directive lines
-    const dirMatch = line.match(/^\{(title|t|subtitle|st|comment|c):\s*(.*?)\s*\}$/i);
-    if (dirMatch) {
-      const tag = dirMatch[1].toLowerCase();
-      const val = dirMatch[2];
-      if (tag === 'title' || tag === 't') return `<div class="cp-directive"><strong>${escHtml(val)}</strong></div>`;
-      return `<div class="cp-directive">${escHtml(val)}</div>`;
-    }
-    if (/^\{(start_of_chorus|soc)\}$/i.test(line)) return `<div class="cp-directive">[Chorus]</div>`;
-    if (/^\{(end_of_chorus|eoc)\}$/i.test(line)) return '';
-    // Empty line
-    if (!line.trim()) return `<div class="cp-spacer"></div>`;
-    // Split into [chord] / lyric parts and build stacked tokens
+
+  function renderLyricLine(line) {
     const parts = line.split(/(\[[^\]]*\])/);
     const tokens = [];
     let pendingChord = '';
@@ -273,7 +260,6 @@ function renderChordProPreview() {
       }
     });
     if (pendingChord) tokens.push({ chord: pendingChord, lyric: '' });
-    // Plain lyric line (no chords)
     if (tokens.every(t => !t.chord)) return `<div class="cp-line"><span class="cp-token"><span class="cp-chord cp-chord-empty">​</span><span class="cp-lyric">${escHtml(line)}</span></span></div>`;
     const spans = tokens.map(t =>
       `<span class="cp-token">` +
@@ -282,7 +268,48 @@ function renderChordProPreview() {
       `</span>`
     ).join('');
     return `<div class="cp-line">${spans}</div>`;
-  }).join('');
+  }
+
+  const lines = input.value.split('\n');
+  let html = '';
+  let inSection = false;
+
+  for (const line of lines) {
+    // Section start: {start_of_chorus}, {start_of_verse:Label}, {soc}, etc.
+    const secStart = line.match(/^\{start_of_(\w+)(?::\s*([^}]*))?\}$/i) ||
+                     line.match(/^\{(soc)\}$/i) ||
+                     line.match(/^\{(sov)\}$/i) ||
+                     line.match(/^\{(sob)\}$/i);
+    if (secStart) {
+      if (inSection) { html += '</div>'; }
+      const raw = secStart[1].toLowerCase();
+      const type = raw === 'soc' ? 'chorus' : raw === 'sov' ? 'verse' : raw === 'sob' ? 'bridge' : raw;
+      const label = secStart[2]?.trim() || (type.charAt(0).toUpperCase() + type.slice(1));
+      html += `<div class="cp-section cp-section-${escHtml(type)}"><div class="cp-section-label">${escHtml(label)}</div>`;
+      inSection = true;
+      continue;
+    }
+    // Section end
+    if (/^\{end_of_\w+\}$/i.test(line) || /^\{(eoc|eov|eob)\}$/i.test(line)) {
+      if (inSection) { html += '</div>'; inSection = false; }
+      continue;
+    }
+    // Metadata directives
+    const dirMatch = line.match(/^\{(title|t|subtitle|st|comment|c):\s*(.*?)\s*\}$/i);
+    if (dirMatch) {
+      const tag = dirMatch[1].toLowerCase();
+      const val = dirMatch[2];
+      html += (tag === 'title' || tag === 't')
+        ? `<div class="cp-directive"><strong>${escHtml(val)}</strong></div>`
+        : `<div class="cp-directive">${escHtml(val)}</div>`;
+      continue;
+    }
+    // Empty line
+    if (!line.trim()) { html += `<div class="cp-spacer"></div>`; continue; }
+    // Lyric / chord line
+    html += renderLyricLine(line);
+  }
+  if (inSection) html += '</div>';
   preview.innerHTML = html;
 }
 

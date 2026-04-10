@@ -2508,6 +2508,25 @@
 .cp-chord-empty { visibility: hidden; }
 .cp-lyric { font-size: 13px; line-height: 1.5; white-space: pre; }
 .cp-spacer { height: 10px; }
+.cp-section {
+  border: 1px solid var(--border-bright);
+  border-radius: 4px;
+  padding: 8px 12px 10px;
+  margin: 8px 0;
+}
+.cp-section-chorus { border-color: rgba(232,255,71,0.35); background: rgba(232,255,71,0.03); }
+.cp-section-verse  { border-color: var(--border-bright); }
+.cp-section-bridge { border-color: rgba(71,232,212,0.35); background: rgba(71,232,212,0.03); }
+.cp-section-label {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  margin-bottom: 6px;
+}
+.cp-section-chorus .cp-section-label { color: var(--accent-dim); }
+.cp-section-bridge .cp-section-label { color: var(--cyan); }
 .cp-directive {
   color: var(--text-secondary);
   font-style: italic;
