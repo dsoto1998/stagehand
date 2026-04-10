@@ -3200,19 +3200,7 @@ artFileInput.style.display = 'none';
 document.body.appendChild(artFileInput);
 let artFileInputKey = null;
 
-trackList.addEventListener('contextmenu', e => {
-  const albumRow = e.target.closest('.album-row[data-album]');
-  if (albumRow) {
-    e.preventDefault();
-    const albumName = albumRow.dataset.album;
-    const repTrack = tracks.find(t => (t.album || '').trim() === albumName || (!t.album && albumName === 'Unknown Album'));
-    if (!repTrack) return;
-    artFileInputKey = ArtworkManager.artworkKeyFor(repTrack);
-    artFileInput.value = '';
-    artFileInput.click();
-    return;
-  }
-});
+// Album artwork is set via the album context menu (see showAlbumCtxMenu / albumCtxMenu click handler)
 
 artFileInput.addEventListener('change', async () => {
   const file = artFileInput.files[0];
@@ -3350,6 +3338,13 @@ albumCtxMenu.addEventListener('click', e => {
   if (action === 'info') {
     const albumTracks = tracks.filter(t => (t.album || '').trim() === albumCtxMenuName || (albumCtxMenuName === 'Unknown Album' && !t.album?.trim()));
     showInfoModal(albumTracks.map(t => t.id));
+  } else if (action === 'set-art') {
+    const repTrack = tracks.find(t => (t.album || '').trim() === albumCtxMenuName || (!t.album && albumCtxMenuName === 'Unknown Album'));
+    if (repTrack) {
+      artFileInputKey = ArtworkManager.artworkKeyFor(repTrack);
+      artFileInput.value = '';
+      artFileInput.click();
+    }
   }
 });
 
