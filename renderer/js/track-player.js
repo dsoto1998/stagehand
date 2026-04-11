@@ -221,11 +221,9 @@ export class TrackPlayer {
     if (this.source) {
       this.source.playbackRate.value = s;
     }
-    if (this.speedNode) {
-      try {
-        this.speedNode.parameters.get('playbackRate').setValueAtTime(s, getCtx().currentTime);
-      } catch(e) {}
-    }
+    // Don't update SoundTouch's playbackRate parameter here — changing it mid-stream
+    // forces WSOLA re-convergence on every slider tick, causing audible warbles.
+    // The debounced restart below rebuilds the graph fresh with correct pitch compensation.
     // Debounce a graph restart whenever SoundTouch is or will be in the chain.
     // This flushes stale WSOLA state that causes warbles when pitch ratio changes mid-stream.
     const needsNode = Math.abs(s - 1.0) > 0.001;
