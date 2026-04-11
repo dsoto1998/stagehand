@@ -93,7 +93,7 @@ export class TrackPlayer {
           numberOfInputs: 1, numberOfOutputs: 1,
           outputChannelCount: [this.buffer.numberOfChannels]
         });
-        this.speedNode.parameters.get('playbackRate').setValueAtTime(this.speed, ctx.currentTime);
+        this.speedNode.parameters.get('tempo').setValueAtTime(this.speed, ctx.currentTime);
         this.speedNode.connect(this.gainNode);
       } catch(e) {
         this.speedNode = null;
@@ -210,7 +210,7 @@ export class TrackPlayer {
     this.speed = s;
     if (this.speedNode) {
       try {
-        this.speedNode.parameters.get('playbackRate').setValueAtTime(s, getCtx().currentTime);
+        this.speedNode.parameters.get('tempo').setValueAtTime(s, getCtx().currentTime);
       } catch(e) {}
     }
     // If speed changed between 1× and non-1× (graph topology changes), restart
