@@ -30,6 +30,7 @@ export class TrackPlayer {
     this.speedNode = null;
     this.isPlaying = false;
     this.startTime = 0;
+    this.startAudioOffset = 0;
     this.pauseOffset = 0;
     this.duration = 0;
     this.semitones = 0;
@@ -93,7 +94,7 @@ export class TrackPlayer {
           numberOfInputs: 1, numberOfOutputs: 1,
           outputChannelCount: [this.buffer.numberOfChannels]
         });
-        this.speedNode.parameters.get('tempo').setValueAtTime(this.speed, ctx.currentTime);
+        this.speedNode.parameters.get('playbackRate').setValueAtTime(this.speed, ctx.currentTime);
         this.speedNode.connect(this.gainNode);
       } catch(e) {
         this.speedNode = null;
@@ -110,7 +111,7 @@ export class TrackPlayer {
 
     this.source = ctx.createBufferSource();
     this.source.buffer = this.buffer;
-    this.source.playbackRate.value = 1.0; // speed handled by speedNode
+    this.source.playbackRate.value = this.speed; // native resampling; SoundTouch compensates pitch
 
     this.syncLoop();
 
@@ -132,7 +133,8 @@ export class TrackPlayer {
     }
 
     this.source.start(0, startOffset);
-    this.startTime = ctx.currentTime - startOffset;
+    this.startTime = ctx.currentTime;
+    this.startAudioOffset = startOffset;
     this.isPlaying = true;
 
     this.source.onended = () => {
@@ -149,7 +151,7 @@ export class TrackPlayer {
   pause() {
     if (!this.isPlaying) return;
     const ctx = getCtx();
-    this.pauseOffset = ctx.currentTime - this.startTime;
+    this.pauseOffset = this.currentTime;
     this.stop(false);
     this.isPlaying = false;
   }
@@ -188,7 +190,7 @@ export class TrackPlayer {
   get currentTime() {
     if (this.isPlaying) {
       const ctx = getCtx();
-      let t = Math.min(ctx.currentTime - this.startTime, this.duration);
+      let t = Math.min(this.startAudioOffset + (ctx.currentTime - this.startTime) * this.speed, this.duration);
       if (this.loopEnabled && this.source && this.source.loop) {
         const ls = this.loopStart * this.duration;
         const le = this.loopEnd * this.duration;
@@ -207,10 +209,21 @@ export class TrackPlayer {
   }
 
   setSpeed(s) {
-    this.speed = s;
+    if (this.isPlaying) {
+      // Capture audio position before changing speed so the clock stays continuous
+      const pos = this.currentTime;
+      this.speed = s;
+      this.startAudioOffset = pos;
+      this.startTime = getCtx().currentTime;
+    } else {
+      this.speed = s;
+    }
+    if (this.source) {
+      this.source.playbackRate.value = s;
+    }
     if (this.speedNode) {
       try {
-        this.speedNode.parameters.get('tempo').setValueAtTime(s, getCtx().currentTime);
+        this.speedNode.parameters.get('playbackRate').setValueAtTime(s, getCtx().currentTime);
       } catch(e) {}
     }
     // If speed changed between 1× and non-1× (graph topology changes), restart
