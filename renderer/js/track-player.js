@@ -226,10 +226,11 @@ export class TrackPlayer {
         this.speedNode.parameters.get('playbackRate').setValueAtTime(s, getCtx().currentTime);
       } catch(e) {}
     }
-    // If speed changed between 1× and non-1× (graph topology changes), restart
+    // Debounce a graph restart whenever SoundTouch is or will be in the chain.
+    // This flushes stale WSOLA state that causes warbles when pitch ratio changes mid-stream.
     const needsNode = Math.abs(s - 1.0) > 0.001;
     const hasNode   = !!this.speedNode;
-    if (this.isPlaying && needsNode !== hasNode) {
+    if (this.isPlaying && (needsNode || hasNode)) {
       if (this._speedDebounce) clearTimeout(this._speedDebounce);
       this._speedDebounce = setTimeout(() => {
         if (this.isPlaying) this.play(this.currentTime);
