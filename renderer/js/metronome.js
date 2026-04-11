@@ -97,8 +97,7 @@ function flashLoop() {
   while (flashQueue.length && flashQueue[0].time <= now + 0.02) {
     const item = flashQueue.shift();
     if (item.beat % item.subdivSteps === 0 && beatCallback) {
-      const beatIdx = Math.floor(item.beat / item.subdivSteps);
-      beatCallback(beatIdx);
+      beatCallback();
     }
   }
   flashRaf = requestAnimationFrame(flashLoop);

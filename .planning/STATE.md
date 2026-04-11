@@ -5,7 +5,7 @@ milestone_name: Library & Player Enhancement
 status: Phase complete — ready for verification
 stopped_at: Completed quick-260408-v4r chord chart support
 last_updated: "2026-04-09T04:00:07.206Z"
-last_activity: 2026-04-09
+last_activity: 2026-04-11
 progress:
   total_phases: 3
   completed_phases: 2
@@ -67,6 +67,7 @@ None.
 
 | # | Description | Date | Commit |
 |---|-------------|------|--------|
+| 260410-udn | Add 7 keyboard shortcuts + Keyboard Shortcuts settings panel | 2026-04-11 | 70bdac4 |
 | 260408-v4r | Add per-track chord chart support — always-visible icon, PDF upload + ChordPro editor modal, IDB persistence | 2026-04-09 | 7e2ec29 |
 | 260403-klh | Six UI improvements: metronome beat dots, full-width TAP, single-click BPM, combined selects row, speed warning, loop btn repositioned | 2026-04-03 | d54e323 |
 | 260327-bza | Make metronome volume slider identical to miniplayer (7px thumb, centered layout, % readout) | 2026-03-27 | 49f9d58 |

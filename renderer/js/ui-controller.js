@@ -841,12 +841,38 @@ document.addEventListener('keydown', (e) => {
       document.getElementById('mp-prev').click();
       return;
   }
-  // Loop in/out point shortcuts
-  if (currentPlayingId) {
-    const tag = e.target.tagName;
-    if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !e.target.isContentEditable) {
+  // Ctrl+F: focus search (works from anywhere, even inputs)
+  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+    e.preventDefault();
+    document.getElementById('lib-search').focus();
+    return;
+  }
+
+  // Guard: skip shortcuts when typing in inputs
+  const kbTag = e.target.tagName;
+  const inInput = kbTag === 'INPUT' || kbTag === 'TEXTAREA' || e.target.isContentEditable;
+  if (!inInput) {
+    // [ / ] — prev / next track
+    if (e.key === '[') { e.preventDefault(); document.getElementById('mp-prev').click(); return; }
+    if (e.key === ']') { e.preventDefault(); document.getElementById('mp-next').click(); return; }
+    // T — tap tempo, M — toggle metronome
+    if (e.key === 't' || e.key === 'T') { e.preventDefault(); document.getElementById('mm-tap-btn').click(); return; }
+    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); document.getElementById('mm-play-btn').click(); return; }
+
+    // Shortcuts requiring a playing track
+    if (currentPlayingId) {
       const lp = players[currentPlayingId];
       if (lp) {
+        // L — toggle loop
+        if (e.key === 'l' || e.key === 'L') { e.preventDefault(); document.getElementById('mp-loop-btn').click(); return; }
+        // ← / → — seek ±5s (Shift: ±15s)
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+          e.preventDefault();
+          const delta = (e.shiftKey ? 15 : 5) * (e.key === 'ArrowLeft' ? -1 : 1);
+          lp.seek(Math.max(0, Math.min(1, (lp.currentTime + delta) / lp.duration)));
+          return;
+        }
+        // I / O — set loop in / out point
         const minGap = Math.max(0.005, 0.1 / (lp.duration || 1));
         if (e.key === 'i' || e.key === 'I') {
           e.preventDefault();
@@ -864,13 +890,10 @@ document.addEventListener('keydown', (e) => {
         }
       }
     }
-  }
 
-  if (e.code !== 'Space') return;
-  const tag = e.target.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || e.target.isContentEditable) return;
-  e.preventDefault();
-  document.getElementById('mp-play').click();
+    // Space — play / pause
+    if (e.code === 'Space') { e.preventDefault(); document.getElementById('mp-play').click(); return; }
+  }
 });
 
 if ('mediaSession' in navigator) {
