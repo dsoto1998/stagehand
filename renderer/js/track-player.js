@@ -5,12 +5,18 @@ let rubberbandWorkletLoaded = false;
 export async function ensureRubberbandWorklet() {
   if (rubberbandWorkletLoaded) return;
   const ctx = resume();
-  // Must wait for context to be running before adding worklet module
-  if (ctx.state === 'suspended') {
-    await ctx.resume();
-  }
+  if (ctx.state === 'suspended') await ctx.resume();
   await ctx.audioWorklet.addModule('./js/rubberband-processor.js');
   rubberbandWorkletLoaded = true;
+}
+
+let soundtouchWorkletLoaded = false;
+async function ensureSoundtouchWorklet() {
+  if (soundtouchWorkletLoaded) return;
+  const ctx = resume();
+  if (ctx.state === 'suspended') await ctx.resume();
+  await ctx.audioWorklet.addModule('./js/soundtouch-processor.js');
+  soundtouchWorkletLoaded = true;
 }
 
 
@@ -21,8 +27,10 @@ export class TrackPlayer {
     this.source = null;
     this.gainNode = null;
     this.pitchNode = null;
+    this.speedNode = null;
     this.isPlaying = false;
     this.startTime = 0;
+    this.startAudioOffset = 0;
     this.pauseOffset = 0;
     this.duration = 0;
     this.semitones = 0;
@@ -62,6 +70,7 @@ export class TrackPlayer {
     this.gainNode.gain.value = this.volume;
     this.gainNode.connect(getMaster());
 
+    // Build audio graph: source → [pitchNode] → [speedNode] → gainNode
     const factor = Math.pow(2, this.semitones / 12);
     if (this.semitones !== 0) {
       try {
@@ -71,7 +80,6 @@ export class TrackPlayer {
           outputChannelCount: [this.buffer.numberOfChannels]
         });
         this.pitchNode.port.postMessage(JSON.stringify(["pitch", factor]));
-        this.pitchNode.connect(this.gainNode);
       } catch(e) {
         this.pitchNode = null;
       }
@@ -79,25 +87,54 @@ export class TrackPlayer {
       this.pitchNode = null;
     }
 
+    if (Math.abs(this.speed - 1.0) > 0.001) {
+      try {
+        await ensureSoundtouchWorklet();
+        this.speedNode = new AudioWorkletNode(ctx, 'soundtouch-processor', {
+          numberOfInputs: 1, numberOfOutputs: 1,
+          outputChannelCount: [this.buffer.numberOfChannels]
+        });
+        this.speedNode.parameters.get('playbackRate').setValueAtTime(this.speed, ctx.currentTime);
+        this.speedNode.connect(this.gainNode);
+      } catch(e) {
+        this.speedNode = null;
+      }
+    } else {
+      this.speedNode = null;
+    }
+
+    // Wire: pitchNode → speedNode → gainNode (whichever nodes are active)
+    const lastNode = this.speedNode || this.pitchNode || null;
+    if (this.pitchNode) {
+      this.pitchNode.connect(this.speedNode || this.gainNode);
+    }
+
     this.source = ctx.createBufferSource();
     this.source.buffer = this.buffer;
-    this.source.playbackRate.value = this.speed;
+    this.source.playbackRate.value = this.speed; // native resampling; SoundTouch compensates pitch
 
-    if (this.loopEnabled) {
-      this.source.loop = true;
-      this.source.loopStart = this.loopStart * this.duration;
-      this.source.loopEnd = this.loopEnd * this.duration;
+    this.syncLoop();
+
+    const startOffset = (offset !== undefined) ? offset : this.pauseOffset;
+    if (this.loopEnabled && this.source) {
+      const ls = this.loopStart * this.duration;
+      const le = this.loopEnd * this.duration;
+      if (startOffset >= le || startOffset < ls) {
+        this.source.loop = false;
+      }
     }
 
     if (this.pitchNode) {
       this.source.connect(this.pitchNode);
+    } else if (this.speedNode) {
+      this.source.connect(this.speedNode);
     } else {
       this.source.connect(this.gainNode);
     }
 
-    const startOffset = (offset !== undefined) ? offset : this.pauseOffset;
     this.source.start(0, startOffset);
-    this.startTime = ctx.currentTime - startOffset;
+    this.startTime = ctx.currentTime;
+    this.startAudioOffset = startOffset;
     this.isPlaying = true;
 
     this.source.onended = () => {
@@ -114,7 +151,7 @@ export class TrackPlayer {
   pause() {
     if (!this.isPlaying) return;
     const ctx = getCtx();
-    this.pauseOffset = ctx.currentTime - this.startTime;
+    this.pauseOffset = this.currentTime;
     this.stop(false);
     this.isPlaying = false;
   }
@@ -126,10 +163,18 @@ export class TrackPlayer {
       this.source = null;
     }
     if (this.pitchNode) { try { this.pitchNode.disconnect(); } catch(e){} this.pitchNode = null; }
+    if (this.speedNode) { try { this.speedNode.disconnect(); } catch(e){} this.speedNode = null; }
     if (this.gainNode)  { try { this.gainNode.disconnect(); } catch(e){}  this.gainNode = null; }
     if (resetOffset) { this.pauseOffset = 0; }
     this.isPlaying = false;
     cancelAnimationFrame(this._rafId);
+  }
+
+  syncLoop() {
+    if (!this.source) return;
+    this.source.loop = this.loopEnabled;
+    this.source.loopStart = this.loopStart * this.duration;
+    this.source.loopEnd = this.loopEnd * this.duration;
   }
 
   seek(fraction) {
@@ -145,7 +190,15 @@ export class TrackPlayer {
   get currentTime() {
     if (this.isPlaying) {
       const ctx = getCtx();
-      return Math.min(ctx.currentTime - this.startTime, this.duration);
+      let t = Math.min(this.startAudioOffset + (ctx.currentTime - this.startTime) * this.speed, this.duration);
+      if (this.loopEnabled && this.source && this.source.loop) {
+        const ls = this.loopStart * this.duration;
+        const le = this.loopEnd * this.duration;
+        if (le > ls && t >= le) {
+          t = ls + ((t - ls) % (le - ls));
+        }
+      }
+      return t;
     }
     return this.pauseOffset;
   }
@@ -156,8 +209,42 @@ export class TrackPlayer {
   }
 
   setSpeed(s) {
-    this.speed = s;
-    if (this.source) this.source.playbackRate.value = s;
+    if (this.isPlaying) {
+      // Capture audio position before changing speed so the clock stays continuous
+      const pos = this.currentTime;
+      this.speed = s;
+      this.startAudioOffset = pos;
+      this.startTime = getCtx().currentTime;
+    } else {
+      this.speed = s;
+    }
+    if (this.source) {
+      this.source.playbackRate.value = s;
+    }
+    // Don't update SoundTouch's playbackRate parameter here — changing it mid-stream
+    // forces WSOLA re-convergence on every slider tick, causing audible warbles.
+    // The debounced restart below rebuilds the graph fresh with correct pitch compensation.
+    // Debounce a graph restart whenever SoundTouch is or will be in the chain.
+    // This flushes stale WSOLA state that causes warbles when pitch ratio changes mid-stream.
+    const needsNode = Math.abs(s - 1.0) > 0.001;
+    const hasNode   = !!this.speedNode;
+    if (this.isPlaying && (needsNode || hasNode)) {
+      if (this._speedDebounce) clearTimeout(this._speedDebounce);
+      this._speedDebounce = setTimeout(() => {
+        if (this.isPlaying) this.play(this.currentTime);
+      }, 150);
+    }
+  }
+
+  setLoopEnabled(enabled) {
+    this.loopEnabled = enabled;
+    this.syncLoop();
+  }
+
+  setLoopPoints(start, end) {
+    this.loopStart = start;
+    this.loopEnd   = end;
+    this.syncLoop();
   }
 
   setSemitones(s) {
@@ -172,6 +259,17 @@ export class TrackPlayer {
 
   _tick() {
     if (!this.isPlaying) return;
+
+    // Re-enable loop once playhead enters the loop region (deferred from seek)
+    if (this.loopEnabled && this.source && !this.source.loop) {
+      const ls = this.loopStart * this.duration;
+      const le = this.loopEnd * this.duration;
+      const t = this.currentTime;
+      if (t >= ls && t < le) {
+        this.source.loop = true;
+      }
+    }
+
     if (this.onProgress) {
       const t = this.currentTime;
       this.onProgress(t / this.duration, t);
