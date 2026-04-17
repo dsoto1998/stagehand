@@ -1,2 +1,4 @@
 node_modules/
 .claude/worktrees/
+src-tauri/target/
+src-tauri/gen/

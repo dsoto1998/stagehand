@@ -3,9 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "setup": "npm install && cp node_modules/rubberband-web/public/rubberband-processor.js renderer/js/"
+    "setup": "npm install && cp node_modules/rubberband-web/public/rubberband-processor.js renderer/js/",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "dependencies": {
     "rubberband-web": "0.2.1"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1"
   }
 }
