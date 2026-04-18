@@ -1,0 +1,3 @@
+[env]
+LIBCLANG_PATH = "C:/Program Files/LLVM/bin"
+# CPAL_ASIO_DIR = "C:/path/to/ASIO_SDK"   # uncomment once ASIO SDK downloaded
