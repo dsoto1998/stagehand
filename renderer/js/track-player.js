@@ -1,12 +1,33 @@
 // ─── TRACK PLAYER ────────────────────────────────────────────
 import { getCtx, resume, getMaster } from './audio-engine.js';
 
+// addModule() fails silently under Tauri's WebView2 custom protocol in production.
+// Workaround: fetch the script via fetch() (which works), wrap in a blob URL,
+// and pass that to addModule(). Fall back to direct URL if blob approach fails.
+async function addWorkletModule(ctx, path) {
+  try {
+    const resp = await fetch(path);
+    if (!resp.ok) throw new Error(`fetch ${path}: ${resp.status}`);
+    const js = await resp.text();
+    const blob = new Blob([js], { type: 'text/javascript' });
+    const url = URL.createObjectURL(blob);
+    try {
+      await ctx.audioWorklet.addModule(url);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  } catch (e) {
+    // Direct fallback (works in browser / tauri dev)
+    await ctx.audioWorklet.addModule(path);
+  }
+}
+
 let rubberbandWorkletLoaded = false;
 export async function ensureRubberbandWorklet() {
   if (rubberbandWorkletLoaded) return;
   const ctx = resume();
   if (ctx.state === 'suspended') await ctx.resume();
-  await ctx.audioWorklet.addModule('./js/rubberband-processor.js');
+  await addWorkletModule(ctx, './js/rubberband-processor.js');
   rubberbandWorkletLoaded = true;
 }
 
@@ -15,7 +36,7 @@ async function ensureSoundtouchWorklet() {
   if (soundtouchWorkletLoaded) return;
   const ctx = resume();
   if (ctx.state === 'suspended') await ctx.resume();
-  await ctx.audioWorklet.addModule('./js/soundtouch-processor.js');
+  await addWorkletModule(ctx, './js/soundtouch-processor.js');
   soundtouchWorkletLoaded = true;
 }
 
