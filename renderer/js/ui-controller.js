@@ -2635,9 +2635,12 @@ function renderCurrentTab() {
   badge.textContent = tracks.length;
   countLabel.textContent = tracks.length + ' track' + (tracks.length !== 1 ? 's' : '');
 
-  // Show sort bar only on Songs tab; update active button + direction
+  // Show sort bar on Songs tab and drill-down track views (not card-list views)
   const sortBar = document.getElementById('lib-sort-bar');
-  sortBar.classList.toggle('hidden', activeTab !== 'songs');
+  const showSortBar = activeTab === 'songs'
+    || (activeTab === 'artists' && currentArtistView !== null)
+    || (activeTab === 'albums'  && currentAlbumView  !== null);
+  sortBar.classList.toggle('hidden', !showSortBar);
   document.querySelectorAll('.lib-sort-btn').forEach(btn => {
     const isActive = btn.dataset.sort === songsSortField;
     btn.classList.toggle('active', isActive);
