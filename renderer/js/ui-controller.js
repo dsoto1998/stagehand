@@ -6,7 +6,7 @@ import { TrackPlayer, players } from './track-player.js';
 import { Metronome, TapTempo } from './metronome.js';
 import { renderWaveform } from './waveform.js';
 import * as ArtworkManager from './artwork-manager.js';
-import { listen, invoke, writeAudioTemp } from './tauri-api.js';
+import { listen, invoke, writeAudioFile } from './tauri-api.js';
 
 
 // ─── VIRTUAL SCROLL STATE ─────────────────────────────────────
@@ -1146,6 +1146,26 @@ async function loadLibrary() {
     console.log(`[stagehand] loadLibrary: ${stored.length} tracks, ${storedPlaylists.length} playlists`);
     tracks = stored;
     playlists = storedPlaylists;
+
+    // Phase 2c migration: move IDB blobs to filesystem for any tracks that still have them
+    const blobTracks = tracks.filter(t => t.arrayBuffer && !t.filePath);
+    if (blobTracks.length > 0) {
+      console.log(`[stagehand] migrating ${blobTracks.length} track(s) to filesystem`);
+      for (const t of blobTracks) {
+        try {
+          const filePath = await writeAudioFile(t.id, t.format, t.arrayBuffer);
+          t.filePath = filePath;
+          t.arrayBuffer = null;
+          await LibraryManager.saveMeta({ id: t.id, filePath });
+          await LibraryManager.clearBytes(t.id);
+          console.log(`[stagehand] migrated "${t.name}" → ${filePath}`);
+        } catch(e) {
+          console.warn(`[stagehand] migration failed for "${t.name}":`, e);
+        }
+      }
+      console.log('[stagehand] migration complete');
+    }
+
     // Migrate old trackIds format to slots
     const toMigrate = playlists.filter(pl => pl.trackIds && !pl.slots);
     toMigrate.forEach(pl => {
@@ -1183,7 +1203,7 @@ async function loadLibrary() {
         const key = ArtworkManager.artworkKeyFor(t);
         if (seen.has(key)) return;
         seen.add(key);
-        ArtworkManager.resolveAndStoreArtwork(t, t.arrayBuffer?.slice(0))
+        ArtworkManager.resolveAndStoreArtwork(t, null)
           .then(() => refreshRowArt())
           .catch(() => {});
       });
@@ -1241,33 +1261,23 @@ async function playTrack(id, fromPlaylistId, slotIdx) {
   const needsLoad = !player._loaded || currentRustTrackId !== id;
   console.log(`[stagehand] playTrack: "${track.name}" needsLoad=${needsLoad} _loaded=${player._loaded} rustHas=${currentRustTrackId}`);
   if (needsLoad) {
-    // Fetch arrayBuffer from IDB if not in memory (lazy load)
-    if (!track.arrayBuffer) {
-      console.time(`[stagehand] playTrack:idb-getBytes`);
-      try {
-        track.arrayBuffer = await LibraryManager.getBytes(id);
-      } catch(e) {
-        console.error('IDB bytes fetch failed:', e);
-      }
-      console.timeEnd(`[stagehand] playTrack:idb-getBytes`);
-    }
-    if (!track.arrayBuffer) {
-      notify('Audio data missing — try re-importing the file', 'error');
+    if (!track.filePath) {
+      notify('Audio file missing — try re-importing the file', 'error');
       return;
     }
     try {
       const _cm = track.peaks ? { peaks: track.peaks, nativeDuration: track.nativeDuration, sampleRate: track.sampleRate } : null;
-      console.log(`[stagehand] playTrack:loadBuffer start (cached=${!!_cm})`);
-      console.time(`[stagehand] playTrack:loadBuffer`);
-      await player.loadBuffer(track.arrayBuffer.slice(0), _cm);
-      console.timeEnd(`[stagehand] playTrack:loadBuffer`);
+      console.log(`[stagehand] playTrack:loadFile start (cached=${!!_cm})`);
+      console.time(`[stagehand] playTrack:loadFile`);
+      await player.loadFile(track.filePath, _cm);
+      console.timeEnd(`[stagehand] playTrack:loadFile`);
       currentRustTrackId = id;
       if (!track.duration) {
         track.duration = player.duration;
         saveTrackMeta(track);
       }
     } catch(e) {
-      console.error('Buffer decode failed:', e);
+      console.error('File decode failed:', e);
       notify('Could not decode audio: ' + (e.message || 'unsupported format'), 'error');
       return;
     }
@@ -1298,20 +1308,17 @@ async function firePrefetch(currentId) {
   const next = getAutoNextTrack(currentId);
   if (!next?.track) return;
   const t = next.track;
+  if (!t.filePath) return;
   console.log(`[stagehand] prefetch: queuing "${t.name}"`);
-  if (!t.arrayBuffer) {
-    try { t.arrayBuffer = await LibraryManager.getBytes(t.id); } catch(e) { return; }
-  }
-  if (!t.arrayBuffer) return;
   try {
     console.time(`[stagehand] prefetch:decode "${t.name}"`);
-    const path = await writeAudioTemp(t.arrayBuffer.slice(0));
     const cm = t.peaks ? { peaks: t.peaks, nativeDuration: t.nativeDuration, sampleRate: t.sampleRate } : null;
     await invoke('audio_prefetch', {
-      path,
-      trackId: t.id,
-      cachedPeaks:    cm?.peaks            ?? null,
-      cachedDuration: cm?.nativeDuration   ?? null,
+      path:           t.filePath,
+      trackId:        t.id,
+      cachedPeaks:    cm?.peaks          ?? null,
+      cachedDuration: cm?.nativeDuration ?? null,
+      keepFile:       true,
     });
     console.timeEnd(`[stagehand] prefetch:decode "${t.name}"`);
     console.log(`[stagehand] prefetch: "${t.name}" ready`);
@@ -2752,7 +2759,7 @@ async function importFiles(files) {
       size: file.size,
       semitones: 0, volume: 1.0,
       artist: '', album: '', title: '', trackNumber: 0, releaseDate: '',
-      duration: 0, arrayBuffer: null,
+      duration: 0, filePath: null,
       addedAt: Date.now()
     };
     tracks.push(track);
@@ -2779,20 +2786,22 @@ async function importFiles(files) {
       track.title        = tags.title  || '';
       track.trackNumber  = parseTrackNumber(tags.track);
       track.releaseDate  = tags.year   || '';
-      const abMem  = ab.slice(0); // keep live copy; ab will be transferred to IDB
-      track.arrayBuffer = abMem;
 
-      // IDB save — fire and forget (ab is transferred/detached here)
-      LibraryManager.save({ ...track, arrayBuffer: ab })
+      // Write audio to permanent library directory
+      const filePath = await writeAudioFile(track.id, track.format, ab);
+      track.filePath = filePath;
+
+      // IDB save — metadata only, no blob
+      LibraryManager.save({ ...track })
         .catch(e => console.warn('IDB save failed:', e));
 
-      // Resolve artwork — fire and forget, uses abMem (still live)
-      ArtworkManager.resolveAndStoreArtwork(track, abMem.slice(0))
+      // Resolve artwork from embedded tags while bytes still in memory — fire and forget
+      ArtworkManager.resolveAndStoreArtwork(track, ab.slice(0))
         .then(() => renderCurrentTab())
         .catch(() => {});
 
       // Decode for duration — fire and forget
-      players[track.id].loadBuffer(abMem.slice(0)).then(() => {
+      players[track.id].loadFile(filePath).then(() => {
         if (!track.duration) {
           track.duration = players[track.id].duration;
           saveTrackMeta(track);

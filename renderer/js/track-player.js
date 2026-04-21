@@ -23,6 +23,40 @@ export class TrackPlayer {
     this.onEnd      = null;
   }
 
+  async loadFile(filePath, cachedMeta = null) {
+    const invokeArgs = {
+      trackId:          this.trackId,
+      cachedPeaks:      cachedMeta?.peaks         ?? null,
+      cachedDuration:   cachedMeta?.nativeDuration ?? null,
+      cachedSampleRate: cachedMeta?.sampleRate     ?? null,
+      keepFile:         true,
+    };
+
+    // Fast path: prefetch hit — no file read needed
+    const isPrefetched = await invoke('audio_check_prefetch', { trackId: this.trackId });
+    let result = null;
+    if (isPrefetched) {
+      result = await invoke('audio_load_file', { path: '', ...invokeArgs });
+    }
+    if (!result) {
+      result = await invoke('audio_load_file', { path: filePath, ...invokeArgs });
+    }
+
+    this.duration = result.duration;
+    this.peaks    = result.peaks?.length ? result.peaks : null;
+    this._loaded  = true;
+
+    if (!cachedMeta && result.peaks?.length) {
+      LibraryManager.saveMeta({
+        id: this.trackId,
+        peaks: result.peaks,
+        nativeDuration: result.duration,
+        sampleRate: result.sample_rate,
+      }).catch(() => {});
+    }
+    return result;
+  }
+
   async loadBuffer(arrayBuffer, cachedMeta = null) {
     const invokeArgs = {
       trackId:          this.trackId,
@@ -31,34 +65,27 @@ export class TrackPlayer {
       cachedSampleRate: cachedMeta?.sampleRate     ?? null,
     };
 
-    // Fast path: if Rust already has this track decoded (prefetch hit), skip temp file write
+    // Fast path: prefetch hit
     let result = null;
     const isPrefetched = await invoke('audio_check_prefetch', { trackId: this.trackId });
     if (isPrefetched) {
       result = await invoke('audio_load_file', { path: '', ...invokeArgs });
     }
-
     if (!result) {
-      // Normal path: write bytes to temp file, decode in Rust
       const path = await writeAudioTemp(arrayBuffer);
       result = await invoke('audio_load_file', { path, ...invokeArgs });
     }
     this.duration = result.duration;
-    // peaks may be empty for new tracks — background decode will emit peaks_ready
     this.peaks    = result.peaks?.length ? result.peaks : null;
     this._loaded  = true;
 
-    // Cache metadata in IDB on first decode (cachedMeta null = first time)
-    if (!cachedMeta) {
-      // Save whatever we have now; peaks_ready handler will update if peaks were empty
-      if (result.peaks?.length) {
-        LibraryManager.saveMeta({
-          id: this.trackId,
-          peaks: result.peaks,
-          nativeDuration: result.duration,
-          sampleRate: result.sample_rate,
-        }).catch(() => {});
-      }
+    if (!cachedMeta && result.peaks?.length) {
+      LibraryManager.saveMeta({
+        id: this.trackId,
+        peaks: result.peaks,
+        nativeDuration: result.duration,
+        sampleRate: result.sample_rate,
+      }).catch(() => {});
     }
     return result;
   }

@@ -87,6 +87,23 @@ export function getBytes(id) {
   }));
 }
 
+export function clearBytes(id) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction(STORE, 'readwrite');
+    const store = tx.objectStore(STORE);
+    const req = store.get(id);
+    req.onsuccess = () => {
+      const rec = req.result;
+      if (!rec) { res(); return; }
+      delete rec.arrayBuffer;
+      const put = store.put(rec);
+      put.onsuccess = () => res();
+      put.onerror   = e => rej(e.target.error);
+    };
+    req.onerror = e => rej(e.target.error);
+  }));
+}
+
 export function genId() {
   return 'trk_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
 }

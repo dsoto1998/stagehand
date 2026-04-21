@@ -18,12 +18,17 @@ pub fn run() {
                         .build(),
                 )?;
             }
+            // Ensure library directory exists for filesystem-backed audio storage
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                let _ = std::fs::create_dir_all(data_dir.join("library"));
+            }
             let engine = AudioEngine::new(app.handle().clone())
                 .expect("Failed to init audio engine");
             app.manage(EngineState(Mutex::new(engine)));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::library_get_dir,
             commands::audio_load,
             commands::audio_play,
             commands::audio_pause,

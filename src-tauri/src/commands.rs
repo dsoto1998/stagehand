@@ -6,6 +6,15 @@ use crate::audio::{AudioEngine, LoadResult, PrefetchEntry, decode_to_samples, co
 
 pub struct EngineState(pub Mutex<AudioEngine>);
 
+// ─── Library ─────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn library_get_dir(app: tauri::AppHandle) -> Result<String, String> {
+    use tauri::Manager;
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    Ok(data_dir.join("library").to_string_lossy().into_owned())
+}
+
 // ─── Load ────────────────────────────────────────────────────────────────────
 
 #[tauri::command]
@@ -16,6 +25,7 @@ pub async fn audio_load_file(
     cached_peaks: Option<Vec<f32>>,
     cached_duration: Option<f64>,
     cached_sample_rate: Option<u32>,
+    keep_file: Option<bool>,
 ) -> Result<LoadResult, String> {
     let t0 = std::time::Instant::now();
 
@@ -40,7 +50,9 @@ pub async fn audio_load_file(
     }
     let bytes = std::fs::read(&path)
         .map_err(|e| format!("Read audio file failed: {e}"))?;
-    let _ = std::fs::remove_file(&path);
+    if !keep_file.unwrap_or(false) {
+        let _ = std::fs::remove_file(&path);
+    }
     let result = match (cached_peaks, cached_duration, cached_sample_rate) {
         (Some(peaks), Some(duration), Some(sample_rate)) => {
             state.0.lock().load_cached(bytes, peaks, duration, sample_rate)
@@ -71,9 +83,11 @@ pub async fn audio_prefetch(
     track_id: String,
     cached_peaks: Option<Vec<f32>>,
     cached_duration: Option<f64>,
+    keep_file: Option<bool>,
 ) -> Result<(), String> {
     // Grab prefetch Arc now (brief lock) — OS thread uses it directly
     let prefetch_arc = state.0.lock().prefetch.clone();
+    let keep = keep_file.unwrap_or(false);
 
     std::thread::spawn(move || {
         let t0 = std::time::Instant::now();
@@ -81,7 +95,9 @@ pub async fn audio_prefetch(
             Ok(b) => b,
             Err(e) => { log::warn!("[stagehand] audio_prefetch: read failed: {e}"); return; }
         };
-        let _ = std::fs::remove_file(&path);
+        if !keep {
+            let _ = std::fs::remove_file(&path);
+        }
         log::info!("[stagehand] audio_prefetch: start decode for {}", track_id);
 
         let raw_bytes = bytes.clone();
