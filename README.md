@@ -2,43 +2,46 @@
 
 A musician's rehearsal tool for playing along with recordings.
 
-Import your tracks, transpose them up or down by semitone, set the metronome, and play along. No cloud, no accounts — everything stays in your browser via IndexedDB.
+Import your tracks, transpose them by semitone, adjust speed without changing pitch, set the metronome, and play along. No cloud, no accounts — everything stays local.
+
+Built with [Tauri 2](https://tauri.app/) (Rust backend, WebView frontend).
 
 ---
 
 ## Features
 
-- **Audio library** — Import WAV, MP3, FLAC, OGG/Opus. Tracks persist across sessions.
+- **Audio library** — Import WAV, MP3, FLAC, OGG/Opus. Files stored in app data dir; library persists across sessions.
 - **Waveform display** — Canvas-rendered with amplitude coloring. Click to seek.
 - **Playback** — Play/pause, per-track volume, miniplayer at the bottom of the sidebar.
-- **Transpose** — ±12 semitones per track using [Rubber Band](https://breakfastquay.com/rubberband/) WASM. Pitch-only — no tempo change.
-- **Metronome** — BPM input, tap tempo, subdivisions (1/4, 1/8, triplet, 1/16), custom click sound, beat flash.
+- **Transpose** — ±12 semitones per track via [Rubber Band](https://breakfastquay.com/rubberband/) (C++, vendored). Pitch-only — no tempo change.
+- **Speed** — Pitch-preserving playback speed via SoundTouch (AudioWorklet).
+- **Loop regions** — Draggable loop handles on the waveform; loop range persists per track.
+- **Metronome** — BPM input, tap tempo, subdivisions (1/4, 1/8, triplet, 1/16), accent pattern, custom click sound, beat flash.
 - **Playlists** — Create and reorder playlists, drag tracks in from the library.
-- **Song Info** — Edit title, artist, album, and track number per song, or bulk-edit across a selection.
-- **Master volume** — Single knob controls all output.
+- **Song info** — Edit title, artist, album, and track number per track; bulk-edit across a selection.
+- **Chord charts** — Attach a PDF or ChordPro file per track, viewed in a resizable overlay.
+- **Album artwork** — Auto-fetched from iTunes API; replaceable per track.
+- **ASIO support** — Windows device picker with ASIO device detection and latency hints.
+- **Keyboard shortcuts** — Space (play/pause), M (metronome), T (tap tempo), [ / ] (prev/next), and more.
 
 ---
 
 ## Getting Started
 
-Stagehand requires a local HTTP server (ES modules and AudioWorklet don't work over `file://`).
-
-```bash
-npx serve renderer/
-```
-
-Then open `http://localhost:3000` in **Chrome** or **Firefox**.
-
-> Safari is not supported — AudioWorklet + WASM threading requirements aren't met.
-
-### One-time setup (Rubber Band WASM)
-
-The pitch shifter uses a pre-built WASM binary from `rubberband-web`. Run this once to copy it into place:
+**Prerequisites:** [Rust toolchain](https://rustup.rs/) + Node.js 18+
 
 ```bash
 npm install
-npm run setup
+npm run tauri:dev
 ```
+
+### Build for distribution
+
+```bash
+npm run tauri:build
+```
+
+Output: `src-tauri/target/release/bundle/`
 
 ---
 
@@ -46,34 +49,43 @@ npm run setup
 
 ```
 stagehand/
-├── renderer/
-│   ├── index.html              ← entry point
+├── renderer/                    ← frontend (HTML + vanilla JS, no bundler)
+│   ├── index.html
 │   ├── style.css
 │   └── js/
-│       ├── audio-engine.js     ← AudioContext, master gain, routing
-│       ├── library-manager.js  ← IndexedDB CRUD
-│       ├── track-player.js     ← playback + Rubber Band pitch routing
-│       ├── rubberband-processor.js  ← AudioWorkletProcessor (WASM embedded)
-│       ├── metronome.js        ← lookahead scheduler + tap tempo
-│       ├── waveform.js         ← canvas waveform renderer
-│       └── ui-controller.js    ← DOM bindings, panels, playlists, miniplayer
-└── native/
-    └── vst-bridge/             ← future: node-addon-api + JUCE VST host
+│       ├── audio-engine.js      ← AudioContext (metronome only)
+│       ├── library-manager.js   ← filesystem-backed library CRUD
+│       ├── track-player.js      ← Tauri IPC → Rust audio engine
+│       ├── tauri-api.js         ← Tauri IPC wrappers
+│       ├── metronome.js         ← lookahead scheduler + tap tempo
+│       ├── waveform.js          ← canvas waveform renderer
+│       ├── artwork-manager.js   ← album art (iTunes API)
+│       └── ui-controller.js     ← DOM bindings, panels, miniplayer
+└── src-tauri/                   ← Rust backend
+    ├── Cargo.toml
+    ├── tauri.conf.json
+    ├── vendor/rubberband/       ← Rubber Band C++ (vendored)
+    └── src/
+        ├── audio.rs             ← rodio playback engine + pitch/speed
+        ├── commands.rs          ← Tauri IPC command handlers
+        └── lib.rs
 ```
-
----
-
-## Roadmap
-
-- **v2** — VST plugin chain UI (load `.vst3`/`.dll`, bypass toggle, per-plugin gain)
-- **v3** — Electron wrapper (Windows + Mac), native filesystem, real VST3 DSP via JUCE
 
 ---
 
 ## Tech
 
-- Vanilla JS (no framework, no bundler)
-- Web Audio API — AudioWorklet, GainNode, AudioBufferSourceNode
-- [rubberband-web](https://www.npmjs.com/package/rubberband-web) — Rubber Band Audio compiled to WASM
-- IndexedDB — local persistence for the audio library and playlists
+- [Tauri 2](https://tauri.app/) — Rust + system WebView desktop shell
+- [rodio](https://github.com/RustAudio/rodio) + [symphonia](https://github.com/pdeljanov/Symphonia) — audio decode and playback
+- [cpal](https://github.com/RustAudio/cpal) with ASIO — device enumeration and output
+- [Rubber Band](https://breakfastquay.com/rubberband/) (vendored C++) — pitch shifting
+- SoundTouch (AudioWorklet) — pitch-preserving speed change
+- Web Audio API — metronome only
+- Vanilla JS, no framework, no bundler
 - Google Fonts — Rajdhani, JetBrains Mono, Barlow Condensed
+
+---
+
+## Roadmap
+
+- **VST panel** — plugin chain UI (load `.vst3`/`.dll`, bypass toggle, per-plugin gain); real DSP via native bridge TBD
