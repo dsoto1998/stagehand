@@ -28,6 +28,7 @@ parking_lot      = "0.12"
 rodio = { version = "0.19", default-features = false, features = ["symphonia-all"] }
 cpal  = { version = "0.15", features = ["asio"] }
 tauri-plugin-fs = "2"
+open = "5"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

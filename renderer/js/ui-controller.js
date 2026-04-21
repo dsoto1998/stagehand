@@ -762,7 +762,7 @@ function resetSpeedSlider() {
   const sl = document.getElementById('mp-speed');
   sl.value = 50;
   const valEl = document.getElementById('mp-speed-val');
-  valEl.textContent = '1×';
+  valEl.textContent = '100%';
   valEl.classList.remove('speed-active');
   document.getElementById('mp-speed-reset').classList.remove('speed-reset-visible');
   document.getElementById('mp-speed-warn').classList.add('hidden');
@@ -1071,19 +1071,19 @@ document.getElementById('mp-vol').addEventListener('input', function() {
 });
 
 function speedSliderToRate(v) {
-  // v: 0–100, midpoint 50 = 1×
-  // left half:  0–50  → 0.5×–1×
-  // right half: 50–100 → 1×–1.25×
-  return v <= 50
-    ? 0.5 + (v / 50) * 0.5
-    : 1.0 + ((v - 50) / 50) * 0.5;
+  // v: 0–100, midpoint 50 = 100%
+  // left half:  0–50  → 50%–100%
+  // right half: 50–100 → 100%–125%
+  const raw = v <= 50 ? 50 + v : 100 + (v - 50) * 0.5;
+  return Math.round(raw / 5) * 5; // snap to nearest 5%
 }
 
 document.getElementById('mp-speed').addEventListener('input', function() {
-  const rate = speedSliderToRate(parseFloat(this.value));
-  const isActive = Math.abs(rate - 1.0) > 0.001;
+  const pct = speedSliderToRate(parseFloat(this.value));
+  const rate = pct / 100;
+  const isActive = pct !== 100;
   const valEl = document.getElementById('mp-speed-val');
-  valEl.textContent = rate.toFixed(2).replace(/\.?0+$/, '') + '×';
+  valEl.textContent = pct + '%';
   valEl.classList.toggle('speed-active', isActive);
   document.getElementById('mp-speed-reset').classList.toggle('speed-reset-visible', isActive);
   document.getElementById('mp-speed-warn').classList.toggle('hidden', !isActive);
@@ -2914,31 +2914,63 @@ settingsBtn.addEventListener('click', e => {
   if (!open) loadDeviceList();
 });
 
+let _deviceList = [];
+
 async function loadDeviceList() {
   const sel = document.getElementById('sp-device-select');
+  const warn = document.getElementById('sp-asio-warn');
   if (!sel || !window.__TAURI__) return;
   try {
     const devices = await invoke('audio_get_devices');
+    _deviceList = devices;
     sel.innerHTML = '';
-    devices.forEach(d => {
-      const opt = document.createElement('option');
-      opt.value = d.name;
-      opt.textContent = d.name + (d.is_default ? ' (default)' : '');
-      if (d.is_default) opt.selected = true;
-      sel.appendChild(opt);
-    });
+
+    const asioDevices  = devices.filter(d => d.is_asio);
+    const wasapiDevices = devices.filter(d => !d.is_asio);
+
+    if (asioDevices.length) {
+      const grp = document.createElement('optgroup');
+      grp.label = 'ASIO';
+      asioDevices.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.name;
+        opt.textContent = `${d.name}  ${d.latency_hint}`;
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
+    }
+
+    if (wasapiDevices.length) {
+      const grp = document.createElement('optgroup');
+      grp.label = 'WASAPI';
+      wasapiDevices.forEach(d => {
+        const opt = document.createElement('option');
+        opt.value = d.name;
+        opt.textContent = `${d.name}  ${d.latency_hint}${d.is_default ? '  (default)' : ''}`;
+        if (d.is_default) opt.selected = true;
+        grp.appendChild(opt);
+      });
+      sel.appendChild(grp);
+    }
+
+    if (warn) warn.classList.toggle('hidden', asioDevices.length > 0);
   } catch (e) {
     console.warn('audio_get_devices failed:', e);
   }
 }
 
 document.getElementById('sp-device-select')?.addEventListener('change', async e => {
+  const device = _deviceList.find(d => d.name === e.target.value);
   try {
-    await invoke('audio_set_device', { deviceName: e.target.value });
+    await invoke('audio_set_device', { deviceName: e.target.value, isAsio: device?.is_asio ?? false });
   } catch (err) {
     console.error('audio_set_device failed:', err);
     notify('Failed to switch audio device', 'error');
   }
+});
+
+document.getElementById('sp-asio4all-btn')?.addEventListener('click', () => {
+  invoke('open_url', { url: 'https://asio4all.org' }).catch(console.error);
 });
 
 document.addEventListener('click', e => {

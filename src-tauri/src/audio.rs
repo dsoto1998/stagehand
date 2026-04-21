@@ -794,9 +794,27 @@ impl AudioEngine {
         self.frame_counter.load(Ordering::Relaxed) as f64 / sr as f64
     }
 
-    pub fn set_output_device(&mut self, name: &str) -> Result<(), String> {
+    pub fn set_output_device(&mut self, name: &str, is_asio: bool) -> Result<(), String> {
         use cpal::traits::{DeviceTrait, HostTrait};
         self.stop_sink();
+
+        #[cfg(target_os = "windows")]
+        if is_asio {
+            let asio_host = cpal::host_from_id(cpal::HostId::Asio)
+                .map_err(|e| format!("ASIO host unavailable: {e}"))?;
+            let device = asio_host
+                .output_devices()
+                .map_err(|e| format!("Cannot enumerate ASIO devices: {e}"))?
+                .find(|d| d.name().map(|n| n == name).unwrap_or(false))
+                .ok_or_else(|| format!("ASIO device not found: {name}"))?;
+            let (stream, handle) = OutputStream::try_from_device(&device)
+                .map_err(|e| format!("Cannot open ASIO device '{name}': {e}"))?;
+            self._stream = SendStream(stream);
+            self.handle = handle;
+            return Ok(());
+        }
+        let _ = is_asio; // suppress unused warning on non-Windows
+
         let host = cpal::default_host();
         let device = if name.is_empty() {
             host.default_output_device()

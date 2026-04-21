@@ -245,13 +245,15 @@ pub struct AudioDevice {
     pub name: String,
     pub is_asio: bool,
     pub is_default: bool,
+    pub latency_hint: String,
 }
 
 #[tauri::command]
 pub async fn audio_get_devices() -> Result<Vec<AudioDevice>, String> {
-    let host = cpal::default_host();
     let mut devices = Vec::new();
 
+    // WASAPI devices via default host
+    let host = cpal::default_host();
     let default_name = host
         .default_output_device()
         .and_then(|d| d.name().ok())
@@ -262,16 +264,40 @@ pub async fn audio_get_devices() -> Result<Vec<AudioDevice>, String> {
             name: default_name.clone(),
             is_asio: false,
             is_default: true,
+            latency_hint: "~10ms".to_string(),
         });
     }
-
     if let Ok(all) = host.output_devices() {
         for d in all {
             if let Ok(name) = d.name() {
                 if name != default_name {
-                    devices.push(AudioDevice { name, is_asio: false, is_default: false });
+                    devices.push(AudioDevice {
+                        name,
+                        is_asio: false,
+                        is_default: false,
+                        latency_hint: "~10ms".to_string(),
+                    });
                 }
             }
+        }
+    }
+
+    // ASIO devices — Windows only, prepended to front of list
+    #[cfg(target_os = "windows")]
+    if let Ok(asio_host) = cpal::host_from_id(cpal::HostId::Asio) {
+        if let Ok(asio_devs) = asio_host.output_devices() {
+            let mut asio_list: Vec<AudioDevice> = asio_devs
+                .filter_map(|d| {
+                    d.name().ok().map(|name| AudioDevice {
+                        name,
+                        is_asio: true,
+                        is_default: false,
+                        latency_hint: "~1ms".to_string(),
+                    })
+                })
+                .collect();
+            asio_list.append(&mut devices);
+            devices = asio_list;
         }
     }
 
@@ -282,6 +308,12 @@ pub async fn audio_get_devices() -> Result<Vec<AudioDevice>, String> {
 pub async fn audio_set_device(
     state: State<'_, EngineState>,
     device_name: String,
+    is_asio: bool,
 ) -> Result<(), String> {
-    state.0.lock().set_output_device(&device_name)
+    state.0.lock().set_output_device(&device_name, is_asio)
+}
+
+#[tauri::command]
+pub fn open_url(url: String) -> Result<(), String> {
+    open::that(url).map_err(|e| e.to_string())
 }

@@ -44,6 +44,7 @@ pub fn run() {
             commands::audio_load_file,
             commands::audio_prefetch,
             commands::audio_check_prefetch,
+            commands::open_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
