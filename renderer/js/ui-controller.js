@@ -1475,11 +1475,15 @@ function renderVirtualList(container, items, renderRowFn) {
 }
 
 // ─── ARTIST DRILL-DOWN ROW BUILDERS ──────────────────────────
-function buildAlbumSectionHeader(albumName, trackCount, year) {
+function buildAlbumSectionHeader(albumName, trackCount, year, artDataUrl) {
   const el = document.createElement('div');
   el.className = 'album-section-header';
   const nameLabel = year ? `${albumName} (${year})` : albumName;
+  const artHtml = artDataUrl
+    ? `<div class="album-section-art"><img src="${escHtml(artDataUrl)}" alt=""></div>`
+    : `<div class="album-section-art album-section-art-empty"></div>`;
   el.innerHTML = `
+    ${artHtml}
     <div class="album-section-header-name">${escHtml(nameLabel)}</div>
     <div class="album-section-header-count">${trackCount} track${trackCount !== 1 ? 's' : ''}</div>
   `;
@@ -1574,12 +1578,16 @@ function getArtistGroups() {
   return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 
-function buildArtistRow(artistName, trackCount) {
+function buildArtistRow(artistName, trackCount, artDataUrl) {
   const row = document.createElement('div');
   row.className = 'artist-row';
   row.dataset.artist = artistName;
   row.style.height = ROW_H + 'px';
+  const artHtml = artDataUrl
+    ? `<div class="artist-row-art"><img src="${escHtml(artDataUrl)}" alt=""></div>`
+    : `<div class="artist-row-art artist-row-art-empty"></div>`;
   row.innerHTML = `
+    ${artHtml}
     <div class="artist-row-name">${escHtml(artistName)}</div>
     <div class="artist-row-count">${trackCount} track${trackCount !== 1 ? 's' : ''}</div>
   `;
@@ -1626,8 +1634,11 @@ function renderArtistList() {
   }
 
   visibleTracks = [];
-  const artistItems = groups.map(([name, trks]) => ({ name, count: trks.length }));
-  renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count));
+  const artistItems = groups.map(([name, trks]) => {
+    const artTrack = trks.find(t => ArtworkManager.getCachedArtwork(t)) || trks[0];
+    return { name, count: trks.length, art: artTrack ? ArtworkManager.getCachedArtwork(artTrack) : null };
+  });
+  renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count, item.art));
 }
 
 function renderArtistDrillDown(artistName) {
@@ -1686,7 +1697,9 @@ function renderArtistDrillDown(artistName) {
       if (na !== nb) return na - nb;
       return (a.name || '').localeCompare(b.name || '');
     });
-    listContainer.appendChild(buildAlbumSectionHeader(albumName, albumTracks.length, albumReleaseYear(albumTracks)));
+    const artTrack = albumTracks.find(t => ArtworkManager.getCachedArtwork(t));
+    const artDataUrl = artTrack ? ArtworkManager.getCachedArtwork(artTrack) : null;
+    listContainer.appendChild(buildAlbumSectionHeader(albumName, albumTracks.length, albumReleaseYear(albumTracks), artDataUrl));
     albumTracks.forEach(t => listContainer.appendChild(buildArtistDrillTrackRow(t)));
   });
   visibleTracks = sortedAlbums.flatMap(([, alTracks]) => alTracks);
@@ -3062,8 +3075,11 @@ trackList.addEventListener('scroll', () => {
       renderVirtualList(trackList, tracks, buildTrackRow);
     } else if (activeTab === 'artists' && currentArtistView === null) {
       const groups = getArtistGroups();
-      const artistItems = groups.map(([name, trks]) => ({ name, count: trks.length }));
-      renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count));
+      const artistItems = groups.map(([name, trks]) => {
+        const artTrack = trks.find(t => ArtworkManager.getCachedArtwork(t)) || trks[0];
+        return { name, count: trks.length, art: artTrack ? ArtworkManager.getCachedArtwork(artTrack) : null };
+      });
+      renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count, item.art));
     } else if (activeTab === 'albums' && currentAlbumView === null) {
       const groups = getAlbumGroups();
       const albumItems = groups.map(([name, trks]) => ({
