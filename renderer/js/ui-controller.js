@@ -6,6 +6,7 @@ import { TrackPlayer, players } from './track-player.js';
 import { Metronome, TapTempo } from './metronome.js';
 import { renderWaveform } from './waveform.js';
 import * as ArtworkManager from './artwork-manager.js';
+import { listen, invoke, writeAudioTemp } from './tauri-api.js';
 
 
 // ─── VIRTUAL SCROLL STATE ─────────────────────────────────────
@@ -593,6 +594,7 @@ function updateSelectionClasses() {
 
 // ─── MINIPLAYER ───────────────────────────────────────────────
 let currentPlayingId = null;
+let currentRustTrackId = null; // which track is currently loaded in the Rust engine
 let seeking = false;
 let seekFrac = 0;
 let loopDragHandle = null;
@@ -798,9 +800,9 @@ document.getElementById('mp-play').addEventListener('click', () => {
     player.pause();
     syncMiniplayerPlayBtn(false);
     renderCurrentTab();
-  } else if (player.buffer && player.pauseOffset > 0) {
-    // Resume from pause — don't reset offset
-    player.play().then(() => {
+  } else if (player._loaded && player._paused) {
+    // Resume from pause — rodio sink.play() continues without source rebuild
+    player.resume().then(() => {
       syncMiniplayerPlayBtn(true);
       renderCurrentTab();
     });
@@ -1049,9 +1051,13 @@ document.getElementById('mp-semitones-val').addEventListener('dblclick', () => {
 });
 
 document.getElementById('mp-vol').addEventListener('input', function() {
-  setMasterVolume(this.value / 100);
+  masterVolume = this.value / 100;
   localStorage.setItem('masterVolume', this.value);
   updateRangeFill(this);
+  if (currentPlayingId && players[currentPlayingId]) {
+    const p = players[currentPlayingId];
+    invoke('audio_set_volume', { volume: p.volume * masterVolume }).catch(() => {});
+  }
 });
 
 function speedSliderToRate(v) {
@@ -1129,12 +1135,15 @@ let tracks = []; // [{id, name, size, format, semitones, volume, arrayBuffer, du
 
 async function loadLibrary() {
   try {
+    console.time('[stagehand] loadLibrary:idb-all');
     const [stored, storedPlaylists, sortModeSetting, orderSetting] = await Promise.all([
       LibraryManager.all(),
       LibraryManager.getPlaylists(),
       LibraryManager.getSetting('playlist_sort_mode'),
       LibraryManager.getSetting('playlist_order')
     ]);
+    console.timeEnd('[stagehand] loadLibrary:idb-all');
+    console.log(`[stagehand] loadLibrary: ${stored.length} tracks, ${storedPlaylists.length} playlists`);
     tracks = stored;
     playlists = storedPlaylists;
     // Migrate old trackIds format to slots
@@ -1162,19 +1171,7 @@ async function loadLibrary() {
         players[t.id].loopEnd     = 1;
       }
     });
-    // Start background buffer loads (non-blocking)
-    tracks.forEach(t => {
-      const player = players[t.id];
-      if (!player.buffer && t.arrayBuffer) {
-        const abCopy = t.arrayBuffer.slice ? t.arrayBuffer.slice(0) : t.arrayBuffer;
-        player.loadBuffer(abCopy).then(() => {
-          if (!t.duration) {
-            t.duration = player.duration;
-            saveTrackMeta(t);
-          }
-        }).catch(e => console.warn('Background load failed:', t.name, e));
-      }
-    });
+    // No background loads — tracks decode on first play only
     libraryLoaded = true;
     renderCurrentTab();
     // Warm artwork cache from IDB, repaint, then background-resolve any still-missing art
@@ -1201,7 +1198,6 @@ async function loadLibrary() {
 
 // ─── PLAY TRACK ───────────────────────────────────────────────
 async function playTrack(id, fromPlaylistId, slotIdx) {
-  resume();
   const track = tracks.find(t => t.id === id);
   if (!track) return;
 
@@ -1241,14 +1237,31 @@ async function playTrack(id, fromPlaylistId, slotIdx) {
     return;
   }
 
-  // Load buffer if needed
-  if (!player.buffer) {
+  // Load buffer if needed — also reload if a different track is in the Rust engine
+  const needsLoad = !player._loaded || currentRustTrackId !== id;
+  console.log(`[stagehand] playTrack: "${track.name}" needsLoad=${needsLoad} _loaded=${player._loaded} rustHas=${currentRustTrackId}`);
+  if (needsLoad) {
+    // Fetch arrayBuffer from IDB if not in memory (lazy load)
+    if (!track.arrayBuffer) {
+      console.time(`[stagehand] playTrack:idb-getBytes`);
+      try {
+        track.arrayBuffer = await LibraryManager.getBytes(id);
+      } catch(e) {
+        console.error('IDB bytes fetch failed:', e);
+      }
+      console.timeEnd(`[stagehand] playTrack:idb-getBytes`);
+    }
     if (!track.arrayBuffer) {
       notify('Audio data missing — try re-importing the file', 'error');
       return;
     }
     try {
-      await player.loadBuffer(track.arrayBuffer.slice(0));
+      const _cm = track.peaks ? { peaks: track.peaks, nativeDuration: track.nativeDuration, sampleRate: track.sampleRate } : null;
+      console.log(`[stagehand] playTrack:loadBuffer start (cached=${!!_cm})`);
+      console.time(`[stagehand] playTrack:loadBuffer`);
+      await player.loadBuffer(track.arrayBuffer.slice(0), _cm);
+      console.timeEnd(`[stagehand] playTrack:loadBuffer`);
+      currentRustTrackId = id;
       if (!track.duration) {
         track.duration = player.duration;
         saveTrackMeta(track);
@@ -1265,36 +1278,45 @@ async function playTrack(id, fromPlaylistId, slotIdx) {
     if (pid !== id && p.isPlaying) p.pause();
   });
 
-  // Wire progress and end callbacks
-  player.onSpeedReset = () => resetSpeedSlider();
-  player.onProgress = (frac, t) => {
-    if (currentPlayingId === id) {
-      updateMiniplayerProgress(frac, t, player.duration);
-    }
-  };
-  player.onEnd = () => {
-    if (currentPlayingId !== id) return;
-    const next = getAutoNextTrack(id);
-    if (next) {
-      if (next.slotIdx !== null) {
-        playTrack(next.track.id, activePlaylistId, next.slotIdx);
-      } else {
-        playTrack(next.track.id);
-      }
-    } else {
-      hideMiniplayer();
-      renderCurrentTab();
-    }
-  };
-
   try {
     player.pauseOffset = 0; // always start from beginning on row click
-    await player.play();
+    // Scale track volume by master volume for the Rust sink
+    const effectiveVol = player.volume * masterVolume;
+    console.time(`[stagehand] playTrack:audio_play`);
+    await player.play(undefined, effectiveVol);
+    console.timeEnd(`[stagehand] playTrack:audio_play`);
     showMiniplayer(id);
     renderCurrentTab(); // add playing highlight
+    firePrefetch(id);   // decode next track in background while this one plays
   } catch(e) {
     console.error('Playback failed:', e);
     notify('Playback error: ' + (e.message || 'unknown'), 'error');
+  }
+}
+
+async function firePrefetch(currentId) {
+  const next = getAutoNextTrack(currentId);
+  if (!next?.track) return;
+  const t = next.track;
+  console.log(`[stagehand] prefetch: queuing "${t.name}"`);
+  if (!t.arrayBuffer) {
+    try { t.arrayBuffer = await LibraryManager.getBytes(t.id); } catch(e) { return; }
+  }
+  if (!t.arrayBuffer) return;
+  try {
+    console.time(`[stagehand] prefetch:decode "${t.name}"`);
+    const path = await writeAudioTemp(t.arrayBuffer.slice(0));
+    const cm = t.peaks ? { peaks: t.peaks, nativeDuration: t.nativeDuration, sampleRate: t.sampleRate } : null;
+    await invoke('audio_prefetch', {
+      path,
+      trackId: t.id,
+      cachedPeaks:    cm?.peaks            ?? null,
+      cachedDuration: cm?.nativeDuration   ?? null,
+    });
+    console.timeEnd(`[stagehand] prefetch:decode "${t.name}"`);
+    console.log(`[stagehand] prefetch: "${t.name}" ready`);
+  } catch(e) {
+    console.warn(`[stagehand] prefetch failed for "${t.name}":`, e);
   }
 }
 
@@ -2778,6 +2800,7 @@ const SCALE_MIN = 85, SCALE_MAX = 160, SCALE_STEP = 5;
 let uiScale = parseInt(localStorage.getItem('uiScale') || '110');
 
 // ─── RESTORE VOLUME SETTINGS ──────────────────────────────────
+let masterVolume = parseFloat(localStorage.getItem('masterVolume') || '100') / 100;
 const storedMasterVol = localStorage.getItem('masterVolume');
 if (storedMasterVol !== null) {
   document.getElementById('mp-vol').value = storedMasterVol;
@@ -2843,6 +2866,34 @@ settingsBtn.addEventListener('click', e => {
   const open = !settingsPopup.classList.contains('hidden');
   settingsPopup.classList.toggle('hidden', open);
   settingsBtn.classList.toggle('active', !open);
+  if (!open) loadDeviceList();
+});
+
+async function loadDeviceList() {
+  const sel = document.getElementById('sp-device-select');
+  if (!sel || !window.__TAURI__) return;
+  try {
+    const devices = await invoke('audio_get_devices');
+    sel.innerHTML = '';
+    devices.forEach(d => {
+      const opt = document.createElement('option');
+      opt.value = d.name;
+      opt.textContent = d.name + (d.is_default ? ' (default)' : '');
+      if (d.is_default) opt.selected = true;
+      sel.appendChild(opt);
+    });
+  } catch (e) {
+    console.warn('audio_get_devices failed:', e);
+  }
+}
+
+document.getElementById('sp-device-select')?.addEventListener('change', async e => {
+  try {
+    await invoke('audio_set_device', { deviceName: e.target.value });
+  } catch (err) {
+    console.error('audio_set_device failed:', err);
+    notify('Failed to switch audio device', 'error');
+  }
 });
 
 document.addEventListener('click', e => {
@@ -3782,6 +3833,57 @@ document.getElementById('mp-loop-btn').addEventListener('click', () => {
   document.getElementById('track-list').innerHTML =
     '<div class="lib-empty-state"><div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></div><div class="es-text">Loading Library…</div></div>';
   await loadLibrary();
+
+  // Background decode complete — update waveform and cache peaks in IDB
+  listen('peaks_ready', e => {
+    const { duration, peaks } = e.payload;
+    if (!currentPlayingId) return;
+    const track = tracks.find(t => t.id === currentPlayingId);
+    const player = players[currentPlayingId];
+    if (!track || !player) return;
+    // Update in-memory track state
+    track.peaks = peaks;
+    track.nativeDuration = duration;
+    if (player.duration === 0) player.duration = duration;
+    if (!player.peaks) player.peaks = peaks;
+    // Cache to IDB so next load is instant
+    LibraryManager.saveMeta({
+      id: currentPlayingId,
+      peaks,
+      nativeDuration: duration,
+      sampleRate: track.sampleRate,
+    }).catch(() => {});
+    // Re-render waveform in miniplayer if visible
+    const wvCanvas = document.querySelector('.mini-waveform canvas');
+    if (wvCanvas && peaks?.length) {
+      renderWaveform(wvCanvas, peaks);
+    }
+  });
+
+  // Tauri playback events — drive progress bar and auto-next
+  listen('playback_progress', e => {
+    const { position, duration, fraction } = e.payload;
+    if (currentPlayingId && players[currentPlayingId]) {
+      players[currentPlayingId].pauseOffset = position;
+    }
+    updateMiniplayerProgress(fraction, position, duration);
+  });
+  listen('playback_ended', () => {
+    const player = players[currentPlayingId];
+    if (player) { player.isPlaying = false; player.pauseOffset = 0; player._paused = false; }
+    const next = getAutoNextTrack(currentPlayingId);
+    if (next) {
+      if (next.slotIdx !== null) {
+        playTrack(next.track.id, activePlaylistId, next.slotIdx);
+      } else {
+        playTrack(next.track.id);
+      }
+    } else {
+      hideMiniplayer();
+      renderCurrentTab();
+    }
+  });
+
   // Restore persisted click sounds
   const ctx = resume();
   for (const type of ['accent', 'quarter', 'eighth', 'subdivision']) {

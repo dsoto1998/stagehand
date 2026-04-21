@@ -2043,6 +2043,18 @@
     align-items: flex-start;
     gap: 6px;
   }
+  .sp-select {
+    width: 100%;
+    background: var(--bg-base);
+    border: 1px solid var(--border-bright);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 12px;
+    font-family: inherit;
+    padding: 4px 6px;
+    cursor: pointer;
+  }
+  .sp-select:focus { outline: none; border-color: var(--accent); }
   .sp-btn-small {
     padding: 2px 8px;
     font-size: 11px;

@@ -9,6 +9,7 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_fs::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
@@ -35,6 +36,9 @@ pub fn run() {
             commands::audio_set_loop,
             commands::audio_get_devices,
             commands::audio_set_device,
+            commands::audio_load_file,
+            commands::audio_prefetch,
+            commands::audio_check_prefetch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

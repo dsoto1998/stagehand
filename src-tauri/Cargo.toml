@@ -27,6 +27,12 @@ parking_lot      = "0.12"
 # Audio stack
 rodio = { version = "0.19", default-features = false, features = ["symphonia-all"] }
 cpal  = { version = "0.15", features = ["asio"] }
+tauri-plugin-fs = "2"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"
+
+# Optimize all dependencies at O3 even in dev builds.
+# Keeps our own code debuggable; makes symphonia/rodio/rubberband decode ~20x faster.
+[profile.dev.package."*"]
+opt-level = 3

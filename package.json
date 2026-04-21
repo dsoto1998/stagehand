@@ -8,6 +8,7 @@
     "tauri:build": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/plugin-fs": "^2.5.0",
     "rubberband-web": "0.2.1"
   },
   "devDependencies": {

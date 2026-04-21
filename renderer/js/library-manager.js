@@ -78,6 +78,15 @@ export function remove(id) {
   }));
 }
 
+export function getBytes(id) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction(STORE, 'readonly');
+    const req = tx.objectStore(STORE).get(id);
+    req.onsuccess = () => res(req.result ? req.result.arrayBuffer : null);
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
 export function genId() {
   return 'trk_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
 }

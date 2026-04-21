@@ -1,301 +1,181 @@
-// ─── TRACK PLAYER ────────────────────────────────────────────
-import { getCtx, resume, getMaster } from './audio-engine.js';
-
-// addModule() fails silently under Tauri's WebView2 custom protocol in production.
-// Workaround: fetch the script via fetch() (which works), wrap in a blob URL,
-// and pass that to addModule(). Fall back to direct URL if blob approach fails.
-async function addWorkletModule(ctx, path) {
-  try {
-    const resp = await fetch(path);
-    if (!resp.ok) throw new Error(`fetch ${path}: ${resp.status}`);
-    const js = await resp.text();
-    const blob = new Blob([js], { type: 'text/javascript' });
-    const url = URL.createObjectURL(blob);
-    try {
-      await ctx.audioWorklet.addModule(url);
-    } finally {
-      URL.revokeObjectURL(url);
-    }
-  } catch (e) {
-    // Direct fallback (works in browser / tauri dev)
-    await ctx.audioWorklet.addModule(path);
-  }
-}
-
-let rubberbandWorkletLoaded = false;
-export async function ensureRubberbandWorklet() {
-  if (rubberbandWorkletLoaded) return;
-  const ctx = resume();
-  if (ctx.state === 'suspended') await ctx.resume();
-  await addWorkletModule(ctx, './js/rubberband-processor.js');
-  rubberbandWorkletLoaded = true;
-}
-
-let soundtouchWorkletLoaded = false;
-async function ensureSoundtouchWorklet() {
-  if (soundtouchWorkletLoaded) return;
-  const ctx = resume();
-  if (ctx.state === 'suspended') await ctx.resume();
-  await addWorkletModule(ctx, './js/soundtouch-processor.js');
-  soundtouchWorkletLoaded = true;
-}
-
+// ─── TRACK PLAYER (Tauri IPC proxy) ──────────────────────────
+import { writeAudioTemp, invoke } from './tauri-api.js';
+import * as LibraryManager from './library-manager.js';
 
 export class TrackPlayer {
   constructor(trackId) {
-    this.trackId = trackId;
-    this.buffer = null;
-    this.source = null;
-    this.gainNode = null;
-    this.pitchNode = null;
-    this.speedNode = null;
+    this.trackId  = trackId;
+    this._loaded  = false;
+    this.peaks    = null;
     this.isPlaying = false;
-    this.startTime = 0;
-    this.startAudioOffset = 0;
     this.pauseOffset = 0;
     this.duration = 0;
     this.semitones = 0;
-    this.volume = 1.0;
-    this.speed = 1.0;
+    this.volume   = 1.0;
+    this.speed    = 1.0;
     this.loopEnabled = false;
     this.loopStart = 0;
-    this.loopEnd = 1;
-    this._rafId = null;
+    this.loopEnd   = 1;
     this._semitoneDebounce = null;
+    this._speedDebounce    = null;
+    // Kept for compatibility — driven by ui-controller event listeners, not set internally
     this.onProgress = null;
-    this.onEnd = null;
+    this.onEnd      = null;
   }
 
-  async loadBuffer(arrayBuffer) {
-    const ctx = resume();
-    // Always slice to avoid detached-buffer errors on repeated decode attempts
-    let ab;
-    try {
-      ab = arrayBuffer.slice(0);
-    } catch(e) {
-      ab = arrayBuffer;
-    }
-    this.buffer = await new Promise((res, rej) => {
-      ctx.decodeAudioData(ab, res, rej);
-    });
-    this.duration = this.buffer.duration;
-  }
-
-  async play(offset) {
-    if (!this.buffer) return;
-    const ctx = resume();
-    await ensureRubberbandWorklet();
-    this.stop(false);
-
-    this.gainNode = ctx.createGain();
-    this.gainNode.gain.value = this.volume;
-    this.gainNode.connect(getMaster());
-
-    // Build audio graph: source → [pitchNode] → [speedNode] → gainNode
-    const factor = Math.pow(2, this.semitones / 12);
-    if (this.semitones !== 0) {
-      try {
-        this.pitchNode = new AudioWorkletNode(ctx, 'rubberband-processor', {
-          numberOfInputs: 1,
-          numberOfOutputs: 1,
-          outputChannelCount: [this.buffer.numberOfChannels]
-        });
-        this.pitchNode.port.postMessage(JSON.stringify(["pitch", factor]));
-      } catch(e) {
-        this.pitchNode = null;
-      }
-    } else {
-      this.pitchNode = null;
-    }
-
-    if (Math.abs(this.speed - 1.0) > 0.001) {
-      try {
-        await ensureSoundtouchWorklet();
-        this.speedNode = new AudioWorkletNode(ctx, 'soundtouch-processor', {
-          numberOfInputs: 1, numberOfOutputs: 1,
-          outputChannelCount: [this.buffer.numberOfChannels]
-        });
-        this.speedNode.parameters.get('playbackRate').setValueAtTime(this.speed, ctx.currentTime);
-        this.speedNode.connect(this.gainNode);
-      } catch(e) {
-        this.speedNode = null;
-      }
-    } else {
-      this.speedNode = null;
-    }
-
-    // Wire: pitchNode → speedNode → gainNode (whichever nodes are active)
-    const lastNode = this.speedNode || this.pitchNode || null;
-    if (this.pitchNode) {
-      this.pitchNode.connect(this.speedNode || this.gainNode);
-    }
-
-    this.source = ctx.createBufferSource();
-    this.source.buffer = this.buffer;
-    this.source.playbackRate.value = this.speed; // native resampling; SoundTouch compensates pitch
-
-    this.syncLoop();
-
-    const startOffset = (offset !== undefined) ? offset : this.pauseOffset;
-    if (this.loopEnabled && this.source) {
-      const ls = this.loopStart * this.duration;
-      const le = this.loopEnd * this.duration;
-      if (startOffset >= le || startOffset < ls) {
-        this.source.loop = false;
-      }
-    }
-
-    if (this.pitchNode) {
-      this.source.connect(this.pitchNode);
-    } else if (this.speedNode) {
-      this.source.connect(this.speedNode);
-    } else {
-      this.source.connect(this.gainNode);
-    }
-
-    this.source.start(0, startOffset);
-    this.startTime = ctx.currentTime;
-    this.startAudioOffset = startOffset;
-    this.isPlaying = true;
-
-    this.source.onended = () => {
-      if (this.isPlaying) {
-        this.isPlaying = false;
-        this.pauseOffset = 0;
-        cancelAnimationFrame(this._rafId);
-        if (this.onEnd) this.onEnd();
-      }
+  async loadBuffer(arrayBuffer, cachedMeta = null) {
+    const invokeArgs = {
+      trackId:          this.trackId,
+      cachedPeaks:      cachedMeta?.peaks         ?? null,
+      cachedDuration:   cachedMeta?.nativeDuration ?? null,
+      cachedSampleRate: cachedMeta?.sampleRate     ?? null,
     };
-    this._tick();
-  }
 
-  pause() {
-    if (!this.isPlaying) return;
-    const ctx = getCtx();
-    this.pauseOffset = this.currentTime;
-    this.stop(false);
-    this.isPlaying = false;
-  }
-
-  stop(resetOffset = true) {
-    if (this.source) {
-      try { this.source.onended = null; this.source.stop(); } catch(e){}
-      this.source.disconnect();
-      this.source = null;
+    // Fast path: if Rust already has this track decoded (prefetch hit), skip temp file write
+    let result = null;
+    const isPrefetched = await invoke('audio_check_prefetch', { trackId: this.trackId });
+    if (isPrefetched) {
+      result = await invoke('audio_load_file', { path: '', ...invokeArgs });
     }
-    if (this.pitchNode) { try { this.pitchNode.disconnect(); } catch(e){} this.pitchNode = null; }
-    if (this.speedNode) { try { this.speedNode.disconnect(); } catch(e){} this.speedNode = null; }
-    if (this.gainNode)  { try { this.gainNode.disconnect(); } catch(e){}  this.gainNode = null; }
-    if (resetOffset) { this.pauseOffset = 0; }
+
+    if (!result) {
+      // Normal path: write bytes to temp file, decode in Rust
+      const path = await writeAudioTemp(arrayBuffer);
+      result = await invoke('audio_load_file', { path, ...invokeArgs });
+    }
+    this.duration = result.duration;
+    // peaks may be empty for new tracks — background decode will emit peaks_ready
+    this.peaks    = result.peaks?.length ? result.peaks : null;
+    this._loaded  = true;
+
+    // Cache metadata in IDB on first decode (cachedMeta null = first time)
+    if (!cachedMeta) {
+      // Save whatever we have now; peaks_ready handler will update if peaks were empty
+      if (result.peaks?.length) {
+        LibraryManager.saveMeta({
+          id: this.trackId,
+          peaks: result.peaks,
+          nativeDuration: result.duration,
+          sampleRate: result.sample_rate,
+        }).catch(() => {});
+      }
+    }
+    return result;
+  }
+
+  async play(offset, effectiveVolume) {
+    if (!this._loaded) return;
+    const offsetSecs = offset !== undefined ? offset : this.pauseOffset;
+    await invoke('audio_play', {
+      offsetSecs,
+      semitones:   this.semitones,
+      speed:       this.speed,
+      volume:      effectiveVolume !== undefined ? effectiveVolume : this.volume,
+      loopEnabled: this.loopEnabled,
+      loopStart:   this.loopStart * this.duration,
+      loopEnd:     this.loopEnd   * this.duration,
+    });
+    this.isPlaying = true;
+  }
+
+  async pause() {
+    if (!this.isPlaying) return;
+    this.isPlaying = false; // synchronous — prevents double-pause from rapid clicks
+    const pos = await invoke('audio_pause');
+    this.pauseOffset = pos;
+    this._paused = true;
+  }
+
+  async resume() {
+    if (this.isPlaying || !this._loaded) return;
+    await invoke('audio_resume');
+    this.isPlaying = true;
+    this._paused = false;
+  }
+
+  async stop(resetOffset = true) {
+    this._paused = false;
+    await invoke('audio_stop');
+    if (resetOffset) this.pauseOffset = 0;
     this.isPlaying = false;
-    cancelAnimationFrame(this._rafId);
   }
 
-  syncLoop() {
-    if (!this.source) return;
-    this.source.loop = this.loopEnabled;
-    this.source.loopStart = this.loopStart * this.duration;
-    this.source.loopEnd = this.loopEnd * this.duration;
-  }
-
-  seek(fraction) {
-    const wasPlaying = this.isPlaying;
+  async seek(fraction) {
     const t = fraction * this.duration;
     this.pauseOffset = t;
-    this.speed = 1.0;
-    if (this.onSpeedReset) this.onSpeedReset();
-    if (wasPlaying) this.play(t);
-    else if (this.onProgress) this.onProgress(fraction, t);
+    if (this.isPlaying) {
+      await invoke('audio_seek', {
+        offsetSecs:  t,
+        semitones:   this.semitones,
+        speed:       this.speed,
+        volume:      this.volume,
+        loopEnabled: this.loopEnabled,
+        loopStart:   this.loopStart * this.duration,
+        loopEnd:     this.loopEnd   * this.duration,
+      });
+    } else if (this.onProgress) {
+      this.onProgress(fraction, t);
+    }
   }
 
   get currentTime() {
-    if (this.isPlaying) {
-      const ctx = getCtx();
-      let t = Math.min(this.startAudioOffset + (ctx.currentTime - this.startTime) * this.speed, this.duration);
-      if (this.loopEnabled && this.source && this.source.loop) {
-        const ls = this.loopStart * this.duration;
-        const le = this.loopEnd * this.duration;
-        if (le > ls && t >= le) {
-          t = ls + ((t - ls) % (le - ls));
-        }
-      }
-      return t;
-    }
     return this.pauseOffset;
   }
 
   setVolume(v) {
     this.volume = v;
-    if (this.gainNode) this.gainNode.gain.value = v;
+    invoke('audio_set_volume', { volume: v }).catch(() => {});
+  }
+
+  setSemitones(s) {
+    this.semitones = s;
+    if (!this.isPlaying) return;
+    clearTimeout(this._semitoneDebounce);
+    this._semitoneDebounce = setTimeout(() => {
+      invoke('audio_set_semitones', {
+        semitones:   this.semitones,
+        speed:       this.speed,
+        volume:      this.volume,
+        loopEnabled: this.loopEnabled,
+        loopStart:   this.loopStart * this.duration,
+        loopEnd:     this.loopEnd   * this.duration,
+      }).catch(() => {});
+    }, 150);
   }
 
   setSpeed(s) {
-    if (this.isPlaying) {
-      // Capture audio position before changing speed so the clock stays continuous
-      const pos = this.currentTime;
-      this.speed = s;
-      this.startAudioOffset = pos;
-      this.startTime = getCtx().currentTime;
-    } else {
-      this.speed = s;
-    }
-    if (this.source) {
-      this.source.playbackRate.value = s;
-    }
-    // Don't update SoundTouch's playbackRate parameter here — changing it mid-stream
-    // forces WSOLA re-convergence on every slider tick, causing audible warbles.
-    // The debounced restart below rebuilds the graph fresh with correct pitch compensation.
-    // Debounce a graph restart whenever SoundTouch is or will be in the chain.
-    // This flushes stale WSOLA state that causes warbles when pitch ratio changes mid-stream.
-    const needsNode = Math.abs(s - 1.0) > 0.001;
-    const hasNode   = !!this.speedNode;
-    if (this.isPlaying && (needsNode || hasNode)) {
-      if (this._speedDebounce) clearTimeout(this._speedDebounce);
-      this._speedDebounce = setTimeout(() => {
-        if (this.isPlaying) this.play(this.currentTime);
-      }, 150);
-    }
+    this.speed = s;
+    if (!this.isPlaying) return;
+    clearTimeout(this._speedDebounce);
+    this._speedDebounce = setTimeout(() => {
+      invoke('audio_set_speed', {
+        speed:       this.speed,
+        semitones:   this.semitones,
+        volume:      this.volume,
+        loopEnabled: this.loopEnabled,
+        loopStart:   this.loopStart * this.duration,
+        loopEnd:     this.loopEnd   * this.duration,
+      }).catch(() => {});
+    }, 150);
   }
 
   setLoopEnabled(enabled) {
     this.loopEnabled = enabled;
-    this.syncLoop();
+    invoke('audio_set_loop', {
+      enabled,
+      loopStart: this.loopStart * this.duration,
+      loopEnd:   this.loopEnd   * this.duration,
+    }).catch(() => {});
   }
 
   setLoopPoints(start, end) {
     this.loopStart = start;
     this.loopEnd   = end;
-    this.syncLoop();
-  }
-
-  setSemitones(s) {
-    this.semitones = s;
-    if (this.isPlaying) {
-      clearTimeout(this._semitoneDebounce);
-      this._semitoneDebounce = setTimeout(() => {
-        if (this.isPlaying) this.play(this.currentTime);
-      }, 150);
-    }
-  }
-
-  _tick() {
-    if (!this.isPlaying) return;
-
-    // Re-enable loop once playhead enters the loop region (deferred from seek)
-    if (this.loopEnabled && this.source && !this.source.loop) {
-      const ls = this.loopStart * this.duration;
-      const le = this.loopEnd * this.duration;
-      const t = this.currentTime;
-      if (t >= ls && t < le) {
-        this.source.loop = true;
-      }
-    }
-
-    if (this.onProgress) {
-      const t = this.currentTime;
-      this.onProgress(t / this.duration, t);
-    }
-    this._rafId = requestAnimationFrame(() => this._tick());
+    invoke('audio_set_loop', {
+      enabled:   this.loopEnabled,
+      loopStart: start * this.duration,
+      loopEnd:   end   * this.duration,
+    }).catch(() => {});
   }
 }
 
