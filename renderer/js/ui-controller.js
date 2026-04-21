@@ -869,7 +869,7 @@ document.addEventListener('keydown', (e) => {
     if (e.key === ']') { e.preventDefault(); document.getElementById('mp-next').click(); return; }
     // T — tap tempo, M — toggle metronome
     if (e.key === 't' || e.key === 'T') { e.preventDefault(); document.getElementById('mm-tap-btn').click(); return; }
-    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); document.getElementById('mm-play-btn').click(); return; }
+    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMetronome(); return; }
 
     // Shortcuts requiring a playing track
     if (currentPlayingId) {
@@ -3641,15 +3641,15 @@ function initSectionCollapse() {
 }
 
 // ─── METRONOME MINIPLAYER BINDINGS ────────────────────────────
-document.getElementById('mm-play-btn').addEventListener('click', async function() {
-  const ctx = resume();
-  if (ctx.state === 'suspended') await ctx.resume();
+function toggleMetronome() {
+  resume();
   if (Metronome.isActive()) {
     Metronome.stop();
     document.querySelectorAll('.mm-beat-dot').forEach(d => d.classList.remove('active'));
   } else { Metronome.start(); }
   syncMetroMini();
-});
+}
+document.getElementById('mm-play-btn').addEventListener('mousedown', e => { e.preventDefault(); toggleMetronome(); });
 
 // BPM display — click to type BPM inline
 document.getElementById('mm-bpm-display').addEventListener('click', () => {

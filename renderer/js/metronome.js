@@ -17,6 +17,7 @@ let accentEnabled = true;
 const customBuffers = { accent: null, quarter: null, eighth: null, subdivision: null };
 const LOOKAHEAD = 0.1;
 const SCHEDULE_INTERVAL = 25;
+const VOLUME_MULTIPLIER = 5;
 
 // Beat flash callbacks: [{time, beat, totalBeats}]
 let flashQueue = [];
@@ -42,7 +43,7 @@ function scheduleNote(time, beatType) {
     const source = c.createBufferSource();
     source.buffer = buf;
     const gainNode = c.createGain();
-    gainNode.gain.value = volume * p.vol;
+    gainNode.gain.value = volume * p.vol * VOLUME_MULTIPLIER;
     source.connect(gainNode);
     gainNode.connect(getMetronomeGain());
     source.start(time);
@@ -52,7 +53,7 @@ function scheduleNote(time, beatType) {
     const env = c.createGain();
     oscillator.connect(env);
     const gainNode = c.createGain();
-    gainNode.gain.value = volume;
+    gainNode.gain.value = volume * VOLUME_MULTIPLIER;
     env.connect(gainNode);
     gainNode.connect(getMetronomeGain());
     oscillator.frequency.value = p.freq;

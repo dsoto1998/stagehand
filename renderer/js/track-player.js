@@ -2,6 +2,8 @@
 import { writeAudioTemp, invoke } from './tauri-api.js';
 import * as LibraryManager from './library-manager.js';
 
+const VOLUME_MULTIPLIER = 0.75;
+
 export class TrackPlayer {
   constructor(trackId) {
     this.trackId  = trackId;
@@ -97,7 +99,7 @@ export class TrackPlayer {
       offsetSecs,
       semitones:   this.semitones,
       speed:       this.speed,
-      volume:      effectiveVolume !== undefined ? effectiveVolume : this.volume,
+      volume:      effectiveVolume !== undefined ? effectiveVolume * VOLUME_MULTIPLIER : this._vol,
       loopEnabled: this.loopEnabled,
       loopStart:   this.loopStart * this.duration,
       loopEnd:     this.loopEnd   * this.duration,
@@ -137,7 +139,7 @@ export class TrackPlayer {
         offsetSecs:  t,
         semitones:   this.semitones,
         speed:       this.speed,
-        volume:      this.volume,
+        volume:      this._vol,
         loopEnabled: this.loopEnabled,
         loopStart:   this.loopStart * this.duration,
         loopEnd:     this.loopEnd   * this.duration,
@@ -151,9 +153,11 @@ export class TrackPlayer {
     return this.pauseOffset;
   }
 
+  get _vol() { return this.volume * VOLUME_MULTIPLIER; }
+
   setVolume(v) {
     this.volume = v;
-    invoke('audio_set_volume', { volume: v }).catch(() => {});
+    invoke('audio_set_volume', { volume: this._vol }).catch(() => {});
   }
 
   setSemitones(s) {
@@ -164,7 +168,7 @@ export class TrackPlayer {
       invoke('audio_set_semitones', {
         semitones:   this.semitones,
         speed:       this.speed,
-        volume:      this.volume,
+        volume:      this._vol,
         loopEnabled: this.loopEnabled,
         loopStart:   this.loopStart * this.duration,
         loopEnd:     this.loopEnd   * this.duration,
@@ -180,7 +184,7 @@ export class TrackPlayer {
       invoke('audio_set_speed', {
         speed:       this.speed,
         semitones:   this.semitones,
-        volume:      this.volume,
+        volume:      this._vol,
         loopEnabled: this.loopEnabled,
         loopStart:   this.loopStart * this.duration,
         loopEnd:     this.loopEnd   * this.duration,
