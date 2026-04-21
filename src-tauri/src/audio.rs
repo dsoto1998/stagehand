@@ -164,6 +164,16 @@ impl StreamingSource {
 
     fn seek_to(&mut self, secs: f64) {
         let start_frame = (secs * self.sample_rate as f64) as usize;
+        let target = Duration::from_secs_f64(secs);
+        // Fast path: rodio 0.19 Decoder::try_seek uses Symphonia's codec seek
+        // (O(1) for WAV, keyframe seek for MP3/FLAC/OGG — avoids iterating millions of samples)
+        if self.inner.try_seek(target).is_ok() {
+            self.frame_counter.store(start_frame as u64, Ordering::SeqCst);
+            self.samples_in_frame = 0;
+            self.inside_loop_region = false;
+            return;
+        }
+        // Fallback: recreate decoder and skip (slow for compressed audio, only reached if seek fails)
         if let Ok(mut dec) = Decoder::new(Cursor::new(Arc::clone(&self.raw))) {
             let to_skip = start_frame * self.channels as usize;
             for _ in 0..to_skip {

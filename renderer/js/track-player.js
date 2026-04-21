@@ -111,6 +111,7 @@ export class TrackPlayer {
     const pos = await invoke('audio_pause');
     this.pauseOffset = pos;
     this._paused = true;
+    this._seekedWhilePaused = false;
   }
 
   async resume() {
@@ -130,6 +131,7 @@ export class TrackPlayer {
   async seek(fraction) {
     const t = fraction * this.duration;
     this.pauseOffset = t;
+    if (!this.isPlaying) this._seekedWhilePaused = true;
     if (this.isPlaying) {
       await invoke('audio_seek', {
         offsetSecs:  t,

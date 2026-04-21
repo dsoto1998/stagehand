@@ -780,9 +780,8 @@ function syncMiniplayerPlayBtn(isPlaying) {
 }
 
 function updateMiniplayerProgress(frac, t, duration) {
-  if (!seeking) {
-    document.getElementById('mp-scrub-fill').style.width = (frac * 100).toFixed(2) + '%';
-  }
+  if (seeking) return;
+  document.getElementById('mp-scrub-fill').style.width = (frac * 100).toFixed(2) + '%';
   document.getElementById('mp-time-display').textContent =
     formatTime(t) + ' / ' + formatTime(duration);
 }
@@ -801,11 +800,22 @@ document.getElementById('mp-play').addEventListener('click', () => {
     syncMiniplayerPlayBtn(false);
     renderCurrentTab();
   } else if (player._loaded && player._paused) {
-    // Resume from pause — rodio sink.play() continues without source rebuild
-    player.resume().then(() => {
-      syncMiniplayerPlayBtn(true);
-      renderCurrentTab();
-    });
+    if (player._seekedWhilePaused) {
+      // Seeked while paused — must rebuild source at new position
+      player._seekedWhilePaused = false;
+      player._paused = false;
+      const effectiveVol = player.volume * masterVolume;
+      player.play(player.pauseOffset, effectiveVol).then(() => {
+        syncMiniplayerPlayBtn(true);
+        renderCurrentTab();
+      });
+    } else {
+      // Resume from pause — rodio sink.play() continues without source rebuild
+      player.resume().then(() => {
+        syncMiniplayerPlayBtn(true);
+        renderCurrentTab();
+      });
+    }
   } else {
     playTrack(currentPlayingId);
   }
@@ -1102,6 +1112,11 @@ function onScrubMove(e) {
   const rect = mpScrubBar.getBoundingClientRect();
   seekFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   mpScrubFill.style.width = (seekFrac * 100).toFixed(2) + '%';
+  const player = players[currentPlayingId];
+  if (player && player.duration) {
+    document.getElementById('mp-time-display').textContent =
+      formatTime(seekFrac * player.duration) + ' / ' + formatTime(player.duration);
+  }
 }
 
 function onScrubUp() {
@@ -1125,6 +1140,11 @@ mpScrubBar.addEventListener('mousedown', e => {
   const rect = mpScrubBar.getBoundingClientRect();
   seekFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   mpScrubFill.style.width = (seekFrac * 100).toFixed(2) + '%';
+  const player = players[currentPlayingId];
+  if (player && player.duration) {
+    document.getElementById('mp-time-display').textContent =
+      formatTime(seekFrac * player.duration) + ' / ' + formatTime(player.duration);
+  }
   document.addEventListener('mousemove', onScrubMove);
   document.addEventListener('mouseup', onScrubUp);
 });
