@@ -2788,7 +2788,7 @@ async function importFiles(files) {
 
       // Resolve artwork — fire and forget, uses abMem (still live)
       ArtworkManager.resolveAndStoreArtwork(track, abMem.slice(0))
-        .then(() => refreshRowArt())
+        .then(() => renderCurrentTab())
         .catch(() => {});
 
       // Decode for duration — fire and forget
