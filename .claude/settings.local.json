@@ -37,7 +37,8 @@
       "Bash(grep -c \"''Bebas Neue''\" style.css)",
       "Bash(cd:*)",
       "Bash(node:*)",
-      "Skill(gsd:progress)"
+      "Skill(gsd:progress)",
+      "Bash(python3 *)"
     ],
     "defaultMode": "bypassPermissions"
   },

@@ -22,8 +22,8 @@
     --cyan-dim:      #30b8aa;
     --purple:        #9b6dff;
     --text-primary:  #eeeef5;
-    --text-secondary:#9595b5;
-    --text-dim:      #686880;
+    --text-secondary:#9a9a9a;
+    --text-dim:      #707070;
     --sidebar-w:     220px;
     --topbar-h:      52px;
   }
@@ -271,6 +271,24 @@
   .add-tracks-filter:focus-visible,
   #mm-subdiv-select:focus-visible,
   #mm-timesig-select:focus-visible { outline: none; }
+
+  /* range inputs: outline:none on track pseudo-element needs explicit override */
+  input[type=range]:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 4px;
+  }
+
+  /* xpose inline input uses cyan scheme */
+  .xpose-inline-input:focus-visible {
+    outline: 2px solid var(--cyan);
+    outline-offset: 2px;
+  }
+
+  /* BPM inline input */
+  .mm-bpm-inline:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
 
   /* ── BUTTONS ─────────────────────────────────────────── */
   .btn {
@@ -886,7 +904,6 @@
   .row-xpose .xpose-val { min-width: 40px; }
   .xpose-val.xpose-active { color: var(--cyan); }
   .xpose-val { cursor: pointer; }
-  .xpose-val:hover { color: var(--accent); }
   .xpose-inline-input {
     width: 36px;
     background: var(--bg-base);
@@ -1064,14 +1081,6 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  #mp-current-key {
-    font-size: 11px;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  #mp-current-key.hidden { display: none; }
 
   /* Marquee scrolling for long track/sub text */
   #mp-track-name.mp-marquee,
@@ -1767,7 +1776,8 @@
   color-scheme: dark;
 }
 .pl-detail-date:hover { border-color: var(--border-bright); }
-.pl-detail-date:focus { outline: none; border-color: var(--accent); color: var(--text-primary); }
+.pl-detail-date:focus { border-color: var(--accent); color: var(--text-primary); }
+.pl-detail-date:focus:not(:focus-visible) { outline: none; }
 
 .pl-detail-title {
   font-size: 16px;
@@ -2280,9 +2290,8 @@
 
   /* ── METRONOME MINIPLAYER ────────────────────────────── */
   #metro-mini {
-    margin: -12px -12px 0;
+    margin: 0 -12px 0;
     padding: 10px 14px 16px;
-    border-bottom: 3px solid var(--border-bright);
     display: flex;
     flex-direction: column;
     gap: 14px;
@@ -2577,6 +2586,7 @@
   cursor: pointer;
   padding: 4px 5px;
   border-radius: 3px;
+  margin-right: 8px;
   transition: color 0.12s;
   display: flex;
   align-items: center;
@@ -2769,7 +2779,7 @@
 #bottom-bar {
   height: 72px;
   background: var(--bg-panel);
-  border-top: 1px solid var(--border);
+  border-top: none;
   display: flex;
   align-items: center;
   flex-shrink: 0;
@@ -2784,6 +2794,7 @@
   align-items: center;
   gap: 10px;
   padding: 0 14px;
+  border-top: 3px solid var(--border-bright);
   border-right: 1px solid var(--border);
   min-width: 0;
 }
@@ -2827,6 +2838,7 @@
 
 #bottom-bar #mp-scrub-bar {
   margin-bottom: 0;
+  margin-top: 2px;
   width: 100%;
 }
 

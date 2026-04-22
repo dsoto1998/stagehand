@@ -755,10 +755,9 @@ function showMiniplayer(trackId) {
   ]);
   const st = track.semitones || 0;
   const mpStVal = document.getElementById('mp-semitones-val');
-  mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
+  mpStVal.textContent = miniplayerXposeLabel(track);
   mpStVal.classList.toggle('xpose-active', st !== 0);
   document.getElementById('mp-xpose-reset').classList.toggle('xpose-reset-visible', st !== 0);
-  updateMiniplayerKey(track);
   if (track.bpm) { Metronome.setBpm(track.bpm); syncMetroMini(); }
   if (track.timeSig) {
     const [num, den] = track.timeSig.split('/').map(Number);
@@ -817,11 +816,9 @@ function hideMiniplayer() {
   syncMiniplayerPlayBtn(false);
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
   const mpStVal = document.getElementById('mp-semitones-val');
-  mpStVal.textContent = '0st';
+  mpStVal.textContent = '0';
   mpStVal.classList.remove('xpose-active');
   document.getElementById('mp-xpose-reset').classList.remove('xpose-reset-visible');
-  const mpKeyEl = document.getElementById('mp-current-key');
-  if (mpKeyEl) { mpKeyEl.textContent = ''; mpKeyEl.classList.add('hidden'); }
   document.getElementById('mp-time-display').textContent = '0:00 / --:--';
   document.getElementById('mp-scrub-fill').style.width = '0%';
   document.getElementById('mp-loop-times').classList.add('hidden');
@@ -1156,6 +1153,22 @@ function speedSliderToRate(v) {
   return Math.round(raw / 5) * 5; // snap to nearest 5%
 }
 
+function speedSliderFromRate(pct) {
+  // Inverse of speedSliderToRate: pct → slider value 0–100
+  return pct <= 100 ? pct - 50 : 50 + (pct - 100) * 2;
+}
+
+document.getElementById('mp-speed').addEventListener('keydown', function(e) {
+  if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' &&
+      e.key !== 'ArrowUp'   && e.key !== 'ArrowDown') return;
+  e.preventDefault();
+  const currentPct = speedSliderToRate(parseFloat(this.value));
+  const delta = (e.key === 'ArrowRight' || e.key === 'ArrowUp') ? 5 : -5;
+  const newPct = Math.min(125, Math.max(50, currentPct + delta));
+  this.value = speedSliderFromRate(newPct);
+  this.dispatchEvent(new Event('input'));
+});
+
 document.getElementById('mp-speed').addEventListener('input', function() {
   const pct = speedSliderToRate(parseFloat(this.value));
   const rate = pct / 100;
@@ -1486,7 +1499,7 @@ function buildTrackRow(track) {
       <button class="row-play-btn" data-id="${escHtml(track.id)}">${track.id === currentPlayingId && players[track.id]?.isPlaying ? ICONS.pause : ICONS.play}</button>
     </div>
     <div class="row-name-col">
-      <button class="row-chord-btn${!!(track.chordPdf || track.chordPro) ? ' has-chart' : ''}" data-chord-id="${escHtml(track.id)}" title="Chord chart">${ICONS.chord}</button>
+      <button class="row-chord-btn${!!(track.chordPdf || track.chordPro) ? ' has-chart' : ''}" data-chord-id="${escHtml(track.id)}" title="Chord chart" aria-label="Chord chart">${ICONS.chord}</button>
       <div class="row-name">${escHtml(track.name)}</div>
     </div>
     <div class="row-artist">${escHtml(artist)}</div>
@@ -1495,13 +1508,13 @@ function buildTrackRow(track) {
     <div class="row-bpm">${track.bpm ? escHtml(String(track.bpm)) : ''}</div>
     <div class="row-timesig">${track.timeSig ? escHtml(track.timeSig) : ''}</div>
     <div class="row-xpose">
-      <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
+      <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}" aria-label="Transpose down" title="Transpose down">−</button>
       <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${escHtml(xposeValText)}</span>
-      <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
-      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
+      <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}" aria-label="Transpose up" title="Transpose up">+</button>
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose" aria-label="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
-    <button class="row-ctx-btn" data-id="${escHtml(track.id)}" title="More options">···</button>
+    <button class="row-ctx-btn" data-id="${escHtml(track.id)}" title="More options" aria-label="More options">···</button>
   `);
 
   if (playlistEditMode) {
@@ -1548,17 +1561,15 @@ function buildTrackRow(track) {
   return row;
 }
 
-function updateMiniplayerKey(track) {
-  const keyEl = document.getElementById('mp-current-key');
-  if (!keyEl) return;
-  if (track && track.keyRoot != null) {
-    const curKey = transposedKeyName(track.keyRoot, track.keyMode, track.semitones || 0);
-    keyEl.textContent = curKey;
-    keyEl.classList.remove('hidden');
-  } else {
-    keyEl.textContent = '';
-    keyEl.classList.add('hidden');
+function miniplayerXposeLabel(track) {
+  const st = track.semitones || 0;
+  const stLabel = st > 0 ? `+${st}` : `${st}`;
+  if (track.keyRoot != null) {
+    return st !== 0
+      ? `${transposedKeyName(track.keyRoot, track.keyMode, st)} (${stLabel})`
+      : getKeyName(track.keyRoot, track.keyMode);
   }
+  return stLabel;
 }
 
 function applyTranspose(id, newSemitones) {
@@ -1570,9 +1581,8 @@ function applyTranspose(id, newSemitones) {
   if (id === currentPlayingId) {
     const valEl   = document.getElementById('mp-semitones-val');
     const resetEl = document.getElementById('mp-xpose-reset');
-    if (valEl)   { valEl.textContent = (track.semitones > 0 ? '+' : '') + track.semitones + 'st'; valEl.classList.toggle('xpose-active', track.semitones !== 0); }
+    if (valEl)   { valEl.textContent = miniplayerXposeLabel(track); valEl.classList.toggle('xpose-active', track.semitones !== 0); }
     if (resetEl) resetEl.classList.toggle('xpose-reset-visible', track.semitones !== 0);
-    updateMiniplayerKey(track);
   }
   renderCurrentTab();
 }
@@ -2377,7 +2387,7 @@ function buildPlaylistTrackRow(slot, idx, pl) {
       <button class="row-play-btn" data-id="${escHtml(track.id)}">${isPlaying ? ICONS.pause : ICONS.play}</button>
     </div>
     <div class="row-name-col">
-      <button class="row-chord-btn${!!(track.chordPdf || track.chordPro) ? ' has-chart' : ''}" data-chord-id="${escHtml(track.id)}" title="Chord chart">${ICONS.chord}</button>
+      <button class="row-chord-btn${!!(track.chordPdf || track.chordPro) ? ' has-chart' : ''}" data-chord-id="${escHtml(track.id)}" title="Chord chart" aria-label="Chord chart">${ICONS.chord}</button>
       <div class="row-name">${escHtml(track.name)}</div>
     </div>
     <div class="row-artist">${escHtml(artist)}</div>
@@ -2392,7 +2402,7 @@ function buildPlaylistTrackRow(slot, idx, pl) {
       <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
-    <button class="row-ctx-btn" data-id="${escHtml(track.id)}" title="More options">···</button>
+    <button class="row-ctx-btn" data-id="${escHtml(track.id)}" title="More options" aria-label="More options">···</button>
   `);
 
   // Drag-to-reorder bindings
