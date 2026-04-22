@@ -12,12 +12,12 @@ Priority order follows UI/UX Pro Max framework (1 = critical, 8 = medium).
 - Added `aria-label` + `title` to all icon-only buttons: transpose ±/reset, speed reset, xpose reset, BPM ±, tap, subdiv, metronome play, loop btn, search clear, scrub bar, row ctx, row chord, row xpose ±/reset
 - Added `aria-label` + `title` to all range sliders: master vol, playback speed, metronome vol
 
-## Phase 3 — Touch Targets
-- Xpose `±` buttons: `18×22px` — well below 44×44 minimum
-- `···` context menu: check size
-- Loop drag handles on scrub bar: very thin
-- Metronome tap button: check size
-- Reset buttons (speed, transpose): now ~12px SVG — too small for desktop click comfort
+## ✓ Phase 3 — Touch Targets
+- `.xpose-btn` ±: 18×22 → `min-width: 24px; min-height: 28px; padding: 3px 5px`. `.row-xpose` 120→130px.
+- `.xpose-reset` / `.speed-reset`: padding 1px → 4px, `min-width/height: 24px` — clickable area 24×24
+- `.row-ctx-btn` ···: 28×28 → 32×32
+- `.mp-loop-handle`: width 14→18px, `::before` bar 2→3px (wider visual grip)
+- `.mm-tap-btn`: already acceptable (full-width, 28px min-height) — no change
 
 ## Phase 4 — Style Consistency: Icons
 - SVG stroke widths inconsistent across app — audit nav, transport, controls

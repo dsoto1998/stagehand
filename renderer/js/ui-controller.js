@@ -669,8 +669,6 @@ let currentRustTrackId = null; // which track is currently loaded in the Rust en
 let seeking = false;
 let seekFrac = 0;
 let loopDragHandle = null;
-let loopDragStartX = 0;
-let loopDragStartFrac = 0;
 
 function updateLocateBtn() {
   const btn = document.getElementById('lib-locate-btn');
@@ -3979,9 +3977,7 @@ mpScrubBar.addEventListener('mousedown', e => {
   if (!handle) return;   // falls through to the existing seek handler
   const player = players[currentPlayingId];
   if (!player) return;
-  loopDragHandle    = handle.dataset.handle;
-  loopDragStartFrac = loopDragHandle === 'in' ? player.loopStart : player.loopEnd;
-  loopDragStartX    = e.clientX;
+  loopDragHandle = handle.dataset.handle;
   document.addEventListener('mousemove', onLoopDragMove);
   document.addEventListener('mouseup',   onLoopDragUp);
   e.stopPropagation();   // prevent seek handler from also firing
@@ -3991,9 +3987,9 @@ mpScrubBar.addEventListener('mousedown', e => {
 function onLoopDragMove(e) {
   if (!loopDragHandle || !currentPlayingId) return;
   const player = players[currentPlayingId];
-  const W = mpScrubBar.offsetWidth;
+  const rect = mpScrubBar.getBoundingClientRect();
+  const frac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
   const minGap = Math.max(0.005, 0.1 / (player.duration || 1));
-  const frac = Math.max(0, Math.min(1, loopDragStartFrac + (e.clientX - loopDragStartX) / W));
   if (loopDragHandle === 'in')
     player.setLoopPoints(Math.min(frac, player.loopEnd - minGap), player.loopEnd);
   else

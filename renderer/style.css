@@ -823,8 +823,8 @@
   }
   .row-ctx-btn {
     flex-shrink: 0;
-    width: 28px;
-    height: 28px;
+    width: 32px;
+    height: 32px;
     background: none;
     border: none;
     color: var(--text-dim);
@@ -859,7 +859,7 @@
     gap: 5px;
     flex-shrink: 0;
     margin-right: 8px;
-    width: 120px;
+    width: 130px;
   }
   .xpose-reset {
     background: none;
@@ -867,7 +867,9 @@
     color: var(--text-dim);
     cursor: pointer;
     border-radius: 2px;
-    padding: 1px;
+    padding: 4px;
+    min-width: 24px;
+    min-height: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -882,15 +884,15 @@
     background: none;
     border: 1px solid var(--border);
     color: var(--text-dim);
-    width: 18px;
-    height: 22px;
+    min-width: 24px;
+    min-height: 28px;
     font-size: 13px;
     cursor: pointer;
     border-radius: 2px;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 0;
+    padding: 3px 5px;
     line-height: 1;
   }
   .xpose-btn:hover { border-color: var(--accent); color: var(--accent); }
@@ -1163,7 +1165,9 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 1px;
+    padding: 4px;
+    min-width: 24px;
+    min-height: 24px;
     color: var(--purple);
     display: none;
     align-items: center;
@@ -2536,7 +2540,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 14px;
+  width: 18px;
   transform: translateX(-50%);
   cursor: ew-resize;
   z-index: 3;
@@ -2552,7 +2556,7 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 2px;
+  width: 3px;
   height: 14px;
   background: var(--accent);
   border-radius: 1px;
