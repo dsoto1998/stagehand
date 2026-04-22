@@ -9,6 +9,25 @@ import * as ArtworkManager from './artwork-manager.js';
 import { listen, invoke, writeAudioFile } from './tauri-api.js';
 
 
+// ─── KEY CONSTANTS ────────────────────────────────────────────
+const MAJOR_KEYS      = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const MINOR_KEYS      = ['Cm','C#m','Dm','Ebm','Em','Fm','F#m','Gm','G#m','Am','Bbm','Bm'];
+const MAJOR_ROOT_NAMES = ['C','Db','D','Eb','E','F','Gb','G','Ab','A','Bb','B'];
+const MINOR_ROOT_NAMES = ['C','C#','D','Eb','E','F','F#','G','G#','A','Bb','B'];
+
+function getKeyName(rootIdx, mode) {
+  return mode === 'major' ? MAJOR_KEYS[rootIdx] : MINOR_KEYS[rootIdx];
+}
+function transposedKeyName(rootIdx, mode, semitones) {
+  const idx = ((rootIdx + semitones) % 12 + 12) % 12;
+  return mode === 'major' ? MAJOR_KEYS[idx] : MINOR_KEYS[idx];
+}
+function populateKeyRootSelect(sel, mode, selectedRoot) {
+  const names = mode === 'major' ? MAJOR_ROOT_NAMES : MINOR_ROOT_NAMES;
+  sel.innerHTML = '<option value="">—</option>' +
+    names.map((n, i) => `<option value="${i}"${selectedRoot === i ? ' selected' : ''}>${n}</option>`).join('');
+}
+
 // ─── VIRTUAL SCROLL STATE ─────────────────────────────────────
 const ROW_H = 50;       // px — must match CSS .track-row height
 const OVERSCAN = 5;     // extra rows above/below viewport
@@ -137,6 +156,11 @@ function showInfoModal(trackIds) {
   const albumIn  = document.getElementById('info-album');
   const trackIn       = document.getElementById('info-trackNum');
   const releaseDateIn = document.getElementById('info-releaseDate');
+  const bpmIn      = document.getElementById('info-bpm');
+  const timeSigSel = document.getElementById('info-timesig');
+  const keyRootSel = document.getElementById('info-key-root');
+  const keyModeBtn = document.getElementById('info-key-mode');
+  const keyRow     = document.getElementById('info-row-key');
 
   titleEl.textContent = isSingle ? 'Song Info' : `Info — ${selected.length} Songs`;
   rowName.style.display  = isSingle ? '' : 'none';
@@ -166,6 +190,9 @@ function showInfoModal(trackIds) {
     albumIn.value  = t.album  || '';
     trackIn.value       = t.trackNumber || '';
     releaseDateIn.value = t.releaseDate || '';
+    bpmIn.value = t.bpm || '';
+    bpmIn.placeholder = '';
+    timeSigSel.value = t.timeSig || '';
     // read-only fields
     document.getElementById('info-format').textContent = t.format || '—';
     document.getElementById('info-dur').textContent    = t.duration ? formatTime(t.duration) : '—';
@@ -174,6 +201,13 @@ function showInfoModal(trackIds) {
     artistIn.placeholder = '';
     albumIn.placeholder  = '';
     trackIn.placeholder  = '';
+    // Key picker
+    keyRow.style.display = '';
+    const mode = t.keyMode || 'major';
+    keyModeBtn.dataset.mode = mode;
+    keyModeBtn.textContent  = mode === 'major' ? 'Major' : 'Minor';
+    keyModeBtn.classList.toggle('minor', mode === 'minor');
+    populateKeyRootSelect(keyRootSel, mode, t.keyRoot != null ? t.keyRoot : null);
   } else {
     nameIn.value = '';
     // For each shared field: pre-fill if all tracks match, else blank + placeholder
@@ -189,7 +223,23 @@ function showInfoModal(trackIds) {
     albumIn.placeholder   = allAlbums.length  > 1 ? 'Multiple Values' : '';
     trackIn.placeholder   = allNums.length    > 1 ? '—'               : '';
     releaseDateIn.placeholder = allDates.length > 1 ? 'Multiple Values' : '';
+    const allBpms = [...new Set(selected.map(t => t.bpm || ''))];
+    bpmIn.value       = allBpms.length === 1 ? (allBpms[0] || '') : '';
+    bpmIn.placeholder = allBpms.length > 1 ? 'Multiple Values' : '';
+    const allTimeSigs = [...new Set(selected.map(t => t.timeSig || ''))];
+    timeSigSel.value  = allTimeSigs.length === 1 ? (allTimeSigs[0] || '') : '';
+    keyRow.style.display = 'none';
+    populateKeyRootSelect(keyRootSel, 'major', null);
   }
+
+  keyModeBtn.onclick = () => {
+    const newMode = keyModeBtn.dataset.mode === 'major' ? 'minor' : 'major';
+    keyModeBtn.dataset.mode = newMode;
+    keyModeBtn.textContent  = newMode === 'major' ? 'Major' : 'Minor';
+    keyModeBtn.classList.toggle('minor', newMode === 'minor');
+    const cur = keyRootSel.value !== '' ? parseInt(keyRootSel.value, 10) : null;
+    populateKeyRootSelect(keyRootSel, newMode, cur);
+  };
 
   overlay.classList.add('show');
   (isSingle ? nameIn : artistIn).focus();
@@ -218,6 +268,26 @@ function showInfoModal(trackIds) {
       if (b !== '' || isSingle) updates.album  = b;
       if (!isNaN(n) && trackIn.value.trim() !== '') updates.trackNumber = n;
       if (d !== '' || isSingle) updates.releaseDate = d;
+      // BPM (single and bulk)
+      const bpmStr = bpmIn.value.trim();
+      const bpmVal = parseFloat(bpmStr);
+      if (!isNaN(bpmVal) && bpmVal >= 1 && bpmVal <= 400) updates.bpm = bpmVal;
+      else if (isSingle) updates.bpm = null;
+      // Time Signature (single and bulk)
+      const tsVal = timeSigSel.value;
+      if (tsVal) updates.timeSig = tsVal;
+      else if (isSingle) updates.timeSig = null;
+      // Key (single only)
+      if (isSingle) {
+        const rootStr = keyRootSel.value;
+        if (rootStr !== '') {
+          updates.keyRoot = parseInt(rootStr, 10);
+          updates.keyMode = keyModeBtn.dataset.mode;
+        } else {
+          updates.keyRoot = null;
+          updates.keyMode = null;
+        }
+      }
       Object.assign(t, updates);
       await LibraryManager.saveMeta(updates);
     }
@@ -569,6 +639,7 @@ function getSortedFilteredTracks() {
       }
       case 'addedAt':  return dir * ((a.addedAt  || 0) - (b.addedAt  || 0));
       case 'duration': return dir * ((a.duration || 0) - (b.duration || 0));
+      case 'bpm':      return dir * ((a.bpm || 0) - (b.bpm || 0));
       default:         return dir * (a.name || '').localeCompare(b.name || '');
     }
   });
@@ -687,6 +758,12 @@ function showMiniplayer(trackId) {
   mpStVal.textContent = (st > 0 ? '+' : '') + st + 'st';
   mpStVal.classList.toggle('xpose-active', st !== 0);
   document.getElementById('mp-xpose-reset').classList.toggle('xpose-reset-visible', st !== 0);
+  updateMiniplayerKey(track);
+  if (track.bpm) { Metronome.setBpm(track.bpm); syncMetroMini(); }
+  if (track.timeSig) {
+    const [num, den] = track.timeSig.split('/').map(Number);
+    if (num && den) { applyTimeSignature(num, den); renderBeatDots(num); }
+  }
   syncMiniplayerPlayBtn(true);
   resetSpeedSlider();
   const player = players[trackId];
@@ -743,6 +820,8 @@ function hideMiniplayer() {
   mpStVal.textContent = '0st';
   mpStVal.classList.remove('xpose-active');
   document.getElementById('mp-xpose-reset').classList.remove('xpose-reset-visible');
+  const mpKeyEl = document.getElementById('mp-current-key');
+  if (mpKeyEl) { mpKeyEl.textContent = ''; mpKeyEl.classList.add('hidden'); }
   document.getElementById('mp-time-display').textContent = '0:00 / --:--';
   document.getElementById('mp-scrub-fill').style.width = '0%';
   document.getElementById('mp-loop-times').classList.add('hidden');
@@ -765,7 +844,6 @@ function resetSpeedSlider() {
   valEl.textContent = '100%';
   valEl.classList.remove('speed-active');
   document.getElementById('mp-speed-reset').classList.remove('speed-reset-visible');
-  document.getElementById('mp-speed-warn').classList.add('hidden');
   updateRangeFill(sl);
 }
 
@@ -1086,7 +1164,6 @@ document.getElementById('mp-speed').addEventListener('input', function() {
   valEl.textContent = pct + '%';
   valEl.classList.toggle('speed-active', isActive);
   document.getElementById('mp-speed-reset').classList.toggle('speed-reset-visible', isActive);
-  document.getElementById('mp-speed-warn').classList.toggle('hidden', !isActive);
   updateRangeFill(this);
   if (currentPlayingId && players[currentPlayingId]) {
     players[currentPlayingId].setSpeed(rate);
@@ -1396,6 +1473,11 @@ function buildTrackRow(track) {
   const dur    = track.duration ? formatTime(track.duration) : '--:--';
   const st     = track.semitones || 0;
   const stLabel = st > 0 ? `+${st}` : `${st}`;
+  const hasKey = track.keyRoot != null;
+  const origKeyLabel = hasKey ? getKeyName(track.keyRoot, track.keyMode) : '';
+  const xposeValText = hasKey
+    ? (st !== 0 ? `${transposedKeyName(track.keyRoot, track.keyMode, st)} (${stLabel})` : origKeyLabel)
+    : stLabel;
 
   row.appendChild(buildArtThumb(track));
   row.insertAdjacentHTML('beforeend', `
@@ -1409,11 +1491,14 @@ function buildTrackRow(track) {
     </div>
     <div class="row-artist">${escHtml(artist)}</div>
     <div class="row-album">${escHtml(albumLabel)}</div>
+    <div class="row-key">${escHtml(origKeyLabel)}</div>
+    <div class="row-bpm">${track.bpm ? escHtml(String(track.bpm)) : ''}</div>
+    <div class="row-timesig">${track.timeSig ? escHtml(track.timeSig) : ''}</div>
     <div class="row-xpose">
-      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
       <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
-      <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
+      <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${escHtml(xposeValText)}</span>
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
     <button class="row-ctx-btn" data-id="${escHtml(track.id)}" title="More options">···</button>
@@ -1463,6 +1548,19 @@ function buildTrackRow(track) {
   return row;
 }
 
+function updateMiniplayerKey(track) {
+  const keyEl = document.getElementById('mp-current-key');
+  if (!keyEl) return;
+  if (track && track.keyRoot != null) {
+    const curKey = transposedKeyName(track.keyRoot, track.keyMode, track.semitones || 0);
+    keyEl.textContent = curKey;
+    keyEl.classList.remove('hidden');
+  } else {
+    keyEl.textContent = '';
+    keyEl.classList.add('hidden');
+  }
+}
+
 function applyTranspose(id, newSemitones) {
   const track = tracks.find(t => t.id === id);
   if (!track) return;
@@ -1474,6 +1572,7 @@ function applyTranspose(id, newSemitones) {
     const resetEl = document.getElementById('mp-xpose-reset');
     if (valEl)   { valEl.textContent = (track.semitones > 0 ? '+' : '') + track.semitones + 'st'; valEl.classList.toggle('xpose-active', track.semitones !== 0); }
     if (resetEl) resetEl.classList.toggle('xpose-reset-visible', track.semitones !== 0);
+    updateMiniplayerKey(track);
   }
   renderCurrentTab();
 }
@@ -1529,6 +1628,11 @@ function buildArtistDrillTrackRow(track) {
   const dur      = track.duration ? formatTime(track.duration) : '--:--';
   const st       = track.semitones || 0;
   const stLabel  = st > 0 ? `+${st}` : `${st}`;
+  const hasKey2  = track.keyRoot != null;
+  const origKey2 = hasKey2 ? getKeyName(track.keyRoot, track.keyMode) : '';
+  const xposeVal2 = hasKey2
+    ? (st !== 0 ? `${transposedKeyName(track.keyRoot, track.keyMode, st)} (${stLabel})` : origKey2)
+    : stLabel;
 
   row.appendChild(buildArtThumb(track));
   row.insertAdjacentHTML('beforeend', `
@@ -1540,11 +1644,14 @@ function buildArtistDrillTrackRow(track) {
     <div class="row-info">
       <div class="row-name">${escHtml(track.name)}</div>
     </div>
+    <div class="row-key">${escHtml(origKey2)}</div>
+    <div class="row-bpm">${track.bpm ? escHtml(String(track.bpm)) : ''}</div>
+    <div class="row-timesig">${track.timeSig ? escHtml(track.timeSig) : ''}</div>
     <div class="row-xpose">
-      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
       <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
-      <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
+      <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${escHtml(xposeVal2)}</span>
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
   `);
@@ -2253,6 +2360,11 @@ function buildPlaylistTrackRow(slot, idx, pl) {
   const dur    = track.duration ? formatTime(track.duration) : '--:--';
   const st     = slot.semitones ?? 0;
   const stLabel = st > 0 ? `+${st}` : `${st}`;
+  const hasKeyPl  = track.keyRoot != null;
+  const origKeyPl = hasKeyPl ? getKeyName(track.keyRoot, track.keyMode) : '';
+  const xposeValPl = hasKeyPl
+    ? (st !== 0 ? `${transposedKeyName(track.keyRoot, track.keyMode, st)} (${stLabel})` : origKeyPl)
+    : stLabel;
 
   row.insertAdjacentHTML('beforeend', `
     <div class="drag-handle" title="Drag to reorder">⠿</div>
@@ -2270,11 +2382,14 @@ function buildPlaylistTrackRow(slot, idx, pl) {
     </div>
     <div class="row-artist">${escHtml(artist)}</div>
     <div class="row-album">${escHtml(albumLabel)}</div>
+    <div class="row-key">${escHtml(origKeyPl)}</div>
+    <div class="row-bpm">${track.bpm ? escHtml(String(track.bpm)) : ''}</div>
+    <div class="row-timesig">${track.timeSig ? escHtml(track.timeSig) : ''}</div>
     <div class="row-xpose">
-      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
       <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}">−</button>
-      <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${stLabel}</span>
+      <span class="xpose-val${st !== 0 ? ' xpose-active' : ''}">${escHtml(xposeValPl)}</span>
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}">+</button>
+      <button class="xpose-reset${st !== 0 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
     <button class="row-ctx-btn" data-id="${escHtml(track.id)}" title="More options">···</button>
@@ -2363,7 +2478,10 @@ function buildPlaylistTrackRow(slot, idx, pl) {
     if (currentPlayingId === track.id && activePlaylistId === pl.id && currentPlayingSlotIdx === idx) {
       players[track.id]?.setSemitones?.(newSt);
     }
-    const label = newSt > 0 ? `+${newSt}` : `${newSt}`;
+    const stLbl = newSt > 0 ? `+${newSt}` : `${newSt}`;
+    const label = track.keyRoot != null
+      ? (newSt !== 0 ? `${transposedKeyName(track.keyRoot, track.keyMode, newSt)} (${stLbl})` : getKeyName(track.keyRoot, track.keyMode))
+      : stLbl;
     row.querySelector('.xpose-val').textContent = label;
     row.querySelector('.xpose-val').classList.toggle('xpose-active', newSt !== 0);
     row.querySelector('.xpose-reset').classList.toggle('xpose-reset-visible', newSt !== 0);
@@ -2684,11 +2802,13 @@ function renderCurrentTab() {
   document.querySelectorAll('.lib-sort-btn').forEach(btn => {
     const isActive = btn.dataset.sort === songsSortField;
     btn.classList.toggle('active', isActive);
-    btn.innerHTML = btn.dataset.sort === 'name'    ? 'Name'
-      : btn.dataset.sort === 'artist'  ? 'Artist'
-      : btn.dataset.sort === 'album'   ? 'Album'
-      : btn.dataset.sort === 'addedAt' ? 'Date Added'
-      : 'Duration';
+    btn.innerHTML = btn.dataset.sort === 'name'     ? 'Name'
+      : btn.dataset.sort === 'artist'   ? 'Artist'
+      : btn.dataset.sort === 'album'    ? 'Album'
+      : btn.dataset.sort === 'addedAt'  ? 'Date Added'
+      : btn.dataset.sort === 'bpm'      ? 'BPM'
+      : btn.dataset.sort === 'duration' ? 'Duration'
+      : btn.textContent;
     if (isActive) {
       btn.innerHTML += `<span class="lib-sort-dir">${songsSortDir === 'asc' ? '↑' : '↓'}</span>`;
     }
@@ -3623,20 +3743,12 @@ function initChordResize() {
 
 function initSectionCollapse() {
   const metroCollapsed = localStorage.getItem('metroCollapsed') === 'true';
-  const mpCollapsed    = localStorage.getItem('mpCollapsed') === 'true';
   applyCollapse('metro-body', 'metro-collapse-btn', metroCollapsed);
-  applyCollapse('mp-body',    'mp-collapse-btn',    mpCollapsed);
 
   document.getElementById('metro-hdr').addEventListener('click', () => {
     const collapsed = !document.getElementById('metro-body').classList.contains('collapsed');
     localStorage.setItem('metroCollapsed', collapsed);
     applyCollapse('metro-body', 'metro-collapse-btn', collapsed);
-  });
-
-  document.getElementById('mp-hdr').addEventListener('click', () => {
-    const collapsed = !document.getElementById('mp-body').classList.contains('collapsed');
-    localStorage.setItem('mpCollapsed', collapsed);
-    applyCollapse('mp-body', 'mp-collapse-btn', collapsed);
   });
 }
 
@@ -3665,14 +3777,14 @@ document.getElementById('mm-bpm-display').addEventListener('click', () => {
 function commitBpmInline() {
   const display = document.getElementById('mm-bpm-display');
   const input = document.getElementById('mm-bpm-inline');
-  const val = parseInt(input.value);
+  const val = parseFloat(input.value);
   if (!isNaN(val)) { Metronome.setBpm(val); syncMetroMini(); }
   input.classList.add('hidden');
   display.classList.remove('hidden');
 }
 document.getElementById('mm-bpm-inline').addEventListener('blur', commitBpmInline);
 document.getElementById('mm-bpm-inline').addEventListener('keydown', (e) => {
-  if (['e', 'E', '+', '-', '.'].includes(e.key)) e.preventDefault();
+  if (['e', 'E', '+', '-'].includes(e.key)) e.preventDefault();
   if (e.key === 'Enter') { e.preventDefault(); commitBpmInline(); }
   if (e.key === 'Escape') {
     const input = document.getElementById('mm-bpm-inline');
@@ -3702,6 +3814,22 @@ document.getElementById('mm-subdiv-select').addEventListener('change', function(
   const subdiv = parseInt(this.value);
   Metronome.setSubdivision(subdiv);
   localStorage.setItem('metronomeSubdiv', subdiv);
+});
+
+const SUBDIV_ICONS = { 1: '♩', 2: '♪', 3: '♪³', 4: '♬' };
+function syncSubdivBtn(val) {
+  const btn = document.getElementById('mm-subdiv-btn');
+  if (btn) btn.textContent = SUBDIV_ICONS[val] || '♩';
+}
+
+const _subdivOrder = [1, 2, 3, 4];
+document.getElementById('mm-subdiv-btn').addEventListener('click', () => {
+  const sel = document.getElementById('mm-subdiv-select');
+  const cur = parseInt(sel.value) || 1;
+  const next = _subdivOrder[(_subdivOrder.indexOf(cur) + 1) % _subdivOrder.length];
+  sel.value = next;
+  sel.dispatchEvent(new Event('change'));
+  syncSubdivBtn(next);
 });
 
 document.getElementById('mm-vol').addEventListener('input', function() {
@@ -3895,6 +4023,7 @@ document.getElementById('mp-loop-btn').addEventListener('click', () => {
   const subdiv = [1, 2, 3, 4].includes(storedSubdiv) ? storedSubdiv : 1;
   Metronome.setSubdivision(subdiv);
   document.getElementById('mm-subdiv-select').value = subdiv;
+  syncSubdivBtn(subdiv);
 
   // Restore accent toggle
   const storedAccent = localStorage.getItem('metronomeAccent');

@@ -6,13 +6,13 @@
   }
 
   :root {
-    --bg-base:       #0a0a0c;
-    --bg-panel:      #111116;
-    --bg-card:       #18181f;
-    --bg-hover:      #1f1f2a;
-    --bg-active:     #23232e;
-    --border:        #2a2a38;
-    --border-bright: #3a3a50;
+    --bg-base:       #000000;
+    --bg-panel:      #090909;
+    --bg-card:       #111111;
+    --bg-hover:      #181818;
+    --bg-active:     #1e1e1e;
+    --border:        #222222;
+    --border-bright: #2e2e2e;
     --accent:        #0096C7;
     --accent-dim:    #0077A0;
     --accent-glow:   rgba(0,150,199,0.15);
@@ -564,11 +564,55 @@
   .lib-col-spacer-art  { width: 37px; flex-shrink: 0; }
   .lib-col-spacer-play { width: 20px; flex-shrink: 0; }
   .lib-col-spacer-ctx  { width: 28px; flex-shrink: 0; }
-  .lib-col-name   { flex: 2; min-width: 0; text-align: left; }
-  .lib-col-artist { flex: 1.2; min-width: 0; text-align: left; }
-  .lib-col-album  { flex: 1.5; min-width: 0; text-align: left; }
+  .lib-col-name   { flex: 2; min-width: 0; text-align: left; padding-left: 22px; }
+  .lib-col-artist { flex: 0.9; min-width: 0; text-align: left; padding-left: 8px; }
+  .lib-col-album  { flex: 1.5; min-width: 0; text-align: left; padding-left: 8px; }
+  .lib-col-key-label {
+    width: 52px;
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: center;
+    padding-left: 8px;
+  }
+  .lib-col-bpm-label {
+    width: 44px;
+    flex-shrink: 0;
+    text-align: center;
+    padding-left: 8px;
+  }
+  .lib-col-timesig-label {
+    width: 56px;
+    flex-shrink: 0;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    text-align: center;
+    padding-left: 8px;
+  }
+  .row-bpm {
+    width: 44px;
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+  }
+  .row-timesig {
+    width: 56px;
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+  }
   .lib-col-xpose-label {
-    width: 82px;
+    width: 120px;
     flex-shrink: 0;
     margin-right: 8px;
     font-size: 10px;
@@ -577,6 +621,7 @@
     text-transform: uppercase;
     letter-spacing: 0.06em;
     text-align: center;
+    padding-left: 8px;
   }
   .lib-col-dur {
     min-width: 36px;
@@ -734,7 +779,7 @@
     margin-top: 1px;
   }
   .row-artist {
-    flex: 1.2;
+    flex: 0.9;
     min-width: 0;
     font-size: 13px;
     color: var(--text-secondary);
@@ -780,29 +825,38 @@
   .row-ctx-btn:hover { color: var(--text-primary); background: var(--bg-active); }
 
   /* ── TRANSPOSE INLINE CONTROLS ───────────────────────── */
+  .row-key {
+    width: 52px;
+    flex-shrink: 0;
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .row-xpose {
     display: flex;
     align-items: center;
-    gap: 2px;
+    gap: 5px;
     flex-shrink: 0;
     margin-right: 8px;
+    width: 120px;
   }
   .xpose-reset {
     background: none;
     border: none;
     color: var(--text-dim);
-    width: 16px;
-    height: 22px;
-    font-size: 13px;
     cursor: pointer;
     border-radius: 2px;
-    padding: 0;
+    padding: 1px;
     display: flex;
     align-items: center;
     justify-content: center;
     visibility: hidden;
     flex-shrink: 0;
   }
+  .xpose-reset svg { width: 10px; height: 10px; }
   .xpose-reset.xpose-reset-visible { visibility: visible; }
   .xpose-reset:hover { color: var(--cyan); }
 
@@ -825,9 +879,11 @@
   .xpose-val {
     font-size: 11px;
     color: var(--text-dim);
-    min-width: 24px;
+    min-width: 35px;
     text-align: center;
+    white-space: nowrap;
   }
+  .row-xpose .xpose-val { min-width: 40px; }
   .xpose-val.xpose-active { color: var(--cyan); }
   .xpose-val { cursor: pointer; }
   .xpose-val:hover { color: var(--accent); }
@@ -1008,6 +1064,14 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  #mp-current-key {
+    font-size: 11px;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #mp-current-key.hidden { display: none; }
 
   /* Marquee scrolling for long track/sub text */
   #mp-track-name.mp-marquee,
@@ -1056,7 +1120,7 @@
   .mp-row:last-child { margin-bottom: 0; }
   .mp-row-center { justify-content: center; }
   .mp-xpose-row { position: relative; }
-  .mp-xpose-row #mp-xpose-reset { position: absolute; left: 0; }
+  .mp-xpose-row #mp-xpose-reset { position: absolute; right: 0; }
   .mp-row-center input[type=range] { width: 130px; flex: none; }
   #mp-vol, #mm-vol { width: 130px; flex: none; }
 
@@ -1101,17 +1165,6 @@
   .speed-reset svg { width: 10px; height: 10px; }
   .speed-reset:hover { opacity: 0.7; }
   .speed-reset.speed-reset-visible { display: flex; }
-
-  .mp-speed-warn {
-    display: block;
-    text-align: center;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 9px;
-    font-weight: 300;
-    color: var(--purple);
-    margin-top: 2px;
-    letter-spacing: 0.02em;
-  }
 
   .mp-loop-btn-row {
     display: flex;
@@ -1208,6 +1261,39 @@
   }
   .info-input:focus { border-color: var(--border-bright); }
   .info-input-sm { flex: 0 0 72px; }
+  .info-key-picker {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex: 1;
+  }
+  .info-key-picker select {
+    flex: 1;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-primary);
+    font-size: 12px;
+    padding: 4px 6px;
+    height: 28px;
+  }
+  .info-key-picker select:focus { border-color: var(--border-bright); outline: none; }
+  .info-key-mode-btn {
+    flex-shrink: 0;
+    padding: 0 10px;
+    height: 28px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-secondary);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: color 0.1s, border-color 0.1s;
+  }
+  .info-key-mode-btn:hover { color: var(--text-primary); border-color: var(--border-bright); }
+  .info-key-mode-btn.minor { color: var(--cyan); border-color: var(--cyan); }
   .info-divider {
     border-top: 1px solid var(--border);
     margin: 12px 0;
@@ -2181,6 +2267,12 @@
   #metro-body.collapsed,
   #mp-body.collapsed { display: none; }
 
+  #metro-body {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
   #mp-section {
     margin: 0 -12px -12px;
     padding: 8px 14px 12px;
@@ -2189,11 +2281,11 @@
   /* ── METRONOME MINIPLAYER ────────────────────────────── */
   #metro-mini {
     margin: -12px -12px 0;
-    padding: 8px 14px 14px;
+    padding: 10px 14px 16px;
     border-bottom: 3px solid var(--border-bright);
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 14px;
   }
 
   .mm-play-row {
@@ -2201,15 +2293,16 @@
     justify-content: center;
   }
   .mm-play {
-    width: 44px; height: 26px;
+    width: 32px; height: 32px;
     background: var(--bg-active);
     border: 1px solid var(--border-bright);
-    border-radius: 5px;
+    border-radius: 50%;
     color: var(--text-primary);
     font-size: 13px;
     cursor: pointer;
     transition: all 0.1s;
     display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
   }
   .mm-play:hover { border-color: var(--accent); color: var(--accent); }
   .mm-play:active { transform: scale(0.95); }
@@ -2237,12 +2330,50 @@
   .mm-bpm-section {
     display: grid;
     grid-template-columns: 36px 1fr 36px;
-    grid-template-rows: 26px;
+    grid-template-rows: 52px;
     gap: 5px 6px;
   }
   #mm-bpm-minus { grid-area: 1 / 1; }
   .mm-bpm-display-wrap { grid-area: 1 / 2; position: relative; }
   #mm-bpm-plus { grid-area: 1 / 3; }
+
+  .mm-controls-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .mm-controls-row > * { flex: 1; min-width: 0; }
+  .mm-controls-row .mm-play { flex: 0 0 24px; width: 24px; height: 24px; }
+  .mm-controls-row .mm-tap-btn { padding: 5px 0; min-height: 0; }
+  .mm-controls-row select {
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 5px 4px;
+    cursor: pointer;
+    appearance: auto;
+    height: 24px;
+  }
+  .mm-controls-row select:hover { border-color: var(--accent); color: var(--text-primary); }
+
+  .mm-subdiv-btn {
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-dim);
+    font-size: 15px;
+    padding: 0;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.1s;
+    height: 24px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .mm-subdiv-btn:hover { border-color: var(--accent); color: var(--text-primary); }
+  .mm-subdiv-btn:active { color: var(--accent); }
 
   .mm-tap-row { display: flex; }
   .mm-tap-row .mm-tap-btn { flex: 1; }
@@ -2268,8 +2399,10 @@
     cursor: default;
     text-align: center;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 1px;
     position: relative;
     transition: background 0.1s, border-color 0.1s;
   }
@@ -2314,11 +2447,19 @@
   .mm-tap-btn:hover { border-color: var(--border-bright); color: var(--text-secondary); }
   .mm-tap-btn:active { background: var(--bg-hover); color: var(--accent); border-color: var(--accent); }
   .mm-bpm-num {
-    font-size: 16px;
+    font-size: 28px;
     font-weight: 700;
     color: var(--accent);
     line-height: 1;
     transition: color 0.1s;
+  }
+
+  .mm-bpm-unit {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--text-dim);
+    letter-spacing: 0.05em;
+    line-height: 1;
   }
 
   .mm-selects-row {
@@ -2623,6 +2764,137 @@
 #chord-save-status { margin-right: auto; font-size: 12px; font-family: var(--font-mono); }
 .chord-save-ok  { color: var(--accent); }
 .chord-save-err { color: var(--red); }
+
+/* ── BOTTOM BAR ──────────────────────────────────────── */
+#bottom-bar {
+  height: 72px;
+  background: var(--bg-panel);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+#bb-track {
+  width: var(--sidebar-w);
+  height: 100%;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+}
+
+#bottom-bar #mp-art {
+  width: 44px;
+  height: 44px;
+  flex-shrink: 0;
+}
+
+#bottom-bar #mp-track-info {
+  min-width: 0;
+}
+
+#bb-center {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 12px;
+}
+
+#bottom-bar #mp-transport {
+  flex-shrink: 0;
+  margin-bottom: 0;
+  gap: 2px;
+  margin-top: 2px;
+}
+
+#bb-scrub-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-self: stretch;
+  padding-top: 14px;
+  box-sizing: border-box;
+}
+
+#bottom-bar #mp-scrub-bar {
+  margin-bottom: 0;
+  width: 100%;
+}
+
+#bottom-bar #mp-time-display {
+  margin-bottom: 0;
+  text-align: left;
+  font-size: 11px;
+}
+
+#bb-time-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  margin-top: -3px;
+}
+
+#bb-scrub-wrap #mp-loop-times {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+#bb-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px 0 6px;
+  flex-shrink: 0;
+}
+
+#bottom-bar .mp-vol-group,
+#bottom-bar .mp-speed-group {
+  width: auto;
+  margin-bottom: 0;
+}
+
+#bottom-bar .mp-row {
+  margin-bottom: 0;
+}
+
+#bb-right .speed-reset {
+  position: static;
+  transform: none;
+  margin-left: 12px;
+  display: flex;
+  visibility: hidden;
+}
+#bb-right .speed-reset.speed-reset-visible {
+  visibility: visible;
+}
+
+#bottom-bar #mp-vol,
+#bottom-bar #mp-speed {
+  width: 80px;
+  flex: none;
+}
+
+#bottom-bar .mp-xpose-row #mp-xpose-reset {
+  position: static;
+}
+
+#bb-right .mp-xpose-row {
+  margin-left: 8px;
+  gap: 4px;
+}
+#bb-right .mp-xpose-row .xpose-reset {
+  margin-left: 8px;
+}
 
 /* Chord icon in track rows — always visible */
 .row-name-col { display: flex; align-items: center; gap: 4px; }
