@@ -766,7 +766,7 @@ function showMiniplayer(trackId) {
   const player = players[trackId];
   const totalStr = player && player.duration ? formatTime(player.duration) : '--:--';
   document.getElementById('mp-time-display').textContent = '0:00 / ' + totalStr;
-  document.getElementById('mp-scrub-fill').style.width = '0%';
+  setScrubFrac(0);
 
   // Sync loop handles and state for this track
   if (player) {
@@ -818,7 +818,7 @@ function hideMiniplayer() {
   mpStVal.classList.remove('xpose-active');
   document.getElementById('mp-xpose-reset').classList.remove('xpose-reset-visible');
   document.getElementById('mp-time-display').textContent = '0:00 / --:--';
-  document.getElementById('mp-scrub-fill').style.width = '0%';
+  setScrubFrac(0);
   document.getElementById('mp-loop-times').classList.add('hidden');
   document.getElementById('mp-loop-btn').classList.remove('loop-active');
   document.getElementById('mp-loop-region').classList.remove('loop-active');
@@ -854,7 +854,7 @@ function syncMiniplayerPlayBtn(isPlaying) {
 
 function updateMiniplayerProgress(frac, t, duration) {
   if (seeking) return;
-  document.getElementById('mp-scrub-fill').style.width = (frac * 100).toFixed(2) + '%';
+  setScrubFrac(frac);
   document.getElementById('mp-time-display').textContent =
     formatTime(t) + ' / ' + formatTime(duration);
 }
@@ -1195,11 +1195,17 @@ document.getElementById('mp-speed-reset').addEventListener('click', () => {
 // ─── SCRUB BAR ──────────────────────────────────────────────
 const mpScrubBar = document.getElementById('mp-scrub-bar');
 const mpScrubFill = document.getElementById('mp-scrub-fill');
+const mpScrubBall = document.getElementById('mp-scrub-ball');
+
+function setScrubFrac(frac) {
+  mpScrubFill.style.width = (frac * 100).toFixed(4) + '%';
+  mpScrubBall.style.transform = `translate(${(frac * mpScrubBar.clientWidth - 6.5).toFixed(3)}px, -50%)`;
+}
 
 function onScrubMove(e) {
   const rect = mpScrubBar.getBoundingClientRect();
   seekFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  mpScrubFill.style.width = (seekFrac * 100).toFixed(2) + '%';
+  setScrubFrac(seekFrac);
   const player = players[currentPlayingId];
   if (player && player.duration) {
     document.getElementById('mp-time-display').textContent =
@@ -1227,7 +1233,7 @@ mpScrubBar.addEventListener('mousedown', e => {
   seeking = true;
   const rect = mpScrubBar.getBoundingClientRect();
   seekFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  mpScrubFill.style.width = (seekFrac * 100).toFixed(2) + '%';
+  setScrubFrac(seekFrac);
   const player = players[currentPlayingId];
   if (player && player.duration) {
     document.getElementById('mp-time-display').textContent =

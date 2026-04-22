@@ -1358,16 +1358,18 @@
   width: 0%;
   pointer-events: none;
 }
-#mp-scrub-fill::after {
-  content: '';
+#mp-scrub-ball {
   position: absolute;
-  right: -6px;
-  top: -5px;
+  top: 50%;
+  left: 0;
   width: 13px;
   height: 13px;
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 6px var(--accent-glow);
+  pointer-events: none;
+  will-change: transform;
+  transform: translate(-6.5px, -50%);
 }
 
 /* ── TIME DISPLAY ───────────────────────────────────── */
