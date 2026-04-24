@@ -178,7 +178,10 @@ export class TrackPlayer {
 
   setSpeed(s) {
     this.speed = s;
-    if (!this.isPlaying) return;
+    if (!this.isPlaying) {
+      if (this._paused) this._seekedWhilePaused = true;
+      return;
+    }
     clearTimeout(this._speedDebounce);
     this._speedDebounce = setTimeout(() => {
       invoke('audio_set_speed', {

@@ -6,7 +6,7 @@ import { TrackPlayer, players } from './track-player.js';
 import { Metronome, TapTempo } from './metronome.js';
 import { renderWaveform } from './waveform.js';
 import * as ArtworkManager from './artwork-manager.js';
-import { listen, invoke, writeAudioFile } from './tauri-api.js';
+import { listen, invoke, writeAudioFile, scanLibraryDir } from './tauri-api.js';
 
 
 // ─── KEY CONSTANTS ────────────────────────────────────────────
@@ -89,7 +89,7 @@ function notify(msg, type = '') {
   notifTimer = setTimeout(() => { el.className = ''; }, 2800);
 }
 
-function confirm(title, msg) {
+function confirm(title, msg, okLabel = 'Delete') {
   return new Promise(res => {
     document.getElementById('conf-title').textContent = title;
     document.getElementById('conf-msg').textContent = msg;
@@ -97,6 +97,7 @@ function confirm(title, msg) {
     overlay.classList.add('show');
     const ok = document.getElementById('conf-ok');
     const cancel = document.getElementById('conf-cancel');
+    ok.textContent = okLabel;
     function cleanup(v) {
       overlay.classList.remove('show');
       ok.removeEventListener('click', onOk);
@@ -1261,6 +1262,34 @@ async function loadLibrary() {
     tracks = stored;
     playlists = storedPlaylists;
 
+    // Recovery: if IDB empty but files exist on disk (origin mismatch after rebuild)
+    if (tracks.length === 0) {
+      try {
+        const diskFiles = await scanLibraryDir();
+        if (diskFiles.length > 0) {
+          console.log(`[stagehand] IDB empty, recovering ${diskFiles.length} tracks from disk`);
+          for (const f of diskFiles) {
+            const track = {
+              id:        f.id,
+              name:      f.id,
+              format:    f.ext,
+              filePath:  f.path,
+              semitones: 0,
+              volume:    1.0,
+              size:      f.size,
+              addedAt:   Date.now(),
+              duration:  0,
+            };
+            await LibraryManager.save(track);
+            tracks.push(track);
+          }
+          console.log('[stagehand] disk recovery complete');
+        }
+      } catch(e) {
+        console.warn('[stagehand] disk recovery failed:', e);
+      }
+    }
+
     // Phase 2c migration: move IDB blobs to filesystem for any tracks that still have them
     const blobTracks = tracks.filter(t => t.arrayBuffer && !t.filePath);
     if (blobTracks.length > 0) {
@@ -1614,6 +1643,24 @@ function renderVirtualList(container, items, renderRowFn) {
   container.appendChild(spacerBot);
 }
 
+// ─── ARTIST / ALBUM DRILL-DOWN COLUMN HEADER ─────────────────
+function buildDrillColHeader() {
+  const el = document.createElement('div');
+  el.className = 'lib-col-header';
+  el.innerHTML = `
+    <div class="lib-col-spacer-art"></div>
+    <div class="lib-col-spacer-num"></div>
+    <div class="lib-col-spacer-play"></div>
+    <div class="pl-col-label lib-col-info">Name</div>
+    <div class="lib-col-key-label">Key</div>
+    <div class="lib-col-bpm-label">BPM</div>
+    <div class="lib-col-timesig-label">Time Sig</div>
+    <div class="lib-col-xpose-label">Transpose</div>
+    <div class="pl-col-label lib-col-dur">Duration</div>
+  `;
+  return el;
+}
+
 // ─── ARTIST DRILL-DOWN ROW BUILDERS ──────────────────────────
 function buildAlbumSectionHeader(albumName, trackCount, year, artDataUrl) {
   const el = document.createElement('div');
@@ -1726,7 +1773,7 @@ function getArtistGroups() {
   return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 }
 
-function buildArtistRow(artistName, trackCount, artDataUrl) {
+function buildArtistRow(artistName, trackCount, artDataUrl, albumCount = 0) {
   const row = document.createElement('div');
   row.className = 'artist-row';
   row.dataset.artist = artistName;
@@ -1734,10 +1781,13 @@ function buildArtistRow(artistName, trackCount, artDataUrl) {
   const artHtml = artDataUrl
     ? `<div class="artist-row-art"><img src="${escHtml(artDataUrl)}" alt=""></div>`
     : `<div class="artist-row-art artist-row-art-empty"></div>`;
+  const meta = albumCount > 0
+    ? `${albumCount} album${albumCount !== 1 ? 's' : ''} · ${trackCount} track${trackCount !== 1 ? 's' : ''}`
+    : `${trackCount} track${trackCount !== 1 ? 's' : ''}`;
   row.innerHTML = `
     ${artHtml}
     <div class="artist-row-name">${escHtml(artistName)}</div>
-    <div class="artist-row-count">${trackCount} track${trackCount !== 1 ? 's' : ''}</div>
+    <div class="artist-row-count">${meta}</div>
   `;
   return row;
 }
@@ -1784,9 +1834,10 @@ function renderArtistList() {
   visibleTracks = [];
   const artistItems = groups.map(([name, trks]) => {
     const artTrack = trks.find(t => ArtworkManager.getCachedArtwork(t)) || trks[0];
-    return { name, count: trks.length, art: artTrack ? ArtworkManager.getCachedArtwork(artTrack) : null };
+    const albumCount = new Set(trks.map(t => t.album && t.album.trim() ? t.album.trim() : null).filter(Boolean)).size;
+    return { name, count: trks.length, albumCount, art: artTrack ? ArtworkManager.getCachedArtwork(artTrack) : null };
   });
-  renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count, item.art));
+  renderVirtualList(trackList, artistItems, (item) => buildArtistRow(item.name, item.count, item.art, item.albumCount));
 }
 
 function renderArtistDrillDown(artistName) {
@@ -1827,6 +1878,8 @@ function renderArtistDrillDown(artistName) {
     if (b[0] === 'Unknown Album') return -1;
     return a[0].localeCompare(b[0]);
   });
+
+  trackList.appendChild(buildDrillColHeader());
 
   // Sub-container (non-virtual) so header stays fixed at top
   const listContainer = document.createElement('div');
@@ -1932,11 +1985,16 @@ function renderAlbumDrillDown(albumName) {
 
   const drillYear = albumReleaseYear(albumTracks);
   const drillTitle = drillYear ? `${albumName} (${drillYear})` : albumName;
+  const drillArtists = [...new Set(albumTracks.map(t => t.artist).filter(Boolean))];
+  const drillArtistStr = drillArtists.join(' · ');
   const header = document.createElement('div');
   header.className = 'artist-drill-header';
   header.innerHTML = `
-    <button class="artist-back-btn">\u2190</button>
-    <div class="artist-drill-title">${escHtml(drillTitle)}</div>
+    <button class="artist-back-btn">←</button>
+    <div class="artist-drill-title-wrap">
+      <div class="artist-drill-title">${escHtml(drillTitle)}</div>
+      ${drillArtistStr ? `<div class="artist-drill-subtitle">${escHtml(drillArtistStr)}</div>` : ''}
+    </div>
     <div class="artist-drill-count">${albumTracks.length} track${albumTracks.length !== 1 ? 's' : ''}</div>
   `;
 
@@ -1950,6 +2008,8 @@ function renderAlbumDrillDown(albumName) {
     trackList.appendChild(empty);
     return;
   }
+
+  trackList.appendChild(buildDrillColHeader());
 
   const listContainer = document.createElement('div');
   listContainer.className = 'artist-track-list';
@@ -2080,7 +2140,11 @@ function renderPlaylistsTab() {
     renderPlaylistDetail(right, selPl);
   } else {
     visibleTracks = [];
-    right.innerHTML = `<div class="pl-empty-right">← Select a playlist</div>`;
+    right.innerHTML = `<div class="pl-empty-right">
+      <div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg></div>
+      <div class="es-text">No playlist selected</div>
+      <div class="es-sub">Choose a playlist from the left</div>
+    </div>`;
   }
   container.appendChild(right);
 
@@ -2107,7 +2171,6 @@ function buildPlaylistRow(pl) {
   row.dataset.plId = pl.id;
 
   const isManual = playlistSortMode === 'manual';
-  if (isManual) row.draggable = true;
 
   const info = document.createElement('div');
   info.className = 'pl-row-info';
@@ -2126,8 +2189,25 @@ function buildPlaylistRow(pl) {
 
   const count = document.createElement('div');
   count.className = 'pl-row-count';
-  count.textContent = pl.slots.length;
+  count.textContent = `${pl.slots.length} track${pl.slots.length !== 1 ? 's' : ''}`;
 
+  if (isManual) {
+    const handle = document.createElement('div');
+    handle.className = 'pl-row-drag-handle';
+    handle.textContent = '⠿';
+    handle.draggable = true;
+    handle.addEventListener('dragstart', e => {
+      e.stopPropagation();
+      plListDragSrcId = pl.id;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', pl.id);
+    });
+    handle.addEventListener('dragend', () => {
+      plListDragSrcId = null;
+      document.querySelectorAll('.pl-row').forEach(r => r.classList.remove('drag-above', 'drag-below'));
+    });
+    row.appendChild(handle);
+  }
   row.appendChild(info);
   row.appendChild(count);
 
@@ -2142,12 +2222,8 @@ function buildPlaylistRow(pl) {
     showPlCtxMenu(e, pl.id);
   });
 
-  // Drag-to-reorder (manual mode only)
+  // Drag-to-reorder targets (manual mode only)
   if (isManual) {
-    row.addEventListener('dragstart', e => {
-      plListDragSrcId = pl.id;
-      e.dataTransfer.effectAllowed = 'move';
-    });
     row.addEventListener('dragover', e => {
       if (!plListDragSrcId) return;
       e.preventDefault();
@@ -2175,10 +2251,6 @@ function buildPlaylistRow(pl) {
       playlistManualOrder.splice(insertAfter ? newDst + 1 : newDst, 0, srcId);
       savePlaylistSortSettings();
       renderCurrentTab();
-    });
-    row.addEventListener('dragend', () => {
-      plListDragSrcId = null;
-      document.querySelectorAll('.pl-row').forEach(r => r.classList.remove('drag-above', 'drag-below'));
     });
   }
 
@@ -2272,6 +2344,26 @@ function renderPlaylistDetail(container, pl) {
       }
     }
   });
+
+  // Column header
+  const colHeader = document.createElement('div');
+  colHeader.className = 'lib-col-header';
+  colHeader.innerHTML = `
+    <div class="lib-col-spacer-drag"></div>
+    <div class="lib-col-spacer-num"></div>
+    <div class="lib-col-spacer-art"></div>
+    <div class="lib-col-spacer-play"></div>
+    <div class="pl-col-label lib-col-name">Name</div>
+    <div class="pl-col-label lib-col-artist">Artist</div>
+    <div class="pl-col-label lib-col-album">Album</div>
+    <div class="lib-col-key-label">Key</div>
+    <div class="lib-col-bpm-label">BPM</div>
+    <div class="lib-col-timesig-label">Time Sig</div>
+    <div class="lib-col-xpose-label">Transpose</div>
+    <div class="pl-col-label lib-col-dur">Duration</div>
+    <div class="lib-col-spacer-ctx"></div>
+  `;
+  container.appendChild(colHeader);
 
   // Track list
   const listEl = document.createElement('div');
@@ -2640,6 +2732,7 @@ function startPlaylistRename(plId) {
   const nameEl = rowEl.querySelector('.pl-row-name');
   const input = document.createElement('input');
   input.className = 'pl-row-name-input';
+  input.setAttribute('aria-label', 'Playlist name');
   input.value = pl.name;
   nameEl.replaceWith(input);
   input.focus();
@@ -2807,12 +2900,9 @@ function renderCurrentTab() {
   badge.textContent = tracks.length;
   countLabel.textContent = tracks.length + ' track' + (tracks.length !== 1 ? 's' : '');
 
-  // Show sort bar on Songs tab and drill-down track views (not card-list views)
+  // Show sort bar on Songs tab only
   const sortBar = document.getElementById('lib-sort-bar');
-  const showSortBar = activeTab === 'songs'
-    || (activeTab === 'artists' && currentArtistView !== null)
-    || (activeTab === 'albums'  && currentAlbumView  !== null);
-  sortBar.classList.toggle('hidden', !showSortBar);
+  sortBar.classList.toggle('hidden', activeTab !== 'songs');
   document.querySelectorAll('.lib-sort-btn').forEach(btn => {
     const isActive = btn.dataset.sort === songsSortField;
     btn.classList.toggle('active', isActive);
@@ -2849,6 +2939,7 @@ function startRenameById(trackId) {
   const nameEl = row.querySelector('.row-name');
   const input = document.createElement('input');
   input.className = 'row-name-input';
+  input.setAttribute('aria-label', 'Track name');
   input.value = track.name;
   nameEl.replaceWith(input);
   input.focus();
@@ -3023,7 +3114,7 @@ applyScale();
 
 // ─── CLEAR ARTWORK ───────────────────────────────────────────
 document.getElementById('clear-artwork-btn').addEventListener('click', async () => {
-  const ok = await confirm('Clear All Artwork?', 'This removes every cached artwork image. Art will be re-fetched from iTunes (or re-embedded) next time tracks are loaded.');
+  const ok = await confirm('Clear All Artwork?', 'This removes every cached artwork image. Art will be re-fetched from iTunes (or re-embedded) next time tracks are loaded.', 'Clear');
   if (!ok) return;
   try {
     await LibraryManager.clearAllArtwork();
@@ -3791,8 +3882,11 @@ document.getElementById('mm-bpm-display').addEventListener('click', () => {
 function commitBpmInline() {
   const display = document.getElementById('mm-bpm-display');
   const input = document.getElementById('mm-bpm-inline');
-  const val = parseFloat(input.value);
-  if (!isNaN(val)) { Metronome.setBpm(val); syncMetroMini(); }
+  const raw = parseFloat(input.value);
+  if (!isNaN(raw)) {
+    Metronome.setBpm(Math.min(300, Math.max(20, raw)));
+    syncMetroMini();
+  }
   input.classList.add('hidden');
   display.classList.remove('hidden');
 }

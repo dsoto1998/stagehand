@@ -34,6 +34,11 @@ export async function getLibraryDir() {
   return _libraryPath;
 }
 
+/** Return all audio files in the library directory. */
+export async function scanLibraryDir() {
+  return invoke('library_scan');
+}
+
 /** Write audio bytes to the permanent library directory. Returns the file path. */
 export async function writeAudioFile(trackId, ext, arrayBuffer) {
   const dir = await getLibraryDir();

@@ -375,6 +375,9 @@ impl RubberbandSource {
                         })
                         .collect();
                     self.read_pos += feed_frames * ch;
+                    // Track source position (not output frames) so position/fraction
+                    // are correct at any playback speed.
+                    self.frame_counter.store((self.read_pos / ch) as u64, Ordering::Relaxed);
                     let ptrs: Vec<*const f32> = ch_bufs.iter().map(|b| b.as_ptr()).collect();
                     unsafe {
                         rubberband_process(
@@ -420,9 +423,6 @@ impl Iterator for RubberbandSource {
                 if self.out_pos < self.output_buf.len() {
                     let sample = self.output_buf[self.out_pos];
                     self.out_pos += 1;
-                    if self.out_pos % ch == 0 {
-                        self.frame_counter.fetch_add(1, Ordering::Relaxed);
-                    }
                     return Some(sample);
                 }
                 let rb_ptr = self.rb.as_ref().unwrap().0;

@@ -19,20 +19,21 @@ Priority order follows UI/UX Pro Max framework (1 = critical, 8 = medium).
 - `.mp-loop-handle`: width 14→18px, `::before` bar 2→3px (wider visual grip)
 - `.mm-tap-btn`: already acceptable (full-width, 28px min-height) — no change
 
-## Phase 4 — Style Consistency: Icons
+## ✓ Phase 4 — Style Consistency: Icons
 - SVG stroke widths inconsistent across app — audit nav, transport, controls
 - Target: uniform `stroke-width="2"` or define two explicit tiers (UI chrome vs content)
 
-## Phase 5 — Typography
-- `font-size: 11px` used in many places — audit and raise floor to 12px where possible
-- `letter-spacing: 0` overrides on some labels — may be too tight, review
-- Hardcoded inline colors in JS templates (`row-bpm`, `row-timesig` etc.) — migrate to token system
+## ✓ Phase 5 — Typography
+- Raised all `font-size: 11px` → `12px` (38 instances); shortcut group header 10px → 11px
+- `.nav-section-label` + `.ctrl-label`: added `letter-spacing: 0.06em` (both are uppercase, was cramped at 0)
+- JS template inline colors clean — `row-bpm/key/timesig` use CSS classes, one inline var(--text-dim) already token-based
 
-## Phase 6 — Forms & Feedback
-- BPM inline edit: no visible label, no validation feedback on bad input
-- Track rename input: no label, no validation feedback
-- Confirm dialog: delete action needs semantic red (`--red`) on confirm button — verify it's applied
-- Destructive actions should be visually separated from neutral ones
+## ✓ Phase 6 — Forms & Feedback
+- BPM inline: added `aria-label="BPM value"` to `#mm-bpm-inline`; `commitBpmInline()` now clamps to [20, 300] instead of passing raw value
+- Track rename: `aria-label="Track name"` on dynamic input in `startRenameById()`
+- Playlist rename: `aria-label="Playlist name"` on dynamic input in `startPlaylistRename()`
+- `confirm()`: added `okLabel = 'Delete'` param + sets button text; "Clear All Artwork" now passes `'Clear'` (was showing "Delete" — mismatch)
+- `btn-danger` already wired with `--red` — confirmed correct
 
 ---
 

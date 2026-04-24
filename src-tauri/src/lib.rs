@@ -29,6 +29,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::library_get_dir,
+            commands::library_scan,
             commands::audio_load,
             commands::audio_play,
             commands::audio_pause,

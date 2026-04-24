@@ -8,11 +8,50 @@ pub struct EngineState(pub Mutex<AudioEngine>);
 
 // ─── Library ─────────────────────────────────────────────────────────────────
 
+#[derive(Serialize)]
+pub struct LibraryFileEntry {
+    pub id: String,
+    pub name: String,
+    pub path: String,
+    pub ext: String,
+    pub size: u64,
+}
+
 #[tauri::command]
 pub async fn library_get_dir(app: tauri::AppHandle) -> Result<String, String> {
     use tauri::Manager;
     let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
     Ok(data_dir.join("library").to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn library_scan(app: tauri::AppHandle) -> Result<Vec<LibraryFileEntry>, String> {
+    use tauri::Manager;
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let lib_dir = data_dir.join("library");
+    if !lib_dir.exists() {
+        return Ok(vec![]);
+    }
+    let supported = ["flac", "wav", "mp3", "ogg", "opus", "aiff", "aif"];
+    let mut results = vec![];
+    let entries = std::fs::read_dir(&lib_dir).map_err(|e| e.to_string())?;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() { continue; }
+        let ext = path.extension().unwrap_or_default().to_string_lossy().to_lowercase();
+        if !supported.contains(&ext.as_str()) { continue; }
+        let stem = path.file_stem().unwrap_or_default().to_string_lossy().into_owned();
+        let name = path.file_name().unwrap_or_default().to_string_lossy().into_owned();
+        let size = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        results.push(LibraryFileEntry {
+            id: stem,
+            name,
+            path: path.to_string_lossy().into_owned(),
+            ext: ext.to_uppercase(),
+            size,
+        });
+    }
+    Ok(results)
 }
 
 // ─── Load ────────────────────────────────────────────────────────────────────
