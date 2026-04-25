@@ -821,6 +821,7 @@ function showMiniplayer(trackId) {
   const track = tracks.find(t => t.id === trackId);
   if (!track) return;
   currentPlayingId = trackId;
+  delete document.getElementById('bb-track').dataset.empty;
   updateLocateBtn();
   const mpAlbum = track.album ? (track.releaseDate ? `${track.album} (${track.releaseDate})` : track.album) : '';
   setSyncedMarqueeTexts([
@@ -910,8 +911,9 @@ function updateMediaSessionMetadata(track, artDataUrl) {
 
 function hideMiniplayer() {
   currentPlayingId = null;
-  setMarqueeText(document.getElementById('mp-track-name'), '—');
-  setMarqueeText(document.getElementById('mp-track-sub'), '—');
+  document.getElementById('bb-track').dataset.empty = '';
+  setMarqueeText(document.getElementById('mp-track-name'), 'No track selected');
+  setMarqueeText(document.getElementById('mp-track-sub'), '');
   syncMiniplayerPlayBtn(false);
   if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'none';
   const mpStVal = document.getElementById('mp-semitones-val');
@@ -944,7 +946,6 @@ function resetSpeedSlider() {
   const valEl = document.getElementById('mp-speed-val');
   valEl.textContent = '100%';
   valEl.classList.remove('speed-active');
-  document.getElementById('mp-speed-reset').classList.remove('speed-reset-visible');
   updateRangeFill(sl);
 }
 
@@ -1277,7 +1278,6 @@ document.getElementById('mp-speed').addEventListener('input', function() {
   const valEl = document.getElementById('mp-speed-val');
   valEl.textContent = pct + '%';
   valEl.classList.toggle('speed-active', isActive);
-  document.getElementById('mp-speed-reset').classList.toggle('speed-reset-visible', isActive);
   updateRangeFill(this);
   currentPlaybackRate = rate;
   if (currentPlayingId && players[currentPlayingId]) {
@@ -1285,14 +1285,12 @@ document.getElementById('mp-speed').addEventListener('input', function() {
   }
 });
 
-document.getElementById('mp-speed-reset').addEventListener('click', () => {
+document.getElementById('mp-speed').addEventListener('dblclick', () => {
   currentPlaybackRate = 1.0;
   resetSpeedSlider();
   if (currentPlayingId && players[currentPlayingId]) {
     const player = players[currentPlayingId];
     player.setSpeed(1.0);
-    // Restart to flush SoundTouch's internal buffer, which otherwise
-    // drains slowly and keeps playing at the old tempo for a moment.
     if (player.isPlaying) player.play(player.currentTime);
   }
 });
@@ -3420,9 +3418,9 @@ document.getElementById('clear-artwork-btn').addEventListener('click', async () 
     });
     tauriWin.onResized(updateMaxIcon);
 
-    // Manual drag fallback — fires if data-tauri-drag-region fails
+    // Manual drag: trigger unless click lands on interactive element
     topbar.addEventListener('mousedown', e => {
-      if (e.target === topbar || e.target.classList.contains('logo') || e.target.classList.contains('tagline')) {
+      if (!e.target.closest('button, input, a, select, [data-tauri-no-drag]')) {
         tauriWin.startDragging();
       }
     });
@@ -4201,7 +4199,9 @@ Metronome.onBeat((beatIdx) => {
 });
 
 function syncMetroMini() {
-  document.querySelector('#mm-bpm-display .mm-bpm-num').textContent = Metronome.getBpm();
+  const bpm = Metronome.getBpm();
+  document.querySelector('#mm-bpm-display .mm-bpm-num').textContent = bpm;
+  document.getElementById('metro-mini-bpm').textContent = bpm + ' bpm';
   const active = Metronome.isActive();
   document.getElementById('mm-play-btn').innerHTML = active ? ICONS.stop : ICONS.play;
   document.getElementById('mm-play-btn').classList.toggle('running', active);
@@ -4252,12 +4252,17 @@ function initChordResize() {
 
 function initSectionCollapse() {
   const metroCollapsed = localStorage.getItem('metroCollapsed') === 'true';
-  applyCollapse('metro-body', 'metro-collapse-btn', metroCollapsed);
+  applyCollapse('metro-body-wrap', 'metro-collapse-btn', metroCollapsed);
+  document.getElementById('metro-mini-bpm').classList.toggle('hidden', !metroCollapsed);
+  document.getElementById('metro-mini').classList.toggle('collapsed', metroCollapsed);
+  syncMetroMini();
 
   document.getElementById('metro-hdr').addEventListener('click', () => {
-    const collapsed = !document.getElementById('metro-body').classList.contains('collapsed');
+    const collapsed = !document.getElementById('metro-body-wrap').classList.contains('collapsed');
     localStorage.setItem('metroCollapsed', collapsed);
-    applyCollapse('metro-body', 'metro-collapse-btn', collapsed);
+    applyCollapse('metro-body-wrap', 'metro-collapse-btn', collapsed);
+    document.getElementById('metro-mini-bpm').classList.toggle('hidden', !collapsed);
+    document.getElementById('metro-mini').classList.toggle('collapsed', collapsed);
   });
 }
 

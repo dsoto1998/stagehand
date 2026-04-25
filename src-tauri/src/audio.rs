@@ -8,7 +8,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 // ── !Send OutputStream wrapper ───────────────────────────────────────────────
-struct SendStream(OutputStream);
+struct SendStream { _stream: OutputStream }
 unsafe impl Send for SendStream {}
 unsafe impl Sync for SendStream {}
 
@@ -534,7 +534,7 @@ impl AudioEngine {
         }
 
         Ok(Self {
-            _stream: SendStream(stream),
+            _stream: SendStream { _stream: stream },
             handle,
             sink: sink_arc,
             raw_bytes: Mutex::new(None),
@@ -812,7 +812,7 @@ impl AudioEngine {
                 .ok_or_else(|| format!("ASIO device not found: {name}"))?;
             let (stream, handle) = OutputStream::try_from_device(&device)
                 .map_err(|e| format!("Cannot open ASIO device '{name}': {e}"))?;
-            self._stream = SendStream(stream);
+            self._stream = SendStream { _stream: stream };
             self.handle = handle;
             return Ok(());
         }
@@ -830,7 +830,7 @@ impl AudioEngine {
         };
         let (stream, handle) = OutputStream::try_from_device(&device)
             .map_err(|e| format!("Cannot open device '{name}': {e}"))?;
-        self._stream = SendStream(stream);
+        self._stream = SendStream { _stream: stream };
         self.handle = handle;
         Ok(())
     }
