@@ -3391,6 +3391,55 @@ document.getElementById('clear-artwork-btn').addEventListener('click', async () 
   }
 });
 
+// ─── WINDOW CONTROLS ─────────────────────────────────────────
+(function() {
+  const minBtn   = document.getElementById('win-minimize');
+  const fsBtn    = document.getElementById('win-fullscreen');
+  const closeBtn = document.getElementById('win-close');
+  const topbar   = document.getElementById('topbar');
+  const iconExpand   = fsBtn.querySelector('.icon-expand');
+  const iconCompress = fsBtn.querySelector('.icon-compress');
+
+  // Tauri v2: getCurrentWindow() lives on window.__TAURI__.window
+  const tauriWin = window.__TAURI__?.window?.getCurrentWindow?.() ?? null;
+  console.log('[WinControls] Tauri window API:', tauriWin);
+
+  async function updateMaxIcon() {
+    const isMax = tauriWin ? await tauriWin.isMaximized() : !!document.fullscreenElement;
+    iconExpand.style.display   = isMax ? 'none' : '';
+    iconCompress.style.display = isMax ? ''     : 'none';
+    fsBtn.title = isMax ? 'Restore' : 'Maximize';
+  }
+
+  if (tauriWin) {
+    minBtn.addEventListener('click',   () => tauriWin.minimize());
+    closeBtn.addEventListener('click', () => tauriWin.close());
+    fsBtn.addEventListener('click', async () => {
+      await tauriWin.toggleMaximize();
+      updateMaxIcon();
+    });
+    tauriWin.onResized(updateMaxIcon);
+
+    // Manual drag fallback — fires if data-tauri-drag-region fails
+    topbar.addEventListener('mousedown', e => {
+      if (e.target === topbar || e.target.classList.contains('logo') || e.target.classList.contains('tagline')) {
+        tauriWin.startDragging();
+      }
+    });
+  } else {
+    // Fallback for plain browser dev
+    document.addEventListener('fullscreenchange', updateMaxIcon);
+    fsBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+      else document.exitFullscreen().catch(() => {});
+    });
+    minBtn.addEventListener('click',   () => window.blur());
+    closeBtn.addEventListener('click', () => window.close());
+  }
+
+  updateMaxIcon();
+})();
+
 // ─── SETTINGS POPUP ──────────────────────────────────────────
 const settingsBtn   = document.getElementById('settings-btn');
 const settingsPopup = document.getElementById('settings-popup');

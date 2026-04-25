@@ -50,6 +50,7 @@
     border-bottom: 1px solid var(--border);
     display: flex; align-items: center;
     padding: 0 20px;
+    border-top: 2px solid var(--border);
     flex-shrink: 0;
     gap: 16px;
     position: relative;
@@ -93,6 +94,27 @@
   }
   #settings-btn:hover { color: var(--text-primary); background: var(--bg-hover); }
   #settings-btn.active { color: var(--accent); }
+
+  .win-controls {
+    display: flex; align-items: center; gap: 6px;
+    padding-left: 8px;
+    border-left: 1px solid var(--border);
+  }
+  .win-btn {
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-base);
+    color: var(--text-dim);
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: color 0.12s, background 0.12s, border-color 0.12s;
+    flex-shrink: 0;
+    pointer-events: auto;
+  }
+  .win-btn:hover { border-color: var(--border-bright); color: var(--text-primary); background: var(--bg-hover); }
+  .win-close:hover { border-color: #ff4757; color: #ff4757; background: rgba(255,71,87,0.1); }
+  .win-fullscreen:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
 
   #settings-popup {
     position: absolute;
