@@ -14,6 +14,7 @@ export class TrackPlayer {
     this.duration = 0;
     this.semitones = 0;
     this.volume   = 1.0;
+    this._masterVolume = 1.0; // kept in sync by ui-controller master vol slider
     this.speed    = 1.0;
     this.loopEnabled = false;
     this.loopStart = 0;
@@ -153,7 +154,7 @@ export class TrackPlayer {
     return this.pauseOffset;
   }
 
-  get _vol() { return this.volume * VOLUME_MULTIPLIER; }
+  get _vol() { return this.volume * this._masterVolume * VOLUME_MULTIPLIER; }
 
   setVolume(v) {
     this.volume = v;

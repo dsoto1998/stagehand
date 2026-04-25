@@ -94,9 +94,9 @@ pub async fn audio_load_file(
     }
     let result = match (cached_peaks, cached_duration, cached_sample_rate) {
         (Some(peaks), Some(duration), Some(sample_rate)) => {
-            state.0.lock().load_cached(bytes, peaks, duration, sample_rate)
+            state.0.lock().load_cached(bytes, peaks, duration, sample_rate, track_id)
         }
-        _ => state.0.lock().load(bytes),
+        _ => state.0.lock().load(bytes, track_id),
     };
     log::info!("[stagehand] audio_load_file: decoded in {:.0}ms", t0.elapsed().as_millis());
     result
@@ -163,9 +163,9 @@ pub async fn audio_prefetch(
 pub async fn audio_load(
     state: State<'_, EngineState>,
     audio_bytes: Vec<u8>,
-    _track_id: String,
+    track_id: String,
 ) -> Result<LoadResult, String> {
-    state.0.lock().load(audio_bytes)
+    state.0.lock().load(audio_bytes, Some(track_id))
 }
 
 // ─── Playback ────────────────────────────────────────────────────────────────

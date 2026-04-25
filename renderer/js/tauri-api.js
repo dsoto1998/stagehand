@@ -3,6 +3,13 @@
 export const invoke = (...args) => window.__TAURI__.core.invoke(...args);
 export const listen = (...args) => window.__TAURI__.event.listen(...args);
 
+// Convert a native filesystem path to a URL the webview can fetch via the
+// Tauri asset protocol (http://asset.localhost/... on Windows/Linux,
+// https://asset.localhost/... on macOS).
+export function convertFileSrc(filePath, protocol = 'asset') {
+  return window.__TAURI__.core.convertFileSrc(filePath, protocol);
+}
+
 let _cachePath = null;
 let _libraryPath = null;
 

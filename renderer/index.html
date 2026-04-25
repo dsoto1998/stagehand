@@ -79,26 +79,14 @@
         </div>
       </div>
       <div class="sp-divider"></div>
-      <div class="sp-section-label">Keyboard Shortcuts</div>
-      <div class="sp-shortcuts-list">
-        <div class="sp-shortcut-group">Playback</div>
-        <div class="sp-shortcut-row"><span>Play / Pause</span><span class="sp-keys"><kbd>Space</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Previous track</span><span class="sp-keys"><kbd>[</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Next track</span><span class="sp-keys"><kbd>]</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Seek back 5s</span><span class="sp-keys"><kbd>&larr;</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Seek forward 5s</span><span class="sp-keys"><kbd>&rarr;</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Seek back 15s</span><span class="sp-keys"><kbd>Shift</kbd> <kbd>&larr;</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Seek forward 15s</span><span class="sp-keys"><kbd>Shift</kbd> <kbd>&rarr;</kbd></span></div>
-        <div class="sp-shortcut-group">Loop</div>
-        <div class="sp-shortcut-row"><span>Toggle loop</span><span class="sp-keys"><kbd>L</kbd></span></div>
-        <div class="sp-shortcut-group">Metronome</div>
-        <div class="sp-shortcut-row"><span>Start / Stop</span><span class="sp-keys"><kbd>M</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Tap tempo</span><span class="sp-keys"><kbd>T</kbd></span></div>
-        <div class="sp-shortcut-group">Library</div>
-        <div class="sp-shortcut-row"><span>Focus search</span><span class="sp-keys"><kbd>Ctrl</kbd> <kbd>F</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Select all tracks</span><span class="sp-keys"><kbd>Ctrl</kbd> <kbd>A</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Delete selected</span><span class="sp-keys"><kbd>Del</kbd></span></div>
-        <div class="sp-shortcut-row"><span>Clear search / Close</span><span class="sp-keys"><kbd>Esc</kbd></span></div>
+      <div class="sp-shortcuts-header" id="sp-shortcuts-header">
+        <span class="sp-section-label">Keyboard Shortcuts</span>
+        <button class="sp-shortcuts-toggle" id="sp-shortcuts-toggle" aria-label="Expand keyboard shortcuts" aria-expanded="false">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+      </div>
+      <div class="sp-shortcuts-list hidden" id="sp-shortcuts-list">
+        <!-- dynamically populated by renderShortcuts() -->
       </div>
     </div>
   </div>
@@ -240,7 +228,7 @@
       </div>
       <div id="bb-scrub-wrap">
         <div id="mp-scrub-bar" aria-label="Playback position" title="Seek">
-          <div id="mp-scrub-fill"></div>
+          <canvas id="mp-waveform-canvas"></canvas>
           <div id="mp-scrub-ball"></div>
           <div id="mp-loop-region" class="mp-loop-region hidden"></div>
           <div id="mp-loop-handle-in"  class="mp-loop-handle" data-handle="in"></div>

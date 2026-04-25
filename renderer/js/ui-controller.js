@@ -1,12 +1,12 @@
 // ─── UI CONTROLLER ───────────────────────────────────────────
-import { resume, setMasterVolume } from './audio-engine.js';
+import { resume, getCtx, setMasterVolume } from './audio-engine.js';
 import { ICONS } from './icons.js';
 import * as LibraryManager from './library-manager.js';
 import { TrackPlayer, players } from './track-player.js';
 import { Metronome, TapTempo } from './metronome.js';
-import { renderWaveform } from './waveform.js';
+import { renderWaveform, buildWaveformLayers, renderPlayerWaveform } from './waveform.js';
 import * as ArtworkManager from './artwork-manager.js';
-import { listen, invoke, writeAudioFile, scanLibraryDir } from './tauri-api.js';
+import { listen, invoke, writeAudioFile, scanLibraryDir, convertFileSrc } from './tauri-api.js';
 
 
 // ─── KEY CONSTANTS ────────────────────────────────────────────
@@ -26,6 +26,60 @@ function populateKeyRootSelect(sel, mode, selectedRoot) {
   const names = mode === 'major' ? MAJOR_ROOT_NAMES : MINOR_ROOT_NAMES;
   sel.innerHTML = '<option value="">—</option>' +
     names.map((n, i) => `<option value="${i}"${selectedRoot === i ? ' selected' : ''}>${n}</option>`).join('');
+}
+
+// ─── KEYBOARD SHORTCUTS ───────────────────────────────────────
+const SHORTCUT_DEFAULTS = [
+  { id: 'play-pause',      group: 'Playback',  label: 'Play / Pause',       key: ' ',          modifiers: []        },
+  { id: 'prev-track',      group: 'Playback',  label: 'Previous track',     key: '[',          modifiers: []        },
+  { id: 'next-track',      group: 'Playback',  label: 'Next track',         key: ']',          modifiers: []        },
+  { id: 'seek-back-5',     group: 'Playback',  label: 'Seek back 5s',       key: 'ArrowLeft',  modifiers: []        },
+  { id: 'seek-fwd-5',      group: 'Playback',  label: 'Seek forward 5s',    key: 'ArrowRight', modifiers: []        },
+  { id: 'seek-back-15',    group: 'Playback',  label: 'Seek back 15s',      key: 'ArrowLeft',  modifiers: ['Shift'] },
+  { id: 'seek-fwd-15',     group: 'Playback',  label: 'Seek forward 15s',   key: 'ArrowRight', modifiers: ['Shift'] },
+  { id: 'loop-toggle',     group: 'Loop',      label: 'Toggle loop',        key: 'l',          modifiers: []        },
+  { id: 'loop-in',         group: 'Loop',      label: 'Set loop in point',  key: 'i',          modifiers: []        },
+  { id: 'loop-out',        group: 'Loop',      label: 'Set loop out point', key: 'o',          modifiers: []        },
+  { id: 'metro-toggle',    group: 'Metronome', label: 'Start / Stop',       key: 'm',          modifiers: []        },
+  { id: 'tap-tempo',       group: 'Metronome', label: 'Tap tempo',          key: 't',          modifiers: []        },
+  { id: 'focus-search',    group: 'Library',   label: 'Focus search',       key: 'f',          modifiers: ['Ctrl']  },
+  { id: 'select-all',      group: 'Library',   label: 'Select all tracks',  key: 'a',          modifiers: ['Ctrl']  },
+  { id: 'delete-selected', group: 'Library',   label: 'Delete selected',    key: 'Delete',     modifiers: []        },
+];
+
+function _loadShortcuts() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('stagehand_shortcuts') || '{}');
+    const map = {};
+    for (const def of SHORTCUT_DEFAULTS) {
+      map[def.id] = saved[def.id] ? { ...def, ...saved[def.id] } : { ...def };
+    }
+    return map;
+  } catch { return Object.fromEntries(SHORTCUT_DEFAULTS.map(d => [d.id, { ...d }])); }
+}
+
+function _saveShortcuts() {
+  const overrides = {};
+  for (const def of SHORTCUT_DEFAULTS) {
+    const sc = shortcuts[def.id];
+    if (sc.key !== def.key || JSON.stringify(sc.modifiers) !== JSON.stringify(def.modifiers)) {
+      overrides[def.id] = { key: sc.key, modifiers: sc.modifiers };
+    }
+  }
+  localStorage.setItem('stagehand_shortcuts', JSON.stringify(overrides));
+}
+
+let shortcuts = _loadShortcuts();
+
+function matchShortcut(e, id) {
+  const sc = shortcuts[id];
+  if (!sc) return false;
+  const mods = sc.modifiers || [];
+  if (mods.includes('Ctrl')  !== (e.ctrlKey || e.metaKey)) return false;
+  if (mods.includes('Shift') !== e.shiftKey) return false;
+  if (mods.includes('Alt')   !== e.altKey)   return false;
+  const k = sc.key;
+  return e.key === k || (k.length === 1 && e.key.toLowerCase() === k.toLowerCase());
 }
 
 // ─── VIRTUAL SCROLL STATE ─────────────────────────────────────
@@ -625,6 +679,14 @@ function matchesSearch(track) {
 function getSortedFilteredTracks() {
   const source = searchQuery ? tracks.filter(matchesSearch) : tracks;
   const dir = songsSortDir === 'asc' ? 1 : -1;
+  // Pre-compute album→year so all tracks from same album sort as a unit
+  const albumYearMap = new Map();
+  if (songsSortField === 'album') {
+    tracks.forEach(t => {
+      const key = (t.album || '').trim();
+      if (t.releaseDate && !albumYearMap.has(key)) albumYearMap.set(key, t.releaseDate);
+    });
+  }
   return [...source].sort((a, b) => {
     switch (songsSortField) {
       case 'artist': {
@@ -632,8 +694,21 @@ function getSortedFilteredTracks() {
         return c !== 0 ? dir * c : (a.name || '').localeCompare(b.name || '');
       }
       case 'album': {
-        const c = (a.album || '').localeCompare(b.album || '');
+        const ya = albumYearMap.get((a.album || '').trim()) || '';
+        const yb = albumYearMap.get((b.album || '').trim()) || '';
+        if (!ya && !yb) {
+          const c = (a.album || '').localeCompare(b.album || '');
+          if (c !== 0) return c;
+          const ta = a.trackNumber || 0, tb = b.trackNumber || 0;
+          if (ta !== tb) return ta - tb;
+          return (a.name || '').localeCompare(b.name || '');
+        }
+        if (!ya) return 1;
+        if (!yb) return -1;
+        const c = yb.localeCompare(ya); // newest first when dir=asc(1)
         if (c !== 0) return dir * c;
+        const ca = (a.album || '').localeCompare(b.album || '');
+        if (ca !== 0) return ca;
         const ta = a.trackNumber || 0, tb = b.trackNumber || 0;
         if (ta !== tb) return ta - tb;
         return (a.name || '').localeCompare(b.name || '');
@@ -767,7 +842,32 @@ function showMiniplayer(trackId) {
   const player = players[trackId];
   const totalStr = player && player.duration ? formatTime(player.duration) : '--:--';
   document.getElementById('mp-time-display').textContent = '0:00 / ' + totalStr;
+
+  // Set guard BEFORE touching canvas — any in-flight async decode for a previous
+  // track will bail out when it checks _waveformForTrackId !== its own trackId.
+  _waveformForTrackId = trackId;
+
+  // Explicit clear so no stale pixels from the previous track bleed through.
+  if (mpWaveformCanvas) {
+    const wCtx = mpWaveformCanvas.getContext('2d');
+    wCtx.clearRect(0, 0, mpWaveformCanvas.width, mpWaveformCanvas.height);
+  }
+
+  currentPlayerPeaks = track.peaks?.length ? track.peaks : null;
+  _waveformLayers    = null;
+  currentPlayProgress = 0;
+  _lastFrac = 0; _lastMs = performance.now(); _lastDuration = track.duration || 0;
   setScrubFrac(0);
+
+  // If peaks were cached, pre-build layers immediately.
+  if (currentPlayerPeaks) {
+    _rebuildWaveformLayers();
+  } else if (track.filePath) {
+    // If peaks weren't cached, kick off the JS-side decode pipeline.
+    // The three _waveformForTrackId guards inside prevent a stale decode from
+    // painting after the user has already switched to a different track.
+    _loadWaveformFromFile(trackId, track.filePath);
+  }
 
   // Sync loop handles and state for this track
   if (player) {
@@ -819,6 +919,11 @@ function hideMiniplayer() {
   mpStVal.classList.remove('xpose-active');
   document.getElementById('mp-xpose-reset').classList.remove('xpose-reset-visible');
   document.getElementById('mp-time-display').textContent = '0:00 / --:--';
+  _waveformForTrackId = null; // abort any in-flight waveform load
+  currentPlayerPeaks = null;
+  _waveformLayers    = null;
+  currentPlayProgress = 0;
+  _lastFrac = 0; _lastMs = 0; _lastDuration = 0;
   setScrubFrac(0);
   document.getElementById('mp-loop-times').classList.add('hidden');
   document.getElementById('mp-loop-btn').classList.remove('loop-active');
@@ -855,7 +960,13 @@ function syncMiniplayerPlayBtn(isPlaying) {
 
 function updateMiniplayerProgress(frac, t, duration) {
   if (seeking) return;
-  setScrubFrac(frac);
+  // Suppress events that arrive before Rust has processed the last seek —
+  // they carry the old frame counter and would snap the playhead back.
+  if (performance.now() - _seekAt < SEEK_GRACE_MS) return;
+  // Anchor the rAF interpolation to this confirmed position.
+  _lastFrac     = frac;
+  _lastMs       = performance.now();
+  _lastDuration = duration;
   document.getElementById('mp-time-display').textContent =
     formatTime(t) + ' / ' + formatTime(duration);
 }
@@ -878,7 +989,8 @@ document.getElementById('mp-play').addEventListener('click', () => {
       // Seeked while paused — must rebuild source at new position
       player._seekedWhilePaused = false;
       player._paused = false;
-      const effectiveVol = player.volume * masterVolume;
+      player._masterVolume = masterVolume;
+    const effectiveVol = player.volume * masterVolume;
       player.play(player.pauseOffset, effectiveVol).then(() => {
         syncMiniplayerPlayBtn(true);
         renderCurrentTab();
@@ -927,8 +1039,8 @@ document.addEventListener('keydown', (e) => {
       document.getElementById('mp-prev').click();
       return;
   }
-  // Ctrl+F: focus search (works from anywhere, even inputs)
-  if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+  // Focus search works from anywhere, even inside inputs
+  if (matchShortcut(e, 'focus-search')) {
     e.preventDefault();
     document.getElementById('lib-search').focus();
     return;
@@ -938,47 +1050,36 @@ document.addEventListener('keydown', (e) => {
   const kbTag = e.target.tagName;
   const inInput = kbTag === 'INPUT' || kbTag === 'TEXTAREA' || e.target.isContentEditable;
   if (!inInput) {
-    // [ / ] — prev / next track
-    if (e.key === '[') { e.preventDefault(); document.getElementById('mp-prev').click(); return; }
-    if (e.key === ']') { e.preventDefault(); document.getElementById('mp-next').click(); return; }
-    // T — tap tempo, M — toggle metronome
-    if (e.key === 't' || e.key === 'T') { e.preventDefault(); document.getElementById('mm-tap-btn').click(); return; }
-    if (e.key === 'm' || e.key === 'M') { e.preventDefault(); toggleMetronome(); return; }
+    if (matchShortcut(e, 'prev-track'))   { e.preventDefault(); document.getElementById('mp-prev').click(); return; }
+    if (matchShortcut(e, 'next-track'))   { e.preventDefault(); document.getElementById('mp-next').click(); return; }
+    if (matchShortcut(e, 'tap-tempo'))    { e.preventDefault(); document.getElementById('mm-tap-btn').click(); return; }
+    if (matchShortcut(e, 'metro-toggle')) { e.preventDefault(); toggleMetronome(); return; }
 
-    // Shortcuts requiring a playing track
     if (currentPlayingId) {
       const lp = players[currentPlayingId];
       if (lp) {
-        // L — toggle loop
-        if (e.key === 'l' || e.key === 'L') { e.preventDefault(); document.getElementById('mp-loop-btn').click(); return; }
-        // ← / → — seek ±5s (Shift: ±15s)
-        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-          e.preventDefault();
-          const delta = (e.shiftKey ? 15 : 5) * (e.key === 'ArrowLeft' ? -1 : 1);
-          lp.seek(Math.max(0, Math.min(1, (lp.currentTime + delta) / lp.duration)));
-          return;
-        }
-        // I / O — set loop in / out point
+        if (matchShortcut(e, 'loop-toggle')) { e.preventDefault(); document.getElementById('mp-loop-btn').click(); return; }
+        if (matchShortcut(e, 'seek-back-5'))  { e.preventDefault(); seekPlayer(lp, (lp.currentTime - 5)  / lp.duration); return; }
+        if (matchShortcut(e, 'seek-fwd-5'))   { e.preventDefault(); seekPlayer(lp, (lp.currentTime + 5)  / lp.duration); return; }
+        if (matchShortcut(e, 'seek-back-15')) { e.preventDefault(); seekPlayer(lp, (lp.currentTime - 15) / lp.duration); return; }
+        if (matchShortcut(e, 'seek-fwd-15'))  { e.preventDefault(); seekPlayer(lp, (lp.currentTime + 15) / lp.duration); return; }
         const minGap = Math.max(0.005, 0.1 / (lp.duration || 1));
-        if (e.key === 'i' || e.key === 'I') {
+        if (matchShortcut(e, 'loop-in')) {
           e.preventDefault();
-          const frac = Math.min(lp.currentTime / lp.duration, lp.loopEnd - minGap);
-          lp.setLoopPoints(frac, lp.loopEnd);
+          lp.setLoopPoints(Math.min(lp.currentTime / lp.duration, lp.loopEnd - minGap), lp.loopEnd);
           updateLoopOverlays(lp); syncLoopTimesDisplay(lp);
           return;
         }
-        if (e.key === 'o' || e.key === 'O') {
+        if (matchShortcut(e, 'loop-out')) {
           e.preventDefault();
-          const frac = Math.max(lp.currentTime / lp.duration, lp.loopStart + minGap);
-          lp.setLoopPoints(lp.loopStart, frac);
+          lp.setLoopPoints(lp.loopStart, Math.max(lp.currentTime / lp.duration, lp.loopStart + minGap));
           updateLoopOverlays(lp); syncLoopTimesDisplay(lp);
           return;
         }
       }
     }
 
-    // Space — play / pause
-    if (e.code === 'Space') { e.preventDefault(); document.getElementById('mp-play').click(); return; }
+    if (matchShortcut(e, 'play-pause')) { e.preventDefault(); document.getElementById('mp-play').click(); return; }
   }
 });
 
@@ -1041,7 +1142,7 @@ document.getElementById('mp-prev').addEventListener('click', () => {
   if (!currentPlayingId) return;
   const currentPlayer = players[currentPlayingId];
   if (currentPlayer && currentPlayer.currentTime >= 3) {
-    currentPlayer.seek(0);
+    seekPlayer(currentPlayer, 0);
     return;
   }
   if (activePlaylistId) {
@@ -1140,7 +1241,8 @@ document.getElementById('mp-vol').addEventListener('input', function() {
   updateRangeFill(this);
   if (currentPlayingId && players[currentPlayingId]) {
     const p = players[currentPlayingId];
-    invoke('audio_set_volume', { volume: p.volume * masterVolume }).catch(() => {});
+    p._masterVolume = masterVolume;
+    invoke('audio_set_volume', { volume: p._vol }).catch(() => {});
   }
 });
 
@@ -1177,12 +1279,14 @@ document.getElementById('mp-speed').addEventListener('input', function() {
   valEl.classList.toggle('speed-active', isActive);
   document.getElementById('mp-speed-reset').classList.toggle('speed-reset-visible', isActive);
   updateRangeFill(this);
+  currentPlaybackRate = rate;
   if (currentPlayingId && players[currentPlayingId]) {
     players[currentPlayingId].setSpeed(rate);
   }
 });
 
 document.getElementById('mp-speed-reset').addEventListener('click', () => {
+  currentPlaybackRate = 1.0;
   resetSpeedSlider();
   if (currentPlayingId && players[currentPlayingId]) {
     const player = players[currentPlayingId];
@@ -1194,23 +1298,163 @@ document.getElementById('mp-speed-reset').addEventListener('click', () => {
 });
 
 // ─── SCRUB BAR ──────────────────────────────────────────────
-const mpScrubBar = document.getElementById('mp-scrub-bar');
-const mpScrubFill = document.getElementById('mp-scrub-fill');
-const mpScrubBall = document.getElementById('mp-scrub-ball');
+const mpScrubBar    = document.getElementById('mp-scrub-bar');
+const mpScrubBall   = document.getElementById('mp-scrub-ball');
+const mpWaveformCanvas = document.getElementById('mp-waveform-canvas');
 
-function setScrubFrac(frac) {
-  mpScrubFill.style.width = (frac * 100).toFixed(4) + '%';
-  mpScrubBall.style.transform = `translate(${(frac * mpScrubBar.clientWidth - 6.5).toFixed(3)}px, -50%)`;
+let currentPlayerPeaks  = null;
+let _waveformLayers     = null;
+let currentPlayProgress = 0;
+
+// Tracks which track the waveform canvas is rendering for.
+// Every async waveform operation checks this before touching the canvas.
+// Set to a trackId in showMiniplayer, cleared to null in hideMiniplayer.
+let _waveformForTrackId = null;
+
+// ─── JS-SIDE WAVEFORM PIPELINE ───────────────────────────────
+// Used when Rust has no cached peaks yet. Fetches the audio file via
+// the Tauri asset protocol, decodes it in the browser's AudioContext,
+// and generates peaks. Three guard checks prevent stale results from
+// overwriting the canvas after the user has switched tracks.
+
+function _peaksFromAudioBuffer(audioBuffer, bucketCount = 600) {
+  const data = audioBuffer.getChannelData(0);
+  const spc  = Math.max(1, Math.floor(data.length / bucketCount));
+  const out  = new Float32Array(bucketCount);
+  for (let i = 0; i < bucketCount; i++) {
+    let max = 0;
+    const end = Math.min((i + 1) * spc, data.length);
+    for (let j = i * spc; j < end; j++) {
+      const a = Math.abs(data[j]);
+      if (a > max) max = a;
+    }
+    out[i] = max;
+  }
+  return Array.from(out);
 }
 
+async function _loadWaveformFromFile(trackId, filePath) {
+  try {
+    const src = convertFileSrc(filePath);
+    const response = await fetch(src);
+    if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${src}`);
+    const ab = await response.arrayBuffer();
+
+    if (_waveformForTrackId !== trackId) return; // switched away during fetch
+
+    // Bail if peaks_ready already arrived from Rust while we were fetching.
+    if (currentPlayerPeaks) return;
+
+    // decodeAudioData detaches ab; pass a copy if ab is needed again (here it isn't).
+    const decoded = await getCtx().decodeAudioData(ab);
+
+    if (_waveformForTrackId !== trackId) return; // switched away during decode
+
+    const peaks = _peaksFromAudioBuffer(decoded);
+
+    if (_waveformForTrackId !== trackId) return; // final guard before paint
+
+    // Persist so next play is instant.
+    const track = tracks.find(t => t.id === trackId);
+    if (track && !track.peaks?.length) {
+      track.peaks = peaks;
+      LibraryManager.saveMeta({ id: trackId, peaks }).catch(() => {});
+    }
+
+    currentPlayerPeaks = peaks;
+    _rebuildWaveformLayers();
+  } catch (err) {
+    // Surface SecurityError / EncodingError so it's diagnosable.
+    console.error(`[stagehand] waveform JS decode failed (${trackId}): ${err.name} — ${err.message}`);
+  }
+}
+
+// Interpolation anchors — updated on every playback_progress event.
+// The rAF loop advances from these between events for smooth 60 fps motion.
+let _lastFrac       = 0;   // fraction at last event
+let _lastMs         = 0;   // performance.now() at last event
+let _lastDuration   = 0;   // audio duration at last event (seconds)
+let currentPlaybackRate = 1.0; // kept in sync with the speed slider
+let _seekAt         = 0;   // performance.now() of last seek — suppresses stale events
+const SEEK_GRACE_MS = 300; // ignore progress events this long after a seek
+
+// Seek the current player to a fraction and stamp _seekAt so stale
+// playback_progress events are suppressed until Rust catches up.
+function seekPlayer(player, frac) {
+  frac = Math.max(0, Math.min(1, frac));
+  _lastFrac = frac;
+  _lastMs   = performance.now();
+  _seekAt   = performance.now();
+  player.seek(frac);
+}
+
+// Apply frac visually — single point of truth for ball + canvas.
+// W and H are passed to avoid extra DOM reads per rAF frame.
+function _applyFrac(frac, W, H) {
+  currentPlayProgress = frac;
+  mpScrubBall.style.transform = `translateX(${(frac * W - 1).toFixed(3)}px)`;
+  if (mpWaveformCanvas) renderPlayerWaveform(mpWaveformCanvas, _waveformLayers, frac, W, H);
+}
+
+// (Re)build offscreen layers whenever peaks or canvas dimensions change,
+// then repaint immediately. Called once per peaks update or resize.
+function _rebuildWaveformLayers() {
+  const W = mpScrubBar.clientWidth;
+  const H = mpScrubBar.clientHeight;
+  if (W === 0) return;
+  _waveformLayers = buildWaveformLayers(currentPlayerPeaks, W, H);
+  _applyFrac(currentPlayProgress, W, H);
+}
+
+// Full redraw from current state (ResizeObserver, peaks change, etc.)
+function drawPlayerWaveform() {
+  _rebuildWaveformLayers();
+}
+
+// setScrubFrac: seeking drag path — immediately paints and resets interpolation anchor.
+function setScrubFrac(frac) {
+  _lastFrac = frac;
+  _lastMs   = performance.now();
+  const W = mpScrubBar.clientWidth;
+  const H = mpScrubBar.clientHeight;
+  _applyFrac(frac, W, H);
+}
+
+// ─── rAF INTERPOLATION LOOP ─────────────────────────────────
+// Runs at 60 fps. Between playback_progress events it extrapolates forward
+// using the known playback rate, keeping the playhead perfectly in sync.
+;(function rafLoop() {
+  if (!seeking && currentPlayingId && players[currentPlayingId]?.isPlaying) {
+    const elapsed = (performance.now() - _lastMs) / 1000;
+    const extra   = _lastDuration > 0 ? (elapsed * currentPlaybackRate) / _lastDuration : 0;
+    const frac    = Math.min(1, _lastFrac + extra);
+    const W = mpScrubBar.clientWidth;
+    const H = mpScrubBar.clientHeight;
+    if (W > 0) _applyFrac(frac, W, H);
+  }
+  requestAnimationFrame(rafLoop);
+})();
+
+let _scrubRafPending = false;
 function onScrubMove(e) {
   const rect = mpScrubBar.getBoundingClientRect();
   seekFrac = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-  setScrubFrac(seekFrac);
+  _lastFrac = seekFrac;
+  _lastMs   = performance.now();
   const player = players[currentPlayingId];
   if (player && player.duration) {
     document.getElementById('mp-time-display').textContent =
       formatTime(seekFrac * player.duration) + ' / ' + formatTime(player.duration);
+  }
+  // Throttle canvas redraws to one per rAF — ball position updates immediately via rAF loop.
+  if (!_scrubRafPending) {
+    _scrubRafPending = true;
+    requestAnimationFrame(() => {
+      _scrubRafPending = false;
+      const W = mpScrubBar.clientWidth;
+      const H = mpScrubBar.clientHeight;
+      if (W > 0) _applyFrac(seekFrac, W, H);
+    });
   }
 }
 
@@ -1220,13 +1464,22 @@ function onScrubUp() {
   seeking = false;
   if (currentPlayingId && players[currentPlayingId]) {
     const player = players[currentPlayingId];
-    // Call seek() directly — do NOT call setLoopEnabled() here because it
-    // internally calls play() again, which races seek's own async play()
-    // and snaps the playhead back to the pre-seek position. Loop state
-    // (loopEnabled, loopStart, loopEnd) must be left untouched so the
-    // user's loop region is preserved across scrubs.
-    player.seek(seekFrac);
+    // Anchor interpolation to the seek destination so the rAF loop doesn't
+    // snap back to the pre-drag position while waiting for the next event.
+    // seekPlayer stamps _seekAt so stale playback_progress events are suppressed
+    // until Rust catches up. Do NOT call setLoopEnabled() here — it internally
+    // calls play() again, races seek's own async play(), and snaps the playhead.
+    seekPlayer(player, seekFrac);
   }
+}
+
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => {
+    drawPlayerWaveform();
+    if (currentPlayingId && players[currentPlayingId]) {
+      updateLoopOverlays(players[currentPlayingId]);
+    }
+  }).observe(mpScrubBar);
 }
 
 mpScrubBar.addEventListener('mousedown', e => {
@@ -1434,6 +1687,7 @@ async function playTrack(id, fromPlaylistId, slotIdx) {
   try {
     player.pauseOffset = 0; // always start from beginning on row click
     // Scale track volume by master volume for the Rust sink
+    player._masterVolume = masterVolume;
     const effectiveVol = player.volume * masterVolume;
     console.time(`[stagehand] playTrack:audio_play`);
     await player.play(undefined, effectiveVol);
@@ -1876,7 +2130,12 @@ function renderArtistDrillDown(artistName) {
   const sortedAlbums = [...albumMap.entries()].sort((a, b) => {
     if (a[0] === 'Unknown Album') return 1;
     if (b[0] === 'Unknown Album') return -1;
-    return a[0].localeCompare(b[0]);
+    const ya = albumReleaseYear(a[1]);
+    const yb = albumReleaseYear(b[1]);
+    if (!ya && !yb) return a[0].localeCompare(b[0]);
+    if (!ya) return 1;
+    if (!yb) return -1;
+    return yb.localeCompare(ya); // newest first
   });
 
   trackList.appendChild(buildDrillColHeader());
@@ -1995,8 +2254,13 @@ function renderAlbumDrillDown(albumName) {
       <div class="artist-drill-title">${escHtml(drillTitle)}</div>
       ${drillArtistStr ? `<div class="artist-drill-subtitle">${escHtml(drillArtistStr)}</div>` : ''}
     </div>
+    <button class="drill-edit-info-btn" title="Edit album info">Edit Info</button>
     <div class="artist-drill-count">${albumTracks.length} track${albumTracks.length !== 1 ? 's' : ''}</div>
   `;
+  header.querySelector('.drill-edit-info-btn').addEventListener('click', () => {
+    const current = tracks.filter(t => (t.album || '').trim() === albumName || (albumName === 'Unknown Album' && !t.album?.trim()));
+    showInfoModal(current.map(t => t.id));
+  });
 
   trackList.innerHTML = '';
   trackList.appendChild(header);
@@ -3205,12 +3469,104 @@ document.addEventListener('click', e => {
   }
 });
 
+// ─── KEYBOARD SHORTCUTS UI ────────────────────────────────────
+let _scCapturingId = null;
+let _scCaptureCleanup = null;
+
+function _keyToDisplay(key) {
+  const map = { ' ': 'Space', 'ArrowLeft': '←', 'ArrowRight': '→', 'ArrowUp': '↑', 'ArrowDown': '↓',
+    'Delete': 'Del', 'Backspace': '⌫', 'Enter': '↵', 'Escape': 'Esc', 'Tab': 'Tab' };
+  return map[key] || (key.length === 1 ? key.toUpperCase() : key);
+}
+
+function _shortcutChips(sc) {
+  const parts = [...(sc.modifiers || []).filter(m => ['Ctrl','Shift','Alt'].includes(m)), _keyToDisplay(sc.key)];
+  return parts.map(p => `<kbd>${p}</kbd>`).join(' ');
+}
+
+function renderShortcuts() {
+  const list = document.getElementById('sp-shortcuts-list');
+  if (!list) return;
+  const groups = {};
+  for (const def of SHORTCUT_DEFAULTS) {
+    if (!groups[def.group]) groups[def.group] = [];
+    groups[def.group].push(shortcuts[def.id]);
+  }
+  let html = '<p class="sp-shortcuts-hint">Click any key to rebind</p>';
+  for (const [group, items] of Object.entries(groups)) {
+    html += `<div class="sp-shortcut-group">${group}</div>`;
+    for (const sc of items) {
+      html += `<div class="sp-shortcut-row" data-sc-id="${sc.id}">` +
+        `<span>${sc.label}</span>` +
+        `<span class="sp-keys sp-keys-editable" data-sc-id="${sc.id}">${_shortcutChips(sc)}</span>` +
+        `</div>`;
+    }
+  }
+  html += `<div class="sp-shortcuts-footer">` +
+    `<button class="sp-btn-small" id="sp-shortcuts-reset">Reset to defaults</button>` +
+    `</div>`;
+  list.innerHTML = html;
+  list.querySelectorAll('.sp-keys-editable').forEach(el => {
+    el.addEventListener('click', e => { e.stopPropagation(); _startScCapture(el.dataset.scId); });
+  });
+  document.getElementById('sp-shortcuts-reset')?.addEventListener('click', _resetShortcuts);
+}
+
+function _startScCapture(id) {
+  if (_scCapturingId) _endScCapture(true);
+  _scCapturingId = id;
+  const row = document.querySelector(`.sp-shortcut-row[data-sc-id="${id}"]`);
+  if (!row) return;
+  row.classList.add('capturing');
+  row.querySelector('.sp-keys-editable').innerHTML = '<kbd>Press key…</kbd>';
+  function onKeydown(e) {
+    if (['Control','Shift','Alt','Meta','CapsLock'].includes(e.key)) return;
+    e.preventDefault(); e.stopPropagation();
+    if (e.key === 'Escape') { _endScCapture(true); return; }
+    const mods = [];
+    if (e.ctrlKey || e.metaKey) mods.push('Ctrl');
+    if (e.shiftKey) mods.push('Shift');
+    if (e.altKey) mods.push('Alt');
+    shortcuts[id] = { ...shortcuts[id], key: e.key, modifiers: mods };
+    _saveShortcuts();
+    _endScCapture(false);
+    renderShortcuts();
+  }
+  document.addEventListener('keydown', onKeydown, { capture: true });
+  _scCaptureCleanup = () => document.removeEventListener('keydown', onKeydown, { capture: true });
+}
+
+function _endScCapture(cancel) {
+  if (!_scCapturingId) return;
+  if (_scCaptureCleanup) { _scCaptureCleanup(); _scCaptureCleanup = null; }
+  const row = document.querySelector(`.sp-shortcut-row[data-sc-id="${_scCapturingId}"]`);
+  if (row) row.classList.remove('capturing');
+  _scCapturingId = null;
+  if (cancel) renderShortcuts();
+}
+
+function _resetShortcuts() {
+  shortcuts = Object.fromEntries(SHORTCUT_DEFAULTS.map(d => [d.id, { ...d }]));
+  localStorage.removeItem('stagehand_shortcuts');
+  renderShortcuts();
+}
+
+const _scToggleBtn = document.getElementById('sp-shortcuts-toggle');
+const _scList = document.getElementById('sp-shortcuts-list');
+document.getElementById('sp-shortcuts-header')?.addEventListener('click', () => {
+  const opening = _scList.classList.contains('hidden');
+  _scList.classList.toggle('hidden', !opening);
+  _scToggleBtn.classList.toggle('open', opening);
+  _scToggleBtn.setAttribute('aria-expanded', String(opening));
+  if (opening) renderShortcuts();
+});
+
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape' && !settingsPopup.classList.contains('hidden')) {
     settingsPopup.classList.add('hidden');
     settingsBtn.classList.remove('active');
   }
-  if ((e.ctrlKey || e.metaKey) && e.key === 'a') {
+  if (matchShortcut(e, 'select-all')) {
     const active = document.activeElement;
     if (!active || active === document.body || active.closest('#panel-library')) {
       e.preventDefault();
@@ -3218,8 +3574,7 @@ document.addEventListener('keydown', e => {
       updateSelectionClasses();
     }
   }
-  // Delete key — remove selected tracks when focus is in library (not in an input)
-  if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.size > 0) {
+  if ((matchShortcut(e, 'delete-selected') || e.key === 'Backspace') && selectedIds.size > 0) {
     const active = document.activeElement;
     if (!active || active === document.body || (active.closest('#panel-library') && !active.matches('input, textarea'))) {
       e.preventDefault();
@@ -3358,7 +3713,7 @@ trackList.addEventListener('scroll', () => {
   requestAnimationFrame(() => {
     rafPending = false;
     if (activeTab === 'songs') {
-      renderVirtualList(trackList, tracks, buildTrackRow);
+      renderVirtualList(trackList, getSortedFilteredTracks(), buildTrackRow);
     } else if (activeTab === 'artists' && currentArtistView === null) {
       const groups = getArtistGroups();
       const artistItems = groups.map(([name, trks]) => {
@@ -4149,29 +4504,41 @@ document.getElementById('mp-loop-btn').addEventListener('click', () => {
     '<div class="lib-empty-state"><div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></div><div class="es-text">Loading Library…</div></div>';
   await loadLibrary();
 
-  // Background decode complete — update waveform and cache peaks in IDB
+  // Background decode complete — update waveform and cache peaks in IDB.
+  // Rust now includes track_id in the payload so we can apply peaks to the
+  // correct track regardless of when the event arrives relative to showMiniplayer.
   listen('peaks_ready', e => {
-    const { duration, peaks } = e.payload;
-    if (!currentPlayingId) return;
-    const track = tracks.find(t => t.id === currentPlayingId);
-    const player = players[currentPlayingId];
-    if (!track || !player) return;
-    // Update in-memory track state
-    track.peaks = peaks;
-    track.nativeDuration = duration;
-    if (player.duration === 0) player.duration = duration;
-    if (!player.peaks) player.peaks = peaks;
-    // Cache to IDB so next load is instant
-    LibraryManager.saveMeta({
-      id: currentPlayingId,
-      peaks,
-      nativeDuration: duration,
-      sampleRate: track.sampleRate,
-    }).catch(() => {});
-    // Re-render waveform in miniplayer if visible
-    const wvCanvas = document.querySelector('.mini-waveform canvas');
-    if (wvCanvas && peaks?.length) {
-      renderWaveform(wvCanvas, peaks);
+    try {
+      const { track_id, duration, peaks } = e.payload;
+
+      // Always update the in-memory track so showMiniplayer finds peaks even
+      // if it's called after this event (timing race with prefetch/fast decode).
+      const track = tracks.find(t => t.id === track_id);
+      if (track) {
+        if (!track.peaks?.length) track.peaks = peaks;
+        if (!track.nativeDuration) track.nativeDuration = duration;
+        LibraryManager.saveMeta({
+          id: track_id,
+          peaks,
+          nativeDuration: duration,
+          sampleRate: track.sampleRate,
+        }).catch(() => {});
+      }
+
+      const player = players[track_id];
+      if (player) {
+        if (player.duration === 0) player.duration = duration;
+        if (!player.peaks) player.peaks = peaks;
+      }
+
+      // Only update the visible waveform if this track is currently displayed.
+      if (track_id !== currentPlayingId) return;
+
+      // Rust peaks supersede any JS-decoded peaks (full stereo + higher precision)
+      currentPlayerPeaks = peaks;
+      _rebuildWaveformLayers();
+    } catch (err) {
+      console.error('[stagehand] peaks_ready handler error:', err.name, err.message);
     }
   });
 

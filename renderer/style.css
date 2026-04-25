@@ -1348,41 +1348,34 @@
 /* ── SCRUB BAR ──────────────────────────────────────── */
 #mp-scrub-bar {
   position: relative;
-  height: 20px;
+  height: 36px;
   cursor: pointer;
-  display: flex;
-  align-items: center;
+  border-radius: 3px;
+  overflow: hidden;
   margin-bottom: 2px;
 }
-#mp-scrub-bar::before {
-  content: '';
+#mp-waveform-canvas {
   position: absolute;
-  left: 0; right: 0;
-  height: 3px;
-  background: var(--border);
-  border-radius: 2px;
-}
-#mp-scrub-fill {
-  position: absolute;
-  left: 0;
-  height: 3px;
-  background: var(--accent);
-  border-radius: 2px;
-  width: 0%;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
   pointer-events: none;
 }
 #mp-scrub-ball {
   position: absolute;
-  top: 50%;
+  top: 3px;
+  bottom: 3px;
   left: 0;
-  width: 13px;
-  height: 13px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 6px var(--accent-glow);
+  width: 2px;
+  border-radius: 1px;
+  background: #ffffff;
+  opacity: 0.85;
+  box-shadow: 0 0 6px rgba(255,255,255,0.5);
   pointer-events: none;
   will-change: transform;
-  transform: translate(-6.5px, -50%);
+  transform: translateX(-1px);
+  z-index: 4;
 }
 
 /* ── TIME DISPLAY ───────────────────────────────────── */
@@ -1551,6 +1544,23 @@
   font-size: 12px;
   color: var(--text-dim);
   flex-shrink: 0;
+}
+.drill-edit-info-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: var(--font-ui);
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 4px;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-left: auto;
+  transition: border-color 0.15s, color 0.15s;
+}
+.drill-edit-info-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
 }
 
 /* ── ARTIST TRACK LIST (drill-down sub-container) ────── */
@@ -2199,7 +2209,31 @@
   #settings-popup::-webkit-scrollbar { width: 4px; }
   #settings-popup::-webkit-scrollbar-track { background: transparent; }
   #settings-popup::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .sp-shortcuts-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 5px 12px 5px 16px;
+    cursor: pointer; border-radius: 4px;
+    transition: background 0.15s;
+  }
+  .sp-shortcuts-header:hover { background: var(--bg-hover); }
+  .sp-shortcuts-header .sp-section-label {
+    padding: 0;
+    transition: color 0.15s;
+  }
+  .sp-shortcuts-header:hover .sp-section-label { color: var(--text-secondary); }
+  .sp-shortcuts-toggle {
+    background: none; border: none; cursor: pointer; padding: 6px;
+    color: var(--text-secondary); border-radius: 4px; display: flex; align-items: center;
+    transition: color 0.15s; line-height: 0; pointer-events: none;
+  }
+  .sp-shortcuts-header:hover .sp-shortcuts-toggle { color: var(--accent); }
+  .sp-shortcuts-toggle svg { transition: transform 0.2s ease; }
+  .sp-shortcuts-toggle.open svg { transform: rotate(180deg); }
   .sp-shortcuts-list { padding: 0 16px; }
+  .sp-shortcuts-hint {
+    font-size: 11px; color: var(--text-dim); font-family: 'Barlow Condensed', sans-serif;
+    padding: 4px 0 2px; margin: 0; letter-spacing: 0.03em;
+  }
   .sp-shortcut-group {
     font-size: 11px; font-weight: 600; letter-spacing: 0.06em;
     text-transform: uppercase; color: var(--text-dim); padding: 8px 0 4px;
@@ -2209,12 +2243,23 @@
     padding: 3px 0; font-size: 12px; color: var(--text-secondary);
   }
   .sp-keys { display: flex; align-items: center; gap: 3px; flex-shrink: 0; }
+  .sp-keys-editable { cursor: pointer; }
   .sp-shortcut-row kbd {
     display: inline-flex; align-items: center; justify-content: center;
     min-width: 22px; height: 20px; padding: 0 5px;
     font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 500;
     color: var(--text-primary); background: var(--bg-base);
     border: 1px solid var(--border-bright); border-radius: 4px; line-height: 1;
+    transition: border-color 0.15s, color 0.15s, background 0.15s;
+  }
+  .sp-keys-editable:hover kbd { border-color: var(--accent); color: var(--accent); }
+  .sp-shortcut-row.capturing .sp-keys-editable kbd {
+    border-color: var(--accent); background: var(--accent-glow); color: var(--accent);
+    animation: sc-pulse 0.9s ease infinite;
+  }
+  @keyframes sc-pulse { 0%,100% { opacity:1; } 50% { opacity:0.45; } }
+  .sp-shortcuts-footer {
+    display: flex; justify-content: flex-end; padding: 8px 0 4px;
   }
   .sp-divider {
     height: 1px;
@@ -2575,20 +2620,18 @@
 
 /* ── LOOP REGION ON SCRUB BAR ───────────────────────── */
 
-/* Loop region: tinted strip sitting on the 3px track */
+/* Loop region: full-height tinted overlay */
 .mp-loop-region {
   position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 3px;
+  top: 0;
+  bottom: 0;
   background: var(--accent);
-  opacity: 0.35;
+  opacity: 0.18;
   pointer-events: none;
-  border-radius: 2px;
   z-index: 1;
 }
 .mp-loop-region.loop-active {
-  opacity: 0.65;
+  opacity: 0.32;
 }
 
 /* Handles: wide hit area, thin visible bar */
@@ -2596,7 +2639,7 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 18px;
+  width: 20px;
   transform: translateX(-50%);
   cursor: ew-resize;
   z-index: 3;
@@ -2612,11 +2655,11 @@
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  width: 3px;
-  height: 14px;
+  width: 2px;
+  height: 75%;
   background: var(--accent);
   border-radius: 1px;
-  box-shadow: 0 0 4px var(--accent-glow);
+  box-shadow: 0 0 5px var(--accent-glow);
 }
 
 /* Loop time display — appears below scrub bar when loop is active */
@@ -2890,15 +2933,17 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  justify-content: center;
+  gap: 3px;
   align-self: stretch;
-  padding-top: 14px;
+  padding: 6px 0;
   box-sizing: border-box;
 }
 
 #bottom-bar #mp-scrub-bar {
-  margin-bottom: 0;
-  margin-top: 2px;
+  height: 34px;
+  flex-shrink: 0;
+  margin: 0;
   width: 100%;
 }
 

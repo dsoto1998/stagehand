@@ -552,8 +552,8 @@ impl AudioEngine {
         })
     }
 
-    pub fn load(&self, bytes: Vec<u8>) -> Result<LoadResult, String> {
-        self.load_impl(bytes, None, None, None)
+    pub fn load(&self, bytes: Vec<u8>, track_id: Option<String>) -> Result<LoadResult, String> {
+        self.load_impl(bytes, None, None, None, track_id)
     }
 
     pub fn load_cached(
@@ -562,8 +562,9 @@ impl AudioEngine {
         peaks: Vec<f32>,
         duration: f64,
         sample_rate: u32,
+        track_id: Option<String>,
     ) -> Result<LoadResult, String> {
-        self.load_impl(bytes, Some(peaks), Some(duration), Some(sample_rate))
+        self.load_impl(bytes, Some(peaks), Some(duration), Some(sample_rate), track_id)
     }
 
     pub fn apply_prefetch_entry(&self, entry: PrefetchEntry) -> LoadResult {
@@ -587,6 +588,7 @@ impl AudioEngine {
         cached_peaks: Option<Vec<f32>>,
         cached_duration: Option<f64>,
         cached_sample_rate: Option<u32>,
+        track_id: Option<String>,
     ) -> Result<LoadResult, String> {
         let raw: Arc<[u8]> = bytes.into();
 
@@ -630,6 +632,7 @@ impl AudioEngine {
             if emit_peaks {
                 let bg_peaks = compute_peaks(&samples, ch as usize, 600);
                 let _ = app_bg.emit("peaks_ready", serde_json::json!({
+                    "track_id": track_id,
                     "duration": bg_duration,
                     "peaks": bg_peaks,
                 }));
