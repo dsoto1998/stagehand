@@ -3,7 +3,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::time::Duration;
 use parking_lot::Mutex;
-use rodio::{Decoder, OutputStream, OutputStreamHandle, Sink, Source};
+use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -111,18 +111,22 @@ pub struct LoadResult {
     pub peaks: Vec<f32>,
 }
 
-// ── StreamingSource — wraps Decoder for immediate playback (no full pre-decode) ──
-// Item = i16; rodio Sink converts to f32 internally for mixing.
+// ── StreamingSource — symphonia-based immediate playback (no full pre-decode) ──
+// Item = f32; works for all formats including M4A/AAC (rodio::Decoder panics on those).
 struct StreamingSource {
     raw: Arc<[u8]>,
-    inner: Decoder<Cursor<Arc<[u8]>>>,
+    format: Box<dyn symphonia::core::formats::FormatReader>,
+    decoder: Box<dyn symphonia::core::codecs::Decoder>,
+    track_id: u32,
     channels: u16,
     sample_rate: u32,
+    sample_buf: Vec<f32>,
+    buf_pos: usize,
+    current_frame: u64,
     frame_counter: Arc<AtomicU64>,
     ended: Arc<AtomicBool>,
     loop_state: Arc<LoopState>,
-    samples_in_frame: u16,    // counts 0..channels, resets → increments frame_counter
-    inside_loop_region: bool, // prevents immediate wrap when seeking past loop_end
+    inside_loop_region: bool,
 }
 
 unsafe impl Send for StreamingSource {}
@@ -137,97 +141,176 @@ impl StreamingSource {
         frame_counter: Arc<AtomicU64>,
         ended: Arc<AtomicBool>,
     ) -> Result<Self, String> {
-        let mut inner = Decoder::new(Cursor::new(Arc::clone(&raw)))
-            .map_err(|e| format!("Stream decode error: {e}"))?;
+        use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+        use symphonia::core::formats::FormatOptions;
+        use symphonia::core::io::MediaSourceStream;
+        use symphonia::core::meta::MetadataOptions;
 
-        let start_frame = (offset_secs * sample_rate as f64) as usize;
-        let to_skip = start_frame * channels as usize;
-        for _ in 0..to_skip {
-            if inner.next().is_none() { break; }
+        let hint = make_hint(&raw);
+        let mss = MediaSourceStream::new(
+            Box::new(Cursor::new((*raw).to_vec())),
+            Default::default(),
+        );
+        let mut probed = symphonia::default::get_probe()
+            .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            .map_err(|e| format!("Probe failed: {e}"))?;
+
+        let track = probed.format.tracks()
+            .iter()
+            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+            .ok_or("No audio track found")?;
+
+        let track_id = track.id;
+        let sr = track.codec_params.sample_rate.unwrap_or(sample_rate);
+        let ch = track.codec_params.channels.map(|c| c.count() as u16).unwrap_or(channels);
+
+        let mut decoder = symphonia::default::get_codecs()
+            .make(&track.codec_params, &DecoderOptions::default())
+            .map_err(|e| format!("Codec init failed: {e}"))?;
+
+        let start_frame = (offset_secs * sr as f64) as u64;
+        if offset_secs > 0.0 {
+            use symphonia::core::formats::{SeekMode, SeekTo};
+            use symphonia::core::units::Time;
+            let time = Time { seconds: offset_secs as u64, frac: offset_secs.fract() };
+            let _ = probed.format.seek(SeekMode::Accurate, SeekTo::Time { time, track_id: None });
+            decoder.reset();
         }
 
-        frame_counter.store(start_frame as u64, Ordering::SeqCst);
+        frame_counter.store(start_frame, Ordering::SeqCst);
         ended.store(false, Ordering::SeqCst);
 
         Ok(Self {
             raw,
-            inner,
-            channels,
-            sample_rate,
+            format: probed.format,
+            decoder,
+            track_id,
+            channels: ch,
+            sample_rate: sr,
+            sample_buf: Vec::new(),
+            buf_pos: 0,
+            current_frame: start_frame,
             frame_counter,
             ended,
             loop_state,
-            samples_in_frame: 0,
             inside_loop_region: false,
         })
     }
 
     fn seek_to(&mut self, secs: f64) {
-        let start_frame = (secs * self.sample_rate as f64) as usize;
-        let target = Duration::from_secs_f64(secs);
-        // Fast path: rodio 0.19 Decoder::try_seek uses Symphonia's codec seek
-        // (O(1) for WAV, keyframe seek for MP3/FLAC/OGG — avoids iterating millions of samples)
-        if self.inner.try_seek(target).is_ok() {
-            self.frame_counter.store(start_frame as u64, Ordering::SeqCst);
-            self.samples_in_frame = 0;
-            self.inside_loop_region = false;
-            return;
-        }
-        // Fallback: recreate decoder and skip (slow for compressed audio, only reached if seek fails)
-        if let Ok(mut dec) = Decoder::new(Cursor::new(Arc::clone(&self.raw))) {
-            let to_skip = start_frame * self.channels as usize;
-            for _ in 0..to_skip {
-                if dec.next().is_none() { break; }
+        use symphonia::core::formats::{SeekMode, SeekTo};
+        use symphonia::core::units::Time;
+        let secs = secs.max(0.0);
+        let time = Time { seconds: secs as u64, frac: secs.fract() };
+        if self.format.seek(SeekMode::Accurate, SeekTo::Time { time, track_id: None }).is_ok() {
+            self.decoder.reset();
+        } else {
+            // Rebuild reader from raw bytes (formats without a seek index)
+            use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+            use symphonia::core::formats::FormatOptions;
+            use symphonia::core::io::MediaSourceStream;
+            use symphonia::core::meta::MetadataOptions;
+            let hint = make_hint(&self.raw);
+            let mss = MediaSourceStream::new(
+                Box::new(Cursor::new((*self.raw).to_vec())),
+                Default::default(),
+            );
+            if let Ok(mut probed) = symphonia::default::get_probe()
+                .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+            {
+                if let Some(track) = probed.format.tracks()
+                    .iter()
+                    .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+                {
+                    if let Ok(dec) = symphonia::default::get_codecs()
+                        .make(&track.codec_params, &DecoderOptions::default())
+                    {
+                        let _ = probed.format.seek(SeekMode::Accurate, SeekTo::Time { time, track_id: None });
+                        self.format = probed.format;
+                        self.decoder = dec;
+                    }
+                }
             }
-            self.inner = dec;
-            self.frame_counter.store(start_frame as u64, Ordering::SeqCst);
-            self.samples_in_frame = 0;
-            self.inside_loop_region = false;
+        }
+        self.sample_buf.clear();
+        self.buf_pos = 0;
+        self.current_frame = (secs * self.sample_rate as f64) as u64;
+        self.frame_counter.store(self.current_frame, Ordering::SeqCst);
+        self.inside_loop_region = false;
+    }
+
+    fn fill_buf(&mut self) -> bool {
+        use symphonia::core::audio::SampleBuffer;
+        use symphonia::core::errors::Error as SE;
+        loop {
+            let packet = match self.format.next_packet() {
+                Ok(p) => p,
+                Err(SE::IoError(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => {
+                    return false;
+                }
+                Err(SE::ResetRequired) => { self.decoder.reset(); continue; }
+                Err(_) => return false,
+            };
+            if packet.track_id() != self.track_id { continue; }
+            match self.decoder.decode(&packet) {
+                Ok(decoded) => {
+                    let spec = *decoded.spec();
+                    let mut buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+                    buf.copy_interleaved_ref(decoded);
+                    self.sample_buf = buf.samples().to_vec();
+                    self.buf_pos = 0;
+                    return true;
+                }
+                Err(SE::DecodeError(_)) => continue,
+                Err(_) => return false,
+            }
         }
     }
 }
 
 impl Iterator for StreamingSource {
-    type Item = i16;
+    type Item = f32;
 
-    fn next(&mut self) -> Option<i16> {
+    fn next(&mut self) -> Option<f32> {
         // Loop boundary check
         if self.loop_state.enabled.load(Ordering::Relaxed) {
             let end_us = self.loop_state.end_us.load(Ordering::Relaxed);
             let end_frame = (end_us as f64 / 1_000_000.0 * self.sample_rate as f64) as u64;
             if end_frame > 0 {
-                let cur = self.frame_counter.load(Ordering::Relaxed);
-                if cur < end_frame {
+                if self.current_frame < end_frame {
                     self.inside_loop_region = true;
                 } else if self.inside_loop_region {
                     let start_us = self.loop_state.start_us.load(Ordering::Relaxed);
                     self.seek_to(start_us as f64 / 1_000_000.0);
-                    self.inside_loop_region = false;
                 }
             }
         }
 
-        match self.inner.next() {
-            Some(s) => {
-                self.samples_in_frame += 1;
-                if self.samples_in_frame >= self.channels {
-                    self.samples_in_frame = 0;
-                    self.frame_counter.fetch_add(1, Ordering::Relaxed);
-                }
-                Some(s)
-            }
-            None => {
+        // Refill buffer if exhausted
+        if self.buf_pos >= self.sample_buf.len() {
+            if !self.fill_buf() {
                 if self.loop_state.enabled.load(Ordering::Relaxed) {
                     let start_us = self.loop_state.start_us.load(Ordering::Relaxed);
                     self.seek_to(start_us as f64 / 1_000_000.0);
                     self.inside_loop_region = false;
-                    self.inner.next()
+                    if !self.fill_buf() {
+                        self.ended.store(true, Ordering::SeqCst);
+                        return None;
+                    }
                 } else {
                     self.ended.store(true, Ordering::SeqCst);
-                    None
+                    return None;
                 }
             }
         }
+
+        let sample = self.sample_buf[self.buf_pos];
+        self.buf_pos += 1;
+        if self.channels > 0 && self.buf_pos % self.channels as usize == 0 {
+            self.current_frame += 1;
+            self.frame_counter.store(self.current_frame, Ordering::Relaxed);
+        }
+        Some(sample)
     }
 }
 
@@ -301,7 +384,7 @@ impl RubberbandSource {
     fn check_loop(&mut self) {
         if !self.loop_state.enabled.load(Ordering::Relaxed) { return; }
         let sr = self.audio.sample_rate as f64;
-        let ch = self.audio.channels as usize;
+        let ch = (self.audio.channels as usize).max(1);
         let end_us = self.loop_state.end_us.load(Ordering::Relaxed);
         let end_sample = (end_us as f64 / 1_000_000.0 * sr) as usize * ch;
         if end_sample == 0 { return; }
@@ -334,7 +417,7 @@ impl RubberbandSource {
     fn handle_end(&mut self) {
         if self.loop_state.enabled.load(Ordering::Relaxed) {
             let sr = self.audio.sample_rate as f64;
-            let ch = self.audio.channels as usize;
+            let ch = (self.audio.channels as usize).max(1);
             let start_us = self.loop_state.start_us.load(Ordering::Relaxed);
             let start_sample = (start_us as f64 / 1_000_000.0 * sr) as usize * ch;
             self.read_pos = start_sample.min(self.audio.samples.len());
@@ -351,7 +434,7 @@ impl RubberbandSource {
             Some(r) => r.0,
             None => return,
         };
-        let ch = self.audio.channels as usize;
+        let ch = (self.audio.channels as usize).max(1);
 
         self.check_loop();
 
@@ -416,7 +499,7 @@ impl Iterator for RubberbandSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        let ch = self.audio.channels as usize;
+        let ch = (self.audio.channels as usize).max(1);
 
         if self.rb.is_some() {
             for _ in 0..256u16 {
@@ -592,19 +675,14 @@ impl AudioEngine {
     ) -> Result<LoadResult, String> {
         let raw: Arc<[u8]> = bytes.into();
 
-        // Probe format for sr/channels/duration without full decode (~1ms)
-        let probe = Decoder::new(Cursor::new(Arc::clone(&raw)))
-            .map_err(|e| format!("Audio probe failed: {e}"))?;
-        let sample_rate = cached_sample_rate.unwrap_or(probe.sample_rate());
-        let channels = probe.channels();
-        let duration = if let Some(d) = cached_duration {
-            d
-        } else if let Some(d) = probe.total_duration() {
-            d.as_secs_f64()
-        } else {
-            0.0 // unknown — background decode will emit the real value
+        // Probe format for sr/channels/duration via symphonia (handles all formats, no panics).
+        let (sample_rate, channels, duration) = {
+            let (sr, ch, dur) = probe_symphonia(&raw)
+                .map_err(|e| format!("Audio probe failed: {e}"))?;
+            let sr = cached_sample_rate.unwrap_or(sr);
+            let dur = cached_duration.unwrap_or(dur);
+            (sr, ch, dur)
         };
-        drop(probe);
 
         let peaks = cached_peaks.clone().unwrap_or_default();
         let emit_peaks = cached_peaks.is_none();
@@ -626,6 +704,7 @@ impl AudioEngine {
             let bytes_vec: Vec<u8> = (*raw).to_vec();
             let Ok((samples, ch, sr)) = decode_to_samples(bytes_vec) else { return };
             if gen_arc.load(Ordering::SeqCst) != gen { return; }
+            if ch == 0 || sr == 0 { return; }
             let total_frames = samples.len() / ch as usize;
             let bg_duration = total_frames as f64 / sr as f64;
             dur_arc.store((bg_duration * 1_000_000.0) as u64, Ordering::SeqCst);
@@ -654,6 +733,12 @@ impl AudioEngine {
     ) -> Result<(), String> {
         self.stop_sink();
         self.ended.store(false, Ordering::SeqCst);
+
+        let sr = self.audio_sr.load(Ordering::Relaxed);
+        let ch = self.audio_ch.load(Ordering::Relaxed) as u16;
+        if sr == 0 || ch == 0 {
+            return Err("Audio format not ready (sample_rate or channels unknown)".into());
+        }
 
         let use_rb = semitones != 0 || (speed - 1.0).abs() > 1e-4;
 
@@ -690,8 +775,7 @@ impl AudioEngine {
         } else {
             // Streaming mode — immediate, no decode wait
             let raw = self.raw_bytes.lock().clone().ok_or("No track loaded")?;
-            let sr = self.audio_sr.load(Ordering::Relaxed);
-            let ch = self.audio_ch.load(Ordering::Relaxed) as u16;
+            // sr/ch already validated non-zero above
             // If decoded is already available, use RubberbandSource for instant seek support
             if let Some(decoded) = self.decoded_slot.lock().clone() {
                 let start_frame = (offset_secs * decoded.sample_rate as f64) as usize;
@@ -704,14 +788,37 @@ impl AudioEngine {
                 sink.append(source);
                 *self.sink.lock() = Some(sink);
             } else {
-                let source = StreamingSource::new(
-                    raw, offset_secs, sr, ch,
+                // Try streaming first; if it fails (e.g. M4A — rodio 0.19 seek-at-init panic),
+                // wait for the symphonia background decode and play from memory instead.
+                let stream_result = StreamingSource::new(
+                    Arc::clone(&raw), offset_secs, sr, ch,
                     self.loop_state.clone(), self.frame_counter.clone(), self.ended.clone(),
-                )?;
-                let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
-                sink.set_volume(volume);
-                sink.append(source);
-                *self.sink.lock() = Some(sink);
+                );
+                match stream_result {
+                    Ok(source) => {
+                        let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
+                        sink.set_volume(volume);
+                        sink.append(source);
+                        *self.sink.lock() = Some(sink);
+                    }
+                    Err(e) => {
+                        log::info!("[stagehand] streaming failed ({e}), checking decoded slot");
+                        if let Some(decoded) = self.decoded_slot.lock().clone() {
+                            let start_frame = (offset_secs * decoded.sample_rate as f64) as usize;
+                            let source = RubberbandSource::new(
+                                decoded, start_frame, 0, 1.0,
+                                self.loop_state.clone(), self.frame_counter.clone(), self.ended.clone(),
+                            );
+                            let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
+                            sink.set_volume(volume);
+                            sink.append(source);
+                            *self.sink.lock() = Some(sink);
+                        } else {
+                            // Background decode still in progress — caller must retry
+                            return Err("decode_pending".into());
+                        }
+                    }
+                }
             }
         }
 
@@ -845,13 +952,102 @@ impl AudioEngine {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+/// Sniff bytes to build a Symphonia Hint. Detects M4A via `ftyp` box at offset 4.
+fn make_hint(bytes: &[u8]) -> symphonia::core::probe::Hint {
+    let mut hint = symphonia::core::probe::Hint::new();
+    if bytes.len() >= 8 && &bytes[4..8] == b"ftyp" {
+        hint.with_extension("m4a");
+    }
+    hint
+}
+
+/// Decode audio to interleaved f32 samples using Symphonia directly.
+/// Bypasses rodio's Decoder, which panics on M4A/AAC (rodio 0.19 seek-at-init bug).
 pub fn decode_to_samples(bytes: Vec<u8>) -> Result<(Vec<f32>, u16, u32), String> {
-    let decoder = Decoder::new(Cursor::new(bytes))
-        .map_err(|e| format!("Decode error: {e}"))?;
-    let sample_rate = decoder.sample_rate();
-    let channels = decoder.channels();
-    let samples: Vec<f32> = decoder.map(|s: i16| s as f32 / 32768.0).collect();
-    Ok((samples, channels, sample_rate))
+    use symphonia::core::audio::SampleBuffer;
+    use symphonia::core::codecs::{DecoderOptions, CODEC_TYPE_NULL};
+    use symphonia::core::errors::Error as SE;
+    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+
+    let hint = make_hint(&bytes);
+    let mss = MediaSourceStream::new(Box::new(Cursor::new(bytes)), Default::default());
+    let mut probed = symphonia::default::get_probe()
+        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .map_err(|e| format!("Probe failed: {e}"))?;
+
+    let track = probed.format.tracks()
+        .iter()
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .ok_or("No audio track found")?;
+
+    let track_id = track.id;
+    let sr = track.codec_params.sample_rate.unwrap_or(44100);
+    let ch = track.codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
+
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|e| format!("Codec init failed: {e}"))?;
+
+    let mut samples: Vec<f32> = Vec::new();
+    loop {
+        let packet = match probed.format.next_packet() {
+            Ok(p) => p,
+            Err(SE::IoError(ref e)) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
+            Err(SE::ResetRequired) => { decoder.reset(); continue; }
+            Err(e) => return Err(format!("Packet error: {e}")),
+        };
+        if packet.track_id() != track_id { continue; }
+        let decoded = match decoder.decode(&packet) {
+            Ok(d) => d,
+            Err(SE::DecodeError(_)) => continue,
+            Err(e) => return Err(format!("Decode error: {e}")),
+        };
+        let spec = *decoded.spec();
+        let mut buf = SampleBuffer::<f32>::new(decoded.capacity() as u64, spec);
+        buf.copy_interleaved_ref(decoded);
+        samples.extend_from_slice(buf.samples());
+    }
+
+    if samples.is_empty() {
+        return Err("Decoded zero samples — codec may not support this file".into());
+    }
+
+    Ok((samples, ch, sr))
+}
+
+/// Probe audio metadata (sample_rate, channels, duration) via Symphonia directly.
+/// Used as fallback when rodio's Decoder::new() panics (M4A/AAC rodio 0.19 bug).
+pub(crate) fn probe_symphonia(bytes: &[u8]) -> Result<(u32, u16, f64), String> {
+    use symphonia::core::codecs::CODEC_TYPE_NULL;
+    use symphonia::core::formats::FormatOptions;
+    use symphonia::core::io::MediaSourceStream;
+    use symphonia::core::meta::MetadataOptions;
+
+    let hint = make_hint(bytes);
+    let mss = MediaSourceStream::new(Box::new(Cursor::new(bytes.to_vec())), Default::default());
+    let probed = symphonia::default::get_probe()
+        .format(&hint, mss, &FormatOptions::default(), &MetadataOptions::default())
+        .map_err(|e| format!("Symphonia probe failed: {e}"))?;
+
+    let track = probed.format.tracks()
+        .iter()
+        .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
+        .ok_or("No audio track")?;
+
+    let sr = track.codec_params.sample_rate.unwrap_or(44100);
+    let ch = track.codec_params.channels.map(|c| c.count() as u16).unwrap_or(2);
+
+    // Use time_base for correct duration when available (important for AAC/M4A).
+    // time_base is typically 1/sample_rate, so the fallback n_frames/sr is equivalent.
+    let dur = match (track.codec_params.n_frames, track.codec_params.time_base) {
+        (Some(frames), Some(tb)) => frames as f64 * tb.numer as f64 / tb.denom as f64,
+        (Some(frames), None) => frames as f64 / sr as f64,
+        _ => 0.0,
+    };
+
+    Ok((sr, ch, dur))
 }
 
 pub fn compute_peaks(samples: &[f32], channels: usize, n: usize) -> Vec<f32> {

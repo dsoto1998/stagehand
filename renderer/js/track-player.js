@@ -96,11 +96,12 @@ export class TrackPlayer {
   async play(offset, effectiveVolume) {
     if (!this._loaded) return;
     const offsetSecs = offset !== undefined ? offset : this.pauseOffset;
+    const vol = effectiveVolume !== undefined ? effectiveVolume * VOLUME_MULTIPLIER : this._vol;
     await invoke('audio_play', {
       offsetSecs,
       semitones:   this.semitones,
       speed:       this.speed,
-      volume:      effectiveVolume !== undefined ? effectiveVolume * VOLUME_MULTIPLIER : this._vol,
+      volume:      vol,
       loopEnabled: this.loopEnabled,
       loopStart:   this.loopStart * this.duration,
       loopEnd:     this.loopEnd   * this.duration,

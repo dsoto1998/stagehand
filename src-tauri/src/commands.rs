@@ -144,6 +144,10 @@ pub async fn audio_prefetch(
             Ok(r) => r,
             Err(e) => { log::warn!("[stagehand] audio_prefetch: decode failed: {e}"); return; }
         };
+        if channels == 0 || sample_rate == 0 {
+            log::warn!("[stagehand] audio_prefetch: bad codec params (ch={channels}, sr={sample_rate})");
+            return;
+        }
         let total_frames = samples.len() / channels as usize;
         let duration = cached_duration.unwrap_or(total_frames as f64 / sample_rate as f64);
         let peaks = match cached_peaks {
@@ -181,9 +185,25 @@ pub async fn audio_play(
     loop_start: f64,
     loop_end: f64,
 ) -> Result<(), String> {
-    let engine = state.0.lock();
-    engine.set_loop(loop_enabled, loop_start, loop_end);
-    engine.play_with_params(offset_secs, semitones, speed, volume)
+    let mut waited_ms = 0u32;
+    loop {
+        let result = {
+            let engine = state.0.lock();
+            engine.set_loop(loop_enabled, loop_start, loop_end);
+            engine.play_with_params(offset_secs, semitones, speed, volume)
+        }; // engine lock released before any sleep
+        match result {
+            Ok(()) => return Ok(()),
+            Err(ref e) if e == "decode_pending" => {
+                if waited_ms >= 8000 {
+                    return Err("Audio decode timeout (format may not be supported)".into());
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                waited_ms += 100;
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 #[tauri::command]
@@ -231,9 +251,25 @@ pub async fn audio_seek(
     loop_start: f64,
     loop_end: f64,
 ) -> Result<(), String> {
-    let engine = state.0.lock();
-    engine.set_loop(loop_enabled, loop_start, loop_end);
-    engine.seek(offset_secs, semitones, speed, volume)
+    let mut waited_ms = 0u32;
+    loop {
+        let result = {
+            let engine = state.0.lock();
+            engine.set_loop(loop_enabled, loop_start, loop_end);
+            engine.seek(offset_secs, semitones, speed, volume)
+        };
+        match result {
+            Ok(()) => return Ok(()),
+            Err(ref e) if e == "decode_pending" => {
+                if waited_ms >= 8000 {
+                    return Err("Audio decode timeout (format may not be supported)".into());
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                waited_ms += 100;
+            }
+            Err(e) => return Err(e),
+        }
+    }
 }
 
 #[tauri::command]
@@ -355,4 +391,25 @@ pub async fn audio_set_device(
 #[tauri::command]
 pub fn open_url(url: String) -> Result<(), String> {
     open::that(url).map_err(|e| e.to_string())
+}
+
+// ─── File dialog / path utilities ────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn open_audio_files_dialog() -> Result<Vec<String>, String> {
+    let handle = rfd::AsyncFileDialog::new()
+        .set_title("Import Audio Files")
+        .add_filter("Audio", &["wav", "mp3", "flac", "ogg", "opus", "aiff", "aif"])
+        .pick_files()
+        .await;
+    Ok(handle
+        .unwrap_or_default()
+        .into_iter()
+        .map(|f| f.path().to_string_lossy().into_owned())
+        .collect())
+}
+
+#[tauri::command]
+pub async fn library_check_paths(paths: Vec<String>) -> Result<Vec<bool>, String> {
+    Ok(paths.iter().map(|p| std::path::Path::new(p).exists()).collect())
 }

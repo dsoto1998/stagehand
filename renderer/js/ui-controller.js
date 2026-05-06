@@ -365,35 +365,17 @@ function showInfoModal(trackIds) {
 
 // ─── CHORD CHART MODAL ────────────────────────────────────
 let chordModalTrackId = null;
-let chordBlobUrls = []; // blob URLs created during session, revoked on cleanup
+let chordBlobUrls = [];
 
-function renderChordProPreview() {
-  const input = document.getElementById('chord-chordpro-input');
-  const preview = document.getElementById('chord-chordpro-preview');
-  if (!input || !preview) return;
+// Returns true if s looks like a chord name (B, C#m, Gmaj7, D/F#, etc.)
+function isChordName(s) {
+  return /^[A-G][#b]?(?:m(?:aj)?|min|dim|aug|sus[24]?|add\d*|no\d*|\d+|[#b]|\/[A-G][#b]?)*$/i.test(s.trim());
+}
 
-  // Returns true if s looks like a chord name (B, C#m, G#m, Gmaj7, D/F#, etc.)
-  function isChordName(s) {
-    return /^[A-G][#b]?(?:m(?:aj)?|min|dim|aug|sus[24]?|add\d*|no\d*|\d+|[#b]|\/[A-G][#b]?)*$/i.test(s.trim());
-  }
+function renderChart(content, container, fontSize) {
+  container.style.fontSize = fontSize + 'px';
 
-  // A line like [Verse 1] or [Intro] but NOT [B] or [C#m] or [B C#m G#m E]
-  function isSectionHeader(line) {
-    const m = line.trim().match(/^\[([^\]]+)\]$/);
-    if (!m) return false;
-    return !m[1].trim().split(/\s+/).every(w => isChordName(w));
-  }
-
-  // Map common section name keywords to a type for color-coding
-  function sectionType(label) {
-    const l = label.toLowerCase();
-    if (/chorus|refrain/.test(l)) return 'chorus';
-    if (/verse/.test(l))          return 'verse';
-    if (/bridge/.test(l))         return 'bridge';
-    return '';
-  }
-
-  function renderLyricLine(line) {
+  function tokenizeLine(line) {
     const parts = line.split(/(\[[^\]]*\])/);
     const tokens = [];
     let pendingChord = '';
@@ -401,10 +383,9 @@ function renderChordProPreview() {
       if (p.startsWith('[') && p.endsWith(']')) {
         const inner = p.slice(1, -1);
         const words = inner.trim().split(/\s+/);
-        // Multi-chord bracket [B C#m G#m E] → split into individual tokens
         if (words.length > 1 && words.every(w => isChordName(w))) {
           if (pendingChord) { tokens.push({ chord: pendingChord, lyric: '' }); pendingChord = ''; }
-          words.forEach((c, i) => tokens.push({ chord: c, lyric: i < words.length - 1 ? '\u2002' : '' }));
+          words.forEach(c => tokens.push({ chord: c, lyric: '' }));
         } else {
           if (pendingChord) { tokens.push({ chord: pendingChord, lyric: '' }); }
           pendingChord = inner;
@@ -415,64 +396,55 @@ function renderChordProPreview() {
       }
     }
     if (pendingChord) tokens.push({ chord: pendingChord, lyric: '' });
-    if (tokens.every(t => !t.chord)) return `<div class="cp-line"><span class="cp-token"><span class="cp-chord cp-chord-empty">​</span><span class="cp-lyric">${escHtml(line)}</span></span></div>`;
-    const spans = tokens.map(t =>
-      `<span class="cp-token">` +
-      (t.chord ? `<span class="cp-chord">${escHtml(t.chord)}</span>` : `<span class="cp-chord cp-chord-empty">​</span>`) +
-      `<span class="cp-lyric">${escHtml(t.lyric) || '\u00a0'}</span>` +
-      `</span>`
-    ).join('');
-    return `<div class="cp-line">${spans}</div>`;
+    return tokens;
   }
 
-  const lines = input.value.split('\n');
+  const lines = content.split('\n');
   let html = '';
-  let inSection = false;
 
   for (const line of lines) {
-    // Explicit ChordPro section directives
-    const secStart = line.match(/^\{start_of_(\w+)(?::\s*([^}]*))?\}$/i) ||
-                     line.match(/^\{(soc|sov|sob)\}$/i);
-    if (secStart) {
-      if (inSection) { html += '</div>'; }
-      const raw = secStart[1].toLowerCase();
-      const type = raw === 'soc' ? 'chorus' : raw === 'sov' ? 'verse' : raw === 'sob' ? 'bridge' : raw;
-      const label = secStart[2]?.trim() || (type.charAt(0).toUpperCase() + type.slice(1));
-      html += `<div class="cp-section cp-section-${escHtml(type)}"><div class="cp-section-label">${escHtml(label)}</div>`;
-      inSection = true;
-      continue;
-    }
-    if (/^\{end_of_\w+\}$/i.test(line) || /^\{(eoc|eov|eob)\}$/i.test(line)) {
-      if (inSection) { html += '</div>'; inSection = false; }
+    const commentMatch = line.match(/^\{(?:comment|c):\s*(.*?)\s*\}$/i);
+    if (commentMatch) {
+      html += `<div class="cp-section-label">${escHtml(commentMatch[1].toUpperCase())}</div>`;
       continue;
     }
 
-    // Auto-detect [Section Name] headers
-    if (isSectionHeader(line)) {
-      if (inSection) { html += '</div>'; }
-      const label = line.trim().slice(1, -1).trim();
-      const type = sectionType(label);
-      html += `<div class="cp-section${type ? ' cp-section-' + type : ''}"><div class="cp-section-label">${escHtml(label)}</div>`;
-      inSection = true;
+    if (/^\{[^}]+\}$/.test(line.trim())) continue;
+
+    if (!line.trim()) { html += `<div style="height:10px"></div>`; continue; }
+
+    const tokens = tokenizeLine(line);
+    const hasChord = tokens.some(t => t.chord);
+
+    if (!hasChord) {
+      html += `<div class="cp-annotation">${escHtml(line)}</div>`;
       continue;
     }
 
-    // Metadata directives
-    const dirMatch = line.match(/^\{(title|t|subtitle|st|comment|c):\s*(.*?)\s*\}$/i);
-    if (dirMatch) {
-      const tag = dirMatch[1].toLowerCase();
-      const val = dirMatch[2];
-      html += (tag === 'title' || tag === 't')
-        ? `<div class="cp-directive"><strong>${escHtml(val)}</strong></div>`
-        : `<div class="cp-directive">${escHtml(val)}</div>`;
-      continue;
-    }
+    const hasLyric = tokens.some(t => t.lyric.trim());
 
-    if (!line.trim()) { html += `<div class="cp-spacer"></div>`; continue; }
-    html += renderLyricLine(line);
+    if (!hasLyric) {
+      html += `<div class="cp-chord-row">` +
+        tokens.filter(t => t.chord).map(t => `<span class="cp-chord-solo">${escHtml(t.chord)}</span>`).join('') +
+        `</div>`;
+    } else {
+      const spans = tokens.map(t => {
+        const cLen = t.chord.length;
+        const lLen = t.lyric.length;
+        const minW = Math.max(cLen, lLen) * 9;
+        const style = minW > 0 ? ` style="min-width:${minW}px"` : '';
+        return `<span class="cp-token"${style}>` +
+          (t.chord
+            ? `<span class="cp-chord">${escHtml(t.chord)}</span>`
+            : `<span class="cp-chord cp-chord-empty">&#x200b;</span>`) +
+          `<span class="cp-lyric">${escHtml(t.lyric) || ' '}</span>` +
+          `</span>`;
+      }).join('');
+      html += `<div class="cp-line">${spans}</div>`;
+    }
   }
-  if (inSection) html += '</div>';
-  preview.innerHTML = html;
+
+  container.innerHTML = html;
 }
 
 function showChordModal(trackId) {
@@ -481,57 +453,140 @@ function showChordModal(trackId) {
   chordModalTrackId = trackId;
   chordBlobUrls = [];
 
+  let mode = (track.chordPro || track.chordPdf) ? 'view' : 'edit';
+  let dirty = false;
+  let savedContent = track.chordPro || '';
+  let fontSize = 14;
   let pendingChordPdf = null;
   let pendingChordPdfCleared = false;
 
-  const overlay = document.getElementById('chord-overlay');
-  overlay.classList.add('show');
-
-  // Reset tab to PDF
-  document.querySelectorAll('.chord-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.chordTab === 'pdf'));
-  document.getElementById('chord-tab-pdf').style.display = '';
-  document.getElementById('chord-tab-chordpro').style.display = 'none';
-
-  // Load existing PDF
+  const overlay    = document.getElementById('chord-overlay');
+  const toolbar    = document.getElementById('chord-toolbar');
+  const viewPane   = document.getElementById('chord-view-content');
+  const editPane   = document.getElementById('chord-edit-content');
+  const footer     = document.getElementById('chord-footer');
+  const banner     = document.getElementById('chord-unsaved-banner');
+  const editor     = document.getElementById('chord-editor');
+  const render     = document.getElementById('chord-chart-render');
   const pdfPreview = document.getElementById('chord-pdf-preview');
-  const pdfClear = document.getElementById('chord-pdf-clear');
+  const pdfInput   = document.getElementById('chord-pdf-input');
+
+  overlay.classList.add('show');
+  document.getElementById('chord-title').textContent = track.name;
+
   if (track.chordPdf) {
     const blob = new Blob([track.chordPdf], { type: 'application/pdf' });
     const url = URL.createObjectURL(blob);
     chordBlobUrls.push(url);
-    pdfPreview.innerHTML = `<iframe src="${url}"></iframe>`;
-    pdfClear.style.display = '';
-  } else {
-    pdfPreview.textContent = 'No PDF uploaded';
-    pdfClear.style.display = 'none';
+    pdfPreview.innerHTML = `<iframe src="${url}" style="width:100%;height:220px;border:none;border-radius:3px"></iframe>`;
+    pdfPreview.style.display = '';
   }
 
-  // Load existing ChordPro
-  const cpInput = document.getElementById('chord-chordpro-input');
-  const cpClear = document.getElementById('chord-chordpro-clear');
-  if (track.chordPro) {
-    cpInput.value = track.chordPro;
-    renderChordProPreview();
-    cpClear.style.display = '';
-  } else {
-    cpInput.value = '';
-    document.getElementById('chord-chordpro-preview').innerHTML = '';
-    cpClear.style.display = 'none';
+  function setMode(m) {
+    mode = m;
+    document.querySelectorAll('.mode-btn').forEach(btn =>
+      btn.classList.toggle('active', btn.dataset.mode === m)
+    );
+    if (m === 'view') {
+      toolbar.style.display = 'none';
+      editPane.style.display = 'none';
+      footer.style.display = 'none';
+      viewPane.style.display = '';
+      banner.style.display = dirty ? '' : 'none';
+      renderChart(savedContent, render, fontSize);
+    } else {
+      toolbar.style.display = '';
+      editPane.style.display = '';
+      footer.style.display = '';
+      viewPane.style.display = 'none';
+      banner.style.display = 'none';
+      editor.value = savedContent;
+    }
   }
 
-  // Tab switching
-  function onTabClick(e) {
-    const btn = e.target.closest('.chord-tab');
-    if (!btn) return;
-    const tab = btn.dataset.chordTab;
-    document.querySelectorAll('.chord-tab').forEach(b => b.classList.toggle('active', b.dataset.chordTab === tab));
-    document.getElementById('chord-tab-pdf').style.display = tab === 'pdf' ? '' : 'none';
-    document.getElementById('chord-tab-chordpro').style.display = tab === 'chordpro' ? '' : 'none';
-  }
-  document.querySelector('.chord-tabs').addEventListener('click', onTabClick);
+  function hideBanner() { banner.style.display = 'none'; }
 
-  // PDF upload
-  const pdfInput = document.getElementById('chord-pdf-input');
+  async function saveChanges() {
+    const t = tracks.find(x => x.id === chordModalTrackId);
+    if (!t) return;
+    savedContent = editor.value;
+    if (pendingChordPdf) {
+      t.chordPdf = pendingChordPdf;
+    } else if (pendingChordPdfCleared) {
+      t.chordPdf = null;
+    }
+    t.chordPro = savedContent || null;
+    dirty = false;
+    hideBanner();
+    try {
+      const { arrayBuffer, ...meta } = t;
+      if (meta.chordPdf) meta.chordPdf = meta.chordPdf.slice(0);
+      await LibraryManager.saveMeta(meta);
+    } catch(e) {
+      console.warn('Chord save failed:', e);
+    }
+    renderCurrentTab();
+    document.querySelectorAll(`.row-chord-btn[data-chord-id="${CSS.escape(t.id)}"]`).forEach(btn => {
+      btn.classList.toggle('has-chart', !!(t.chordPdf || t.chordPro));
+    });
+    setMode('view');
+    showSavedToast();
+  }
+
+  function showSavedToast() {
+    const toast = document.getElementById('saved-toast');
+    toast.style.opacity = '';
+    toast.style.transition = '';
+    toast.classList.remove('toast-pop');
+    void toast.offsetWidth; // force reflow so animation restarts
+    toast.classList.add('toast-pop');
+    setTimeout(() => {
+      toast.style.transition = 'opacity 0.2s ease';
+      toast.style.opacity = '0';
+      setTimeout(() => {
+        toast.classList.remove('toast-pop');
+        toast.style.transition = '';
+      }, 200);
+    }, 2000);
+  }
+
+  function discardChanges() {
+    editor.value = savedContent;
+    dirty = false;
+    setMode('view');
+  }
+
+  function cleanup() {
+    overlay.classList.remove('show');
+    chordBlobUrls.forEach(u => URL.revokeObjectURL(u));
+    chordBlobUrls = [];
+    pdfPreview.style.display = 'none';
+    pdfPreview.innerHTML = '';
+    banner.style.display = 'none';
+    document.getElementById('chord-syntax-popover').style.display = 'none';
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('chord-pdf-upload').removeEventListener('click', onUploadClick);
+    pdfInput.removeEventListener('change', onFileChange);
+    editor.removeEventListener('input', onEditorInput);
+    document.getElementById('chord-clear-btn').removeEventListener('click', onClearClick);
+    document.getElementById('chord-syntax-btn').removeEventListener('click', onSyntaxClick);
+    document.getElementById('chord-unsaved-save').removeEventListener('click', onUnsavedSave);
+    document.getElementById('chord-save').removeEventListener('click', saveChanges);
+    document.getElementById('chord-discard').removeEventListener('click', discardChanges);
+    document.getElementById('chord-close').removeEventListener('click', cleanup);
+    document.querySelectorAll('.mode-btn').forEach(b => b.removeEventListener('click', onModeClick));
+    overlay.removeEventListener('click', onOverlayClick);
+    overlay.removeEventListener('keydown', onKey);
+    document.removeEventListener('click', onDocClick);
+  }
+
+  function onModeClick(e) {
+    const m = e.currentTarget.dataset.mode;
+    if (m === mode) return;
+    setMode(m);
+  }
+  document.querySelectorAll('.mode-btn').forEach(b => b.addEventListener('click', onModeClick));
+
   function onUploadClick() { pdfInput.value = ''; pdfInput.click(); }
   function onFileChange() {
     const file = pdfInput.files[0];
@@ -539,99 +594,64 @@ function showChordModal(trackId) {
     const reader = new FileReader();
     reader.onload = ev => {
       pendingChordPdf = ev.target.result;
+      pendingChordPdfCleared = false;
       const blob = new Blob([pendingChordPdf], { type: 'application/pdf' });
       const url = URL.createObjectURL(blob);
       chordBlobUrls.push(url);
-      pdfPreview.innerHTML = `<iframe src="${url}"></iframe>`;
-      pdfClear.style.display = '';
+      pdfPreview.innerHTML = `<iframe src="${url}" style="width:100%;height:220px;border:none;border-radius:3px"></iframe>`;
+      pdfPreview.style.display = '';
+      dirty = true;
     };
     reader.readAsArrayBuffer(file);
   }
   document.getElementById('chord-pdf-upload').addEventListener('click', onUploadClick);
   pdfInput.addEventListener('change', onFileChange);
 
-  // PDF clear
-  function onPdfClear() {
+  function onEditorInput() { dirty = true; }
+  editor.addEventListener('input', onEditorInput);
+
+  function onClearClick() {
+    if (!confirm('Clear all chord data?')) return;
+    editor.value = '';
     pendingChordPdf = null;
     pendingChordPdfCleared = true;
-    pdfPreview.textContent = 'No PDF uploaded';
-    pdfClear.style.display = 'none';
+    pdfPreview.style.display = 'none';
+    pdfPreview.innerHTML = '';
+    dirty = true;
   }
-  pdfClear.addEventListener('click', onPdfClear);
+  document.getElementById('chord-clear-btn').addEventListener('click', onClearClick);
 
-  // ChordPro live preview
-  cpInput.addEventListener('input', renderChordProPreview);
-
-  // ChordPro clear
-  function onCpClear() {
-    cpInput.value = '';
-    document.getElementById('chord-chordpro-preview').innerHTML = '';
-    cpClear.style.display = 'none';
+  const syntaxPopover = document.getElementById('chord-syntax-popover');
+  function onSyntaxClick(e) {
+    e.stopPropagation();
+    syntaxPopover.style.display = syntaxPopover.style.display === 'none' ? '' : 'none';
   }
-  cpClear.addEventListener('click', onCpClear);
+  function onDocClick() { syntaxPopover.style.display = 'none'; }
+  document.getElementById('chord-syntax-btn').addEventListener('click', onSyntaxClick);
+  document.addEventListener('click', onDocClick);
 
-  // Show/hide ChordPro clear based on input content
-  cpInput.addEventListener('input', () => {
-    cpClear.style.display = cpInput.value.trim() ? '' : 'none';
-  });
+  function onUnsavedSave(e) { e.preventDefault(); saveChanges(); }
+  document.getElementById('chord-unsaved-save').addEventListener('click', onUnsavedSave);
 
-  function cleanup() {
-    overlay.classList.remove('show');
-    chordBlobUrls.forEach(u => URL.revokeObjectURL(u));
-    chordBlobUrls = [];
-    document.querySelector('.chord-tabs').removeEventListener('click', onTabClick);
-    document.getElementById('chord-pdf-upload').removeEventListener('click', onUploadClick);
-    pdfInput.removeEventListener('change', onFileChange);
-    pdfClear.removeEventListener('click', onPdfClear);
-    cpInput.removeEventListener('input', renderChordProPreview);
-    cpClear.removeEventListener('click', onCpClear);
-    document.getElementById('chord-save').removeEventListener('click', onSave);
-    document.getElementById('chord-cancel').removeEventListener('click', cleanup);
-    document.getElementById('chord-close').removeEventListener('click', cleanup);
-    overlay.removeEventListener('click', onOverlayClick);
-    overlay.removeEventListener('keydown', onKey);
-  }
+  document.getElementById('chord-font-dec').onclick = () => {
+    fontSize = Math.max(11, fontSize - 1);
+    renderChart(savedContent, render, fontSize);
+  };
+  document.getElementById('chord-font-inc').onclick = () => {
+    fontSize = Math.min(20, fontSize + 1);
+    renderChart(savedContent, render, fontSize);
+  };
 
-  async function onSave() {
-    const t = tracks.find(x => x.id === chordModalTrackId);
-    if (!t) { cleanup(); return; }
-    if (pendingChordPdf) {
-      t.chordPdf = pendingChordPdf;
-    } else if (pendingChordPdfCleared) {
-      t.chordPdf = null;
-    }
-    const cpVal = cpInput.value || null;
-    t.chordPro = cpVal;
-    // Save to IDB: strip only the audio arrayBuffer, pass chordPdf through
-    const statusEl = document.getElementById('chord-save-status');
-    try {
-      const { arrayBuffer, ...meta } = t;
-      if (meta.chordPdf) meta.chordPdf = meta.chordPdf.slice(0);
-      await LibraryManager.saveMeta(meta);
-      statusEl.textContent = 'Saved.';
-      statusEl.className = 'chord-save-ok';
-    } catch(e) {
-      console.warn('Chord save failed:', e);
-      statusEl.textContent = 'Save failed.';
-      statusEl.className = 'chord-save-err';
-    }
-    if (statusEl._fadeTimer) clearTimeout(statusEl._fadeTimer);
-    statusEl._fadeTimer = setTimeout(() => { statusEl.textContent = ''; statusEl.className = ''; }, 3000);
-    renderCurrentTab();
-    // Update icon state without closing the modal
-    document.querySelectorAll(`.row-chord-btn[data-chord-id="${CSS.escape(t.id)}"]`).forEach(btn => {
-      btn.classList.toggle('has-chart', !!(t.chordPdf || t.chordPro));
-    });
-  }
+  document.getElementById('chord-save').addEventListener('click', saveChanges);
+  document.getElementById('chord-discard').addEventListener('click', discardChanges);
 
+  document.getElementById('chord-close').addEventListener('click', cleanup);
   function onOverlayClick(e) { if (e.target === overlay) cleanup(); }
   function onKey(e) { if (e.key === 'Escape') cleanup(); }
-
-  document.getElementById('chord-save').addEventListener('click', onSave);
-  document.getElementById('chord-cancel').addEventListener('click', cleanup);
-  document.getElementById('chord-close').addEventListener('click', cleanup);
   overlay.addEventListener('click', onOverlayClick);
   overlay.addEventListener('keydown', onKey);
+
+  setMode(mode);
 }
 
 function escHtml(s) {
@@ -842,7 +862,7 @@ function showMiniplayer(trackId) {
   resetSpeedSlider();
   const player = players[trackId];
   const totalStr = player && player.duration ? formatTime(player.duration) : '--:--';
-  document.getElementById('mp-time-display').textContent = '0:00 / ' + totalStr;
+  setTimeDisplay('0:00', totalStr);
 
   // Set guard BEFORE touching canvas — any in-flight async decode for a previous
   // track will bail out when it checks _waveformForTrackId !== its own trackId.
@@ -920,7 +940,7 @@ function hideMiniplayer() {
   mpStVal.textContent = '0';
   mpStVal.classList.remove('xpose-active');
   document.getElementById('mp-xpose-reset').classList.remove('xpose-reset-visible');
-  document.getElementById('mp-time-display').textContent = '0:00 / --:--';
+  setTimeDisplay('0:00', '--:--');
   _waveformForTrackId = null; // abort any in-flight waveform load
   currentPlayerPeaks = null;
   _waveformLayers    = null;
@@ -959,6 +979,11 @@ function syncMiniplayerPlayBtn(isPlaying) {
   }
 }
 
+function setTimeDisplay(elapsed, total) {
+  document.getElementById('mp-time-elapsed').textContent = elapsed;
+  document.getElementById('mp-time-total').textContent   = total;
+}
+
 function updateMiniplayerProgress(frac, t, duration) {
   if (seeking) return;
   // Suppress events that arrive before Rust has processed the last seek —
@@ -968,8 +993,7 @@ function updateMiniplayerProgress(frac, t, duration) {
   _lastFrac     = frac;
   _lastMs       = performance.now();
   _lastDuration = duration;
-  document.getElementById('mp-time-display').textContent =
-    formatTime(t) + ' / ' + formatTime(duration);
+  setTimeDisplay(formatTime(t), formatTime(duration));
 }
 
 document.getElementById('mp-play').addEventListener('click', () => {
@@ -1201,39 +1225,49 @@ document.getElementById('mp-xpose-reset').addEventListener('click', () => {
   applyTranspose(currentPlayingId, 0);
 });
 
-document.getElementById('mp-semitones-val').addEventListener('dblclick', () => {
-  if (!currentPlayingId) return;
-  const track = tracks.find(t => t.id === currentPlayingId);
-  if (!track) return;
-  const valEl = document.getElementById('mp-semitones-val');
-  const current = track.semitones || 0;
-
-  const input = document.createElement('input');
-  input.type = 'text';
-  input.value = current;
-  input.className = 'xpose-inline-input';
-  input.setAttribute('aria-label', 'Semitones (-12 to +12)');
-
-  valEl.replaceWith(input);
-  input.focus();
-  input.select();
-
-  function commit() {
-    const raw = input.value.trim();
-    const parsed = parseInt(raw, 10);
-    const val = isNaN(parsed) ? current : Math.max(-12, Math.min(12, parsed));
-    input.replaceWith(valEl);
-    applyTranspose(track.id, val);
+let _xposeValClickTimer = null;
+document.getElementById('mp-semitones-val').addEventListener('click', () => {
+  if (_xposeValClickTimer) {
+    clearTimeout(_xposeValClickTimer);
+    _xposeValClickTimer = null;
+    if (currentPlayingId) applyTranspose(currentPlayingId, 0);
+    return;
   }
-  function cancel() {
-    input.replaceWith(valEl);
-  }
+  _xposeValClickTimer = setTimeout(() => {
+    _xposeValClickTimer = null;
+    if (!currentPlayingId) return;
+    const track = tracks.find(t => t.id === currentPlayingId);
+    if (!track) return;
+    const valEl = document.getElementById('mp-semitones-val');
+    const current = track.semitones || 0;
 
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-  });
-  input.addEventListener('blur', cancel);
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.value = current;
+    input.className = 'xpose-inline-input';
+    input.setAttribute('aria-label', 'Semitones (-12 to +12)');
+
+    valEl.replaceWith(input);
+    input.focus();
+    input.select();
+
+    function commit() {
+      const raw = input.value.trim();
+      const parsed = parseInt(raw, 10);
+      const val = isNaN(parsed) ? current : Math.max(-12, Math.min(12, parsed));
+      input.replaceWith(valEl);
+      applyTranspose(track.id, val);
+    }
+    function cancel() {
+      input.replaceWith(valEl);
+    }
+
+    input.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); commit(); }
+      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+    });
+    input.addEventListener('blur', cancel);
+  }, 250);
 });
 
 document.getElementById('mp-vol').addEventListener('input', function() {
@@ -1333,7 +1367,7 @@ function _peaksFromAudioBuffer(audioBuffer, bucketCount = 600) {
 
 async function _loadWaveformFromFile(trackId, filePath) {
   try {
-    const src = convertFileSrc(filePath);
+    const src = convertFileSrc(filePath.replace(/\\/g, '/'));
     const response = await fetch(src);
     if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${src}`);
     const ab = await response.arrayBuffer();
@@ -1441,8 +1475,7 @@ function onScrubMove(e) {
   _lastMs   = performance.now();
   const player = players[currentPlayingId];
   if (player && player.duration) {
-    document.getElementById('mp-time-display').textContent =
-      formatTime(seekFrac * player.duration) + ' / ' + formatTime(player.duration);
+    setTimeDisplay(formatTime(seekFrac * player.duration), formatTime(player.duration));
   }
   // Throttle canvas redraws to one per rAF — ball position updates immediately via rAF loop.
   if (!_scrubRafPending) {
@@ -1488,8 +1521,7 @@ mpScrubBar.addEventListener('mousedown', e => {
   setScrubFrac(seekFrac);
   const player = players[currentPlayingId];
   if (player && player.duration) {
-    document.getElementById('mp-time-display').textContent =
-      formatTime(seekFrac * player.duration) + ' / ' + formatTime(player.duration);
+    setTimeDisplay(formatTime(seekFrac * player.duration), formatTime(player.duration));
   }
   document.addEventListener('mousemove', onScrubMove);
   document.addEventListener('mouseup', onScrubUp);
@@ -1588,6 +1620,8 @@ async function loadLibrary() {
     // No background loads — tracks decode on first play only
     libraryLoaded = true;
     renderCurrentTab();
+    // Startup file-presence scan — mark any tracks whose file no longer exists
+    scanMissingFiles().catch(() => {});
     // Warm artwork cache from IDB, repaint, then background-resolve any still-missing art
     ArtworkManager.warmCache(tracks).then(() => {
       refreshRowArt();
@@ -1608,6 +1642,68 @@ async function loadLibrary() {
     libraryLoaded = true;
     renderCurrentTab();
   }
+}
+
+// ─── MISSING FILE DETECTION ──────────────────────────────────
+async function scanMissingFiles() {
+  const withPaths = tracks.filter(t => t.filePath);
+  if (withPaths.length === 0) return;
+  const paths = withPaths.map(t => t.filePath);
+  const result = await invoke('library_check_paths', { paths });
+  let changed = false;
+  withPaths.forEach(t => {
+    const existed = result[t.filePath];
+    const wasMissing = !!t._missing;
+    t._missing = existed === false;
+    if (t._missing !== wasMissing) changed = true;
+  });
+  if (changed) renderCurrentTab();
+}
+
+// Re-scan when window regains focus (handles user moving files while app is open)
+window.addEventListener('focus', () => {
+  if (libraryLoaded) scanMissingFiles().catch(() => {});
+});
+
+async function handleRelocate(trackId) {
+  const track = tracks.find(t => t.id === trackId);
+  if (!track) return;
+  let newPaths;
+  try {
+    newPaths = await invoke('open_audio_files_dialog');
+  } catch(e) {
+    console.warn('Relocate dialog failed:', e);
+    return;
+  }
+  if (!newPaths || newPaths.length === 0) return;
+  const newPath = newPaths[0];
+  // Verify the new file exists
+  const check = await invoke('library_check_paths', { paths: [newPath] });
+  if (!check[newPath]) {
+    notify('File not found', 'error');
+    return;
+  }
+  track.filePath = newPath;
+  track._missing = false;
+  await LibraryManager.saveMeta({ id: trackId, filePath: newPath });
+  // Reload player with new path
+  const player = players[trackId];
+  if (player) {
+    player.stop();
+    player._loaded = false;
+    player.loadFile(newPath, {
+      peaks: track.peaks ?? null,
+      nativeDuration: track.nativeDuration ?? null,
+      sampleRate: track.sampleRate ?? null,
+    }).then(() => {
+      if (!track.duration && player.duration) {
+        track.duration = player.duration;
+        saveTrackMeta(track);
+      }
+    }).catch(() => {});
+  }
+  renderCurrentTab();
+  notify('File relocated', 'success');
 }
 
 // ─── PLAY TRACK ───────────────────────────────────────────────
@@ -1653,7 +1749,7 @@ async function playTrack(id, fromPlaylistId, slotIdx) {
 
   // Load buffer if needed — also reload if a different track is in the Rust engine
   const needsLoad = !player._loaded || currentRustTrackId !== id;
-  console.log(`[stagehand] playTrack: "${track.name}" needsLoad=${needsLoad} _loaded=${player._loaded} rustHas=${currentRustTrackId}`);
+  console.log(`[stagehand] playTrack: "${track.name}" needsLoad=${needsLoad}`);
   if (needsLoad) {
     if (!track.filePath) {
       notify('Audio file missing — try re-importing the file', 'error');
@@ -1661,10 +1757,7 @@ async function playTrack(id, fromPlaylistId, slotIdx) {
     }
     try {
       const _cm = track.peaks ? { peaks: track.peaks, nativeDuration: track.nativeDuration, sampleRate: track.sampleRate } : null;
-      console.log(`[stagehand] playTrack:loadFile start (cached=${!!_cm})`);
-      console.time(`[stagehand] playTrack:loadFile`);
       await player.loadFile(track.filePath, _cm);
-      console.timeEnd(`[stagehand] playTrack:loadFile`);
       currentRustTrackId = id;
       if (!track.duration) {
         track.duration = player.duration;
@@ -1677,9 +1770,14 @@ async function playTrack(id, fromPlaylistId, slotIdx) {
     }
   }
 
-  // Stop other players
+  // Sync JS state for other players — Rust's stop_sink() inside audio_play drops
+  // any active sink already, so dispatching audio_pause here would race with
+  // the incoming audio_play and silently pause the new sink.
   Object.entries(players).forEach(([pid, p]) => {
-    if (pid !== id && p.isPlaying) p.pause();
+    if (pid !== id && p.isPlaying) {
+      p.isPlaying = false;
+      p._paused = false;
+    }
   });
 
   try {
@@ -1687,9 +1785,7 @@ async function playTrack(id, fromPlaylistId, slotIdx) {
     // Scale track volume by master volume for the Rust sink
     player._masterVolume = masterVolume;
     const effectiveVol = player.volume * masterVolume;
-    console.time(`[stagehand] playTrack:audio_play`);
     await player.play(undefined, effectiveVol);
-    console.timeEnd(`[stagehand] playTrack:audio_play`);
     showMiniplayer(id);
     renderCurrentTab(); // add playing highlight
     firePrefetch(id);   // decode next track in background while this one plays
@@ -1761,7 +1857,8 @@ function buildTrackRow(track) {
   const row = document.createElement('div');
   row.className = 'track-row'
     + (track.id === currentPlayingId ? ' playing' : '')
-    + (selectedIds.has(track.id) ? ' selected' : '');
+    + (selectedIds.has(track.id) ? ' selected' : '')
+    + (track._missing ? ' missing' : '');
   row.dataset.id = track.id;
   row.style.height = ROW_H + 'px';
 
@@ -1776,6 +1873,9 @@ function buildTrackRow(track) {
   const xposeValText = hasKey
     ? (st !== 0 ? `${transposedKeyName(track.keyRoot, track.keyMode, st)} (${stLabel})` : origKeyLabel)
     : stLabel;
+  const missingBadge = track._missing
+    ? `<span class="row-missing-badge" title="${escHtml(track.filePath || '')}">⚠ missing</span>`
+    : '';
 
   row.appendChild(buildArtThumb(track));
   row.insertAdjacentHTML('beforeend', `
@@ -1786,6 +1886,7 @@ function buildTrackRow(track) {
     <div class="row-name-col">
       <button class="row-chord-btn${!!(track.chordPdf || track.chordPro) ? ' has-chart' : ''}" data-chord-id="${escHtml(track.id)}" title="Chord chart" aria-label="Chord chart">${ICONS.chord}</button>
       <div class="row-name">${escHtml(track.name)}</div>
+      ${missingBadge}
     </div>
     <div class="row-artist">${escHtml(artist)}</div>
     <div class="row-album">${escHtml(albumLabel)}</div>
@@ -3326,6 +3427,83 @@ async function importFiles(files) {
   if (added > 0) notify(`Imported ${added} track${added > 1 ? 's' : ''}`, 'success');
 }
 
+// Import from native paths (Tauri dialog or native drag-drop) — stores original path, no copy
+async function importFilePaths(nativePaths) {
+  const allowed = ['wav','mp3','flac','ogg','opus','m4a','aac','aiff','aif','mp4'];
+  const validPaths = nativePaths.filter(p => {
+    const ext = p.replace(/\\/g, '/').split('/').pop().split('.').pop().toLowerCase();
+    return allowed.includes(ext);
+  });
+  if (validPaths.length === 0) return;
+
+  // Step 1: skeleton tracks appear instantly
+  const workItems = validPaths.map(filePath => {
+    const parts = filePath.replace(/\\/g, '/').split('/');
+    const filename = parts[parts.length - 1];
+    const ext = filename.split('.').pop().toLowerCase();
+    const id = LibraryManager.genId();
+    const track = {
+      id,
+      name: filename.replace(/\.[^.]+$/, ''),
+      format: ext.toUpperCase(),
+      size: 0,
+      semitones: 0, volume: 1.0,
+      artist: '', album: '', title: '', trackNumber: 0, releaseDate: '',
+      duration: 0, filePath,
+      addedAt: Date.now(),
+    };
+    tracks.push(track);
+    players[id] = new TrackPlayer(id);
+    players[id].semitones = 0;
+    players[id].volume = 1.0;
+    players[id].loopEnabled = false;
+    players[id].loopStart   = 0;
+    players[id].loopEnd     = 1;
+    return { filePath, track };
+  });
+  renderTrackList();
+
+  // Step 2: per-file — read bytes for tags/artwork via asset protocol, then store original path
+  let added = 0;
+  for (const { filePath, track } of workItems) {
+    try {
+      const src = convertFileSrc(filePath.replace(/\\/g, '/'));
+      const resp = await fetch(src);
+      if (resp.ok) {
+        const ab = await resp.arrayBuffer();
+        track.size = ab.byteLength;
+        // Tag reading via jsmediatags (needs a File/Blob)
+        const fakeFile = new File([ab], track.name + '.' + track.format.toLowerCase());
+        const tags = await readTags(fakeFile);
+        track.artist      = tags.artist || '';
+        track.album       = tags.album  || '';
+        track.title       = tags.title  || '';
+        track.trackNumber = parseTrackNumber(tags.track);
+        track.releaseDate = tags.year   || '';
+        ArtworkManager.resolveAndStoreArtwork(track, ab.slice(0))
+          .then(() => renderCurrentTab())
+          .catch(() => {});
+      }
+
+      LibraryManager.save({ ...track }).catch(e => console.warn('IDB save failed:', e));
+
+      players[track.id].loadFile(filePath).then(() => {
+        if (!track.duration) {
+          track.duration = players[track.id].duration;
+          saveTrackMeta(track);
+          renderTrackList();
+        }
+      }).catch(e => console.warn('Decode failed:', track.name, e));
+
+      added++;
+      renderTrackList();
+    } catch(e) {
+      console.warn('Import failed for', filePath, e);
+    }
+  }
+  if (added > 0) notify(`Imported ${added} track${added > 1 ? 's' : ''}`, 'success');
+}
+
 
 // ─── UI SCALE ────────────────────────────────────────────────
 const SCALE_MIN = 85, SCALE_MAX = 160, SCALE_STEP = 5;
@@ -3373,6 +3551,25 @@ document.getElementById('scale-plus').addEventListener('click', () => {
 });
 
 applyScale();
+
+// ─── THEME (LIGHT / DARK) ────────────────────────────────────
+let _isLightMode = localStorage.getItem('themeMode') === 'light';
+
+function applyTheme() {
+  document.documentElement.classList.toggle('light-mode', _isLightMode);
+  const lbl = document.getElementById('theme-mode-label');
+  const tog = document.getElementById('theme-toggle');
+  if (lbl) lbl.textContent = _isLightMode ? 'Light' : 'Dark';
+  if (tog) tog.checked = _isLightMode;
+}
+
+document.getElementById('theme-toggle').addEventListener('change', e => {
+  _isLightMode = e.target.checked;
+  localStorage.setItem('themeMode', _isLightMode ? 'light' : 'dark');
+  applyTheme();
+});
+
+applyTheme();
 
 // ─── CLEAR ARTWORK ───────────────────────────────────────────
 document.getElementById('clear-artwork-btn').addEventListener('click', async () => {
@@ -3447,7 +3644,10 @@ settingsBtn.addEventListener('click', e => {
   const open = !settingsPopup.classList.contains('hidden');
   settingsPopup.classList.toggle('hidden', open);
   settingsBtn.classList.toggle('active', !open);
-  if (!open) loadDeviceList();
+  if (!open) {
+    loadDeviceList();
+    renderShortcuts();
+  }
 });
 
 let _deviceList = [];
@@ -3489,6 +3689,15 @@ async function loadDeviceList() {
       sel.appendChild(grp);
     }
 
+    const savedDevice = localStorage.getItem('audioOutputDevice');
+    if (savedDevice) {
+      const savedOpt = sel.querySelector(`option[value="${CSS.escape(savedDevice)}"]`);
+      if (savedOpt) {
+        sel.querySelectorAll('option').forEach(o => o.selected = false);
+        savedOpt.selected = true;
+      }
+    }
+
     if (warn) warn.classList.toggle('hidden', asioDevices.length > 0);
   } catch (e) {
     console.warn('audio_get_devices failed:', e);
@@ -3499,6 +3708,7 @@ document.getElementById('sp-device-select')?.addEventListener('change', async e 
   const device = _deviceList.find(d => d.name === e.target.value);
   try {
     await invoke('audio_set_device', { deviceName: e.target.value, isAsio: device?.is_asio ?? false });
+    localStorage.setItem('audioOutputDevice', e.target.value);
   } catch (err) {
     console.error('audio_set_device failed:', err);
     notify('Failed to switch audio device', 'error');
@@ -3539,7 +3749,7 @@ function renderShortcuts() {
     if (!groups[def.group]) groups[def.group] = [];
     groups[def.group].push(shortcuts[def.id]);
   }
-  let html = '<p class="sp-shortcuts-hint">Click any key to rebind</p>';
+  let html = '<p class="sp-shortcuts-hint">Click any key to rebind · Double-click to reset</p>';
   for (const [group, items] of Object.entries(groups)) {
     html += `<div class="sp-shortcut-group">${group}</div>`;
     for (const sc of items) {
@@ -3549,14 +3759,15 @@ function renderShortcuts() {
         `</div>`;
     }
   }
-  html += `<div class="sp-shortcuts-footer">` +
-    `<button class="sp-btn-small" id="sp-shortcuts-reset">Reset to defaults</button>` +
-    `</div>`;
   list.innerHTML = html;
   list.querySelectorAll('.sp-keys-editable').forEach(el => {
     el.addEventListener('click', e => { e.stopPropagation(); _startScCapture(el.dataset.scId); });
+    el.addEventListener('dblclick', e => {
+      e.stopPropagation();
+      const def = SHORTCUT_DEFAULTS.find(d => d.id === el.dataset.scId);
+      if (def) { shortcuts[def.id] = { ...def }; _saveShortcuts(); renderShortcuts(); }
+    });
   });
-  document.getElementById('sp-shortcuts-reset')?.addEventListener('click', _resetShortcuts);
 }
 
 function _startScCapture(id) {
@@ -3598,14 +3809,135 @@ function _resetShortcuts() {
   renderShortcuts();
 }
 
-const _scToggleBtn = document.getElementById('sp-shortcuts-toggle');
-const _scList = document.getElementById('sp-shortcuts-list');
-document.getElementById('sp-shortcuts-header')?.addEventListener('click', () => {
-  const opening = _scList.classList.contains('hidden');
-  _scList.classList.toggle('hidden', !opening);
-  _scToggleBtn.classList.toggle('open', opening);
-  _scToggleBtn.setAttribute('aria-expanded', String(opening));
-  if (opening) renderShortcuts();
+// ─── SETTINGS TABS ───────────────────────────────────────────
+const _spTabBar     = document.getElementById('sp-tab-bar');
+const _spTabBarWrap = document.querySelector('.sp-tab-bar-wrap');
+const _spTabs       = document.querySelectorAll('.sp-tab');
+const _spPanels     = document.querySelectorAll('.sp-tab-panel');
+const _spScrollTrack = document.getElementById('sp-tab-scroll-track');
+const _spScrollThumb = document.getElementById('sp-tab-scroll-thumb');
+let   _activeTab = localStorage.getItem('spActiveTab') || 'general';
+
+function _activateTab(name) {
+  _spTabs.forEach(t => {
+    const on = t.dataset.tab === name;
+    t.classList.toggle('active', on);
+    t.setAttribute('aria-selected', String(on));
+  });
+  _spPanels.forEach(p => p.classList.toggle('active', p.id === `sp-panel-${name}`));
+  localStorage.setItem('spActiveTab', name);
+  _activeTab = name;
+}
+
+_spTabs.forEach(t => t.addEventListener('click', e => {
+  e.stopPropagation();
+  _activateTab(t.dataset.tab);
+}));
+
+// ── Scroll UX ──────────────────────────────────────────────
+let _spScrollTarget  = 0;
+let _spScrollRaf     = null;
+let _spScrollHideTimer = null;
+
+function _updateTabBarFades() {
+  if (!_spTabBar || !_spTabBarWrap) return;
+  const { scrollLeft, scrollWidth, clientWidth } = _spTabBar;
+  _spTabBarWrap.classList.toggle('can-scroll-left',  scrollLeft > 1);
+  _spTabBarWrap.classList.toggle('can-scroll-right', scrollLeft < scrollWidth - clientWidth - 1);
+}
+
+function _updateScrollThumb() {
+  if (!_spScrollTrack || !_spScrollThumb || !_spTabBar) return;
+  const { scrollLeft, scrollWidth, clientWidth } = _spTabBar;
+  if (scrollWidth <= clientWidth) return;
+  const thumbPct = clientWidth / scrollWidth * 100;
+  const thumbOff = scrollLeft / (scrollWidth - clientWidth) * (100 - thumbPct);
+  _spScrollThumb.style.width = thumbPct + '%';
+  _spScrollThumb.style.left  = thumbOff + '%';
+}
+
+function _showScrollIndicator() {
+  if (!_spScrollTrack || !_spTabBar) return;
+  if (_spTabBar.scrollWidth <= _spTabBar.clientWidth) return;
+  _updateScrollThumb();
+  _spScrollTrack.classList.add('visible');
+  clearTimeout(_spScrollHideTimer);
+  _spScrollHideTimer = setTimeout(() => _spScrollTrack.classList.remove('visible'), 900);
+}
+
+function _spBarScrollTo(target) {
+  _spScrollTarget = Math.max(0, Math.min(
+    _spTabBar.scrollWidth - _spTabBar.clientWidth, target
+  ));
+  if (_spScrollRaf) return;
+  function step() {
+    const diff = _spScrollTarget - _spTabBar.scrollLeft;
+    if (Math.abs(diff) < 0.5) {
+      _spTabBar.scrollLeft = _spScrollTarget;
+      _spScrollRaf = null;
+      _updateTabBarFades();
+      return;
+    }
+    _spTabBar.scrollLeft += diff * 0.18;
+    _updateTabBarFades();
+    _spScrollRaf = requestAnimationFrame(step);
+  }
+  _spScrollRaf = requestAnimationFrame(step);
+}
+
+_spTabBar?.addEventListener('wheel', e => {
+  if (e.deltaY === 0) return;
+  e.preventDefault();
+  const delta = e.deltaMode === 1 ? e.deltaY * 36 : e.deltaY;
+  _spBarScrollTo(_spScrollTarget + delta);
+  _showScrollIndicator();
+}, { passive: false });
+
+_spTabBar?.addEventListener('scroll', () => {
+  _updateTabBarFades();
+  _updateScrollThumb();
+});
+
+// init on popup open (second listener — runs after the toggle)
+settingsBtn.addEventListener('click', () => {
+  if (settingsPopup.classList.contains('hidden')) return;
+  requestAnimationFrame(() => {
+    _spScrollTarget = _spTabBar?.scrollLeft ?? 0;
+    _updateTabBarFades();
+    _showScrollIndicator();
+  });
+});
+
+// restore saved tab
+_activateTab(_activeTab);
+
+// ── Collapsible sections within tabs ─────────────────────────
+function _initSecCollapsed() {
+  const stored = JSON.parse(localStorage.getItem('spSecCollapsed') || '{}');
+  document.querySelectorAll('.sp-sec-hdr').forEach(hdr => {
+    const key  = hdr.dataset.sec;
+    const body = document.getElementById('sp-sec-' + key);
+    if (!body) return;
+    const collapsed = stored[key] === true;
+    body.classList.toggle('open', !collapsed);
+    hdr.classList.toggle('open', !collapsed);
+  });
+}
+_initSecCollapsed();
+
+settingsPopup.addEventListener('click', e => {
+  const hdr = e.target.closest('.sp-sec-hdr');
+  if (!hdr) return;
+  e.stopPropagation();
+  const key  = hdr.dataset.sec;
+  const body = document.getElementById('sp-sec-' + key);
+  if (!body) return;
+  const opening = !body.classList.contains('open');
+  body.classList.toggle('open', opening);
+  hdr.classList.toggle('open', opening);
+  const stored = JSON.parse(localStorage.getItem('spSecCollapsed') || '{}');
+  stored[key] = !opening;
+  localStorage.setItem('spSecCollapsed', JSON.stringify(stored));
 });
 
 document.addEventListener('keydown', e => {
@@ -3751,6 +4083,16 @@ document.querySelectorAll('.lib-tab').forEach(btn => {
 
 // ─── TRACK LIST (declared here for use in startRenameById) ───
 const trackList = document.getElementById('track-list');
+
+// Re-render virtual list when #track-list's own height changes (e.g. Tauri fullscreen transition).
+let _trackListH = 0;
+new ResizeObserver(entries => {
+  const h = entries[0].contentRect.height;
+  if (h > 0 && h !== _trackListH) {
+    _trackListH = h;
+    renderCurrentTab();
+  }
+}).observe(trackList);
 
 // ─── VIRTUAL SCROLL LISTENER ─────────────────────────────────
 let rafPending = false;
@@ -4048,6 +4390,10 @@ function showCtxMenu(e, trackId, plContext = null) {
   // "Remove from Playlist" only visible when inside a playlist
   ctxMenu.querySelector('[data-action="remove-from-playlist"]')
     .classList.toggle('ctx-hidden', !plContext);
+  // "Relocate file…" only visible when the track's file is missing
+  const isMissing = !!tracks.find(t => t.id === trackId)?._missing;
+  ctxMenu.querySelector('[data-action="relocate"]')
+    .classList.toggle('ctx-hidden', !isMissing);
   const x = Math.min(e.clientX, window.innerWidth - 160);
   const y = Math.min(e.clientY, window.innerHeight - 160);
   ctxMenu.style.left = x + 'px';
@@ -4089,6 +4435,8 @@ ctxMenu.addEventListener('click', e => {
   } else if (action === 'select-all') {
     visibleTracks.forEach(t => selectedIds.add(t.id));
     updateSelectionClasses();
+  } else if (action === 'relocate') {
+    handleRelocate(ctxMenuTrackId);
   }
 });
 
@@ -4161,13 +4509,20 @@ const fileInput = document.getElementById('file-input');
 const importBtn = document.getElementById('import-btn');
 const libraryPanel = document.getElementById('panel-library');
 
-importBtn.addEventListener('click', () => fileInput.click());
+// Import button opens native OS file picker (returns absolute paths)
+importBtn.addEventListener('click', () => {
+  invoke('open_audio_files_dialog').then(paths => {
+    if (paths && paths.length) importFilePaths(paths);
+  }).catch(e => console.warn('File dialog failed:', e));
+});
 
+// Keep hidden file input as browser fallback (dev mode / non-Tauri)
 fileInput.addEventListener('change', () => {
   if (fileInput.files.length) importFiles(Array.from(fileInput.files));
   fileInput.value = '';
 });
 
+// Visual feedback for drag-over (HTML events)
 libraryPanel.addEventListener('dragover', e => {
   if (!e.dataTransfer.types.includes('Files')) return;
   e.preventDefault();
@@ -4176,11 +4531,22 @@ libraryPanel.addEventListener('dragover', e => {
 libraryPanel.addEventListener('dragleave', e => {
   if (!libraryPanel.contains(e.relatedTarget)) libraryPanel.classList.remove('drag-over');
 });
+// HTML drop — browser/dev-mode fallback only; skip in Tauri (native event fires instead)
 libraryPanel.addEventListener('drop', e => {
   e.preventDefault();
   libraryPanel.classList.remove('drag-over');
+  if (window.__TAURI__) return; // tauri://drag-drop handles it with absolute paths
   if (e.dataTransfer.files.length > 0) importFiles(Array.from(e.dataTransfer.files));
 });
+
+// Tauri native drag-drop — gives absolute paths, fires instead of/alongside HTML drop
+listen('tauri://drag-drop', event => {
+  const paths = event?.payload?.paths;
+  libraryPanel.classList.remove('drag-over');
+  if (Array.isArray(paths) && paths.length > 0) importFilePaths(paths);
+});
+listen('tauri://drag-over', () => libraryPanel.classList.add('drag-over'));
+listen('tauri://drag-cancel', () => libraryPanel.classList.remove('drag-over'));
 
 // ─── METRONOME MINIPLAYER SYNC ────────────────────────────────
 function renderBeatDots(count) {
@@ -4213,42 +4579,6 @@ function applyCollapse(bodyId, btnId, collapsed) {
   document.getElementById(btnId).classList.toggle('collapsed', collapsed);
 }
 
-function initChordResize() {
-  const box = document.getElementById('chord-box');
-  let drag = null;
-
-  box.querySelectorAll('.chord-resize').forEach(handle => {
-    handle.addEventListener('mousedown', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      const cls = [...handle.classList].find(c => c !== 'chord-resize');
-      const dir = cls ? cls.replace('chord-resize-', '') : '';
-      drag = {
-        startX: e.clientX, startY: e.clientY,
-        startW: box.offsetWidth, startH: box.offsetHeight,
-        xDir: /e/.test(dir) ? 1 : /w/.test(dir) ? -1 : 0,
-        yDir: /s/.test(dir) ? 1 : /n/.test(dir) ? -1 : 0,
-      };
-    });
-  });
-
-  document.addEventListener('mousemove', e => {
-    if (!drag) return;
-    const dx = e.clientX - drag.startX;
-    const dy = e.clientY - drag.startY;
-    if (drag.xDir) {
-      const w = Math.max(340, drag.startW + 2 * dx * drag.xDir);
-      box.style.width = w + 'px';
-    }
-    if (drag.yDir) {
-      const h = Math.max(280, drag.startH + 2 * dy * drag.yDir);
-      box.style.height = h + 'px';
-      box.style.maxHeight = 'none';
-    }
-  });
-
-  document.addEventListener('mouseup', () => { drag = null; });
-}
 
 function initSectionCollapse() {
   const metroCollapsed = localStorage.getItem('metroCollapsed') === 'true';
@@ -4553,7 +4883,6 @@ document.getElementById('mp-loop-btn').addEventListener('click', () => {
 
   initSectionCollapse();
   syncMetroMini();
-  initChordResize();
   document.getElementById('track-list').innerHTML =
     '<div class="lib-empty-state"><div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></div><div class="es-text">Loading Library…</div></div>';
   await loadLibrary();
@@ -4571,12 +4900,16 @@ document.getElementById('mp-loop-btn').addEventListener('click', () => {
       if (track) {
         if (!track.peaks?.length) track.peaks = peaks;
         if (!track.nativeDuration) track.nativeDuration = duration;
+        const durationChanged = !track.duration && duration > 0;
+        if (durationChanged) track.duration = duration;
         LibraryManager.saveMeta({
           id: track_id,
           peaks,
           nativeDuration: duration,
+          duration: duration || track.duration,
           sampleRate: track.sampleRate,
         }).catch(() => {});
+        if (durationChanged) renderTrackList();
       }
 
       const player = players[track_id];
