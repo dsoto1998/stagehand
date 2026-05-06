@@ -3752,6 +3752,16 @@ document.querySelectorAll('.lib-tab').forEach(btn => {
 // ─── TRACK LIST (declared here for use in startRenameById) ───
 const trackList = document.getElementById('track-list');
 
+// Re-render virtual list when #track-list's own height changes (e.g. Tauri fullscreen transition).
+let _trackListH = 0;
+new ResizeObserver(entries => {
+  const h = entries[0].contentRect.height;
+  if (h > 0 && h !== _trackListH) {
+    _trackListH = h;
+    renderCurrentTab();
+  }
+}).observe(trackList);
+
 // ─── VIRTUAL SCROLL LISTENER ─────────────────────────────────
 let rafPending = false;
 trackList.addEventListener('scroll', () => {
