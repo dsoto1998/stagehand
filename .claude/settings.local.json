@@ -38,9 +38,17 @@
       "Bash(cd:*)",
       "Bash(node:*)",
       "Skill(gsd:progress)",
-      "Bash(python3 *)"
+      "Bash(python3 *)",
+      "Bash(cargo check *)",
+      "Bash(git -C \"F:\\\\Claude\\\\stagehand\" worktree list)",
+      "Bash(git -C \"F:\\\\Claude\\\\stagehand\\\\.claude\\\\worktrees\\\\stoic-rosalind-d9cad1\" status --short)",
+      "Bash(git --git-dir=\"F:\\\\Claude\\\\stagehand\\\\.git\" --work-tree=\"F:\\\\Claude\\\\stagehand\\\\.claude\\\\worktrees\\\\stoic-rosalind-d9cad1\" status --short)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(cargo build *)",
+      "PowerShell(git -C \"F:\\\\Claude\\\\stagehand\\\\.claude\\\\worktrees\\\\stoic-rosalind-d9cad1\" status --short)"
     ],
     "defaultMode": "bypassPermissions"
   },
-  "hooks": {}
+  "hooks": {},
+  "remoteControlAtStartup": true
 }

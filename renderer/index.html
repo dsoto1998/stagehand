@@ -28,77 +28,157 @@
         </button>
       </div>
     </div>
-    <div id="settings-popup" class="hidden">
-      <div class="sp-section-label">Audio</div>
-      <div class="sp-row sp-col">
-        <span class="sp-label">Output Device</span>
-        <select id="sp-device-select" class="sp-select">
-          <option value="">Default</option>
-        </select>
-      </div>
-      <div id="sp-asio-warn" class="sp-asio-warn hidden">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-        <span>No ASIO drivers detected. For lowest latency, install your audio interface driver or <button class="sp-link-btn" id="sp-asio4all-btn">download ASIO4ALL ↗</button></span>
-      </div>
-      <div class="sp-divider"></div>
-      <div class="sp-section-label">Display</div>
-      <div class="sp-row">
-        <span class="sp-label">UI Scale</span>
-        <div class="sp-control">
-          <button class="sp-adj" id="scale-minus">−</button>
-          <span id="scale-val" class="sp-val">100%</span>
-          <button class="sp-adj" id="scale-plus">+</button>
+    <div id="settings-popup" class="hidden" data-tauri-no-drag>
+      <!-- Tab bar -->
+      <div class="sp-tab-bar-wrap">
+        <div class="sp-tab-bar" id="sp-tab-bar" role="tablist">
+          <button class="sp-tab active" data-tab="general"    role="tab" aria-selected="true">General</button>
+          <button class="sp-tab"        data-tab="display"   role="tab" aria-selected="false">Display</button>
+          <button class="sp-tab"        data-tab="audio"      role="tab" aria-selected="false">Audio</button>
+          <button class="sp-tab"        data-tab="export"     role="tab" aria-selected="false">Export</button>
+        </div>
+        <div class="sp-tab-scroll-track" id="sp-tab-scroll-track">
+          <div class="sp-tab-scroll-thumb" id="sp-tab-scroll-thumb"></div>
         </div>
       </div>
-      <div class="sp-divider"></div>
-      <div class="sp-section-label">Metronome</div>
-      <div class="sp-row sp-col">
-        <span class="sp-label">Click Sounds</span>
-        <div class="click-sounds-grid">
-          <div class="click-sound-row">
-            <span class="click-type-label">Accent</span>
-            <span class="click-sound-name" data-type="accent">Default</span>
-            <button class="sp-btn-small load-click-btn" data-type="accent">Load…</button>
-            <button class="sp-btn-small clear-click-btn hidden" data-type="accent">Clear</button>
+
+      <!-- GENERAL -->
+      <div class="sp-tab-panel active" id="sp-panel-general">
+        <div class="sp-tab-panel-inner">
+          <div class="sp-sec-hdr open" data-sec="gen-library">
+            <span class="sp-section-label">Library</span>
+            <svg class="sp-sec-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
-          <div class="click-sound-row">
-            <span class="click-type-label">Quarter</span>
-            <span class="click-sound-name" data-type="quarter">Default</span>
-            <button class="sp-btn-small load-click-btn" data-type="quarter">Load…</button>
-            <button class="sp-btn-small clear-click-btn hidden" data-type="quarter">Clear</button>
+          <div class="sp-sec-body open" id="sp-sec-gen-library">
+            <div class="sp-sec-body-inner">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px">
+                <span class="sp-label">Artwork cache</span>
+                <div class="sp-control">
+                  <button class="sp-btn-small sp-btn-danger" id="clear-artwork-btn">Clear All Artwork…</button>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="click-sound-row">
-            <span class="click-type-label">Eighth</span>
-            <span class="click-sound-name" data-type="eighth">Default</span>
-            <button class="sp-btn-small load-click-btn" data-type="eighth">Load…</button>
-            <button class="sp-btn-small clear-click-btn hidden" data-type="eighth">Clear</button>
+          <div class="sp-divider"></div>
+          <div class="sp-sec-hdr open" data-sec="gen-shortcuts">
+            <span class="sp-section-label">Keyboard Shortcuts</span>
+            <svg class="sp-sec-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
           </div>
-          <div class="click-sound-row">
-            <span class="click-type-label">16th / Trip</span>
-            <span class="click-sound-name" data-type="subdivision">Default</span>
-            <button class="sp-btn-small load-click-btn" data-type="subdivision">Load…</button>
-            <button class="sp-btn-small clear-click-btn hidden" data-type="subdivision">Clear</button>
+          <div class="sp-sec-body open" id="sp-sec-gen-shortcuts">
+            <div class="sp-sec-body-inner">
+              <div id="sp-shortcuts-list" style="padding:0 16px 4px"></div>
+            </div>
           </div>
-          <input type="file" id="click-file-input" accept=".wav,.mp3,.ogg" class="hidden">
         </div>
       </div>
-      <div class="sp-divider"></div>
-      <div class="sp-section-label">Library</div>
-      <div class="sp-row">
-        <span class="sp-label">Artwork cache</span>
-        <div class="sp-control">
-          <button class="sp-btn-small sp-btn-danger" id="clear-artwork-btn">Clear All Artwork…</button>
+
+      <!-- DISPLAY -->
+      <div class="sp-tab-panel" id="sp-panel-display">
+        <div class="sp-tab-panel-inner">
+          <div class="sp-sec-hdr open" data-sec="disp-scale">
+            <span class="sp-section-label">Scale</span>
+            <svg class="sp-sec-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="sp-sec-body open" id="sp-sec-disp-scale">
+            <div class="sp-sec-body-inner">
+              <div class="sp-row">
+                <span class="sp-label">UI Scale</span>
+                <div class="sp-control">
+                  <button class="sp-adj" id="scale-minus">−</button>
+                  <span id="scale-val" class="sp-val">100%</span>
+                  <button class="sp-adj" id="scale-plus">+</button>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="sp-divider"></div>
+          <div class="sp-sec-hdr open" data-sec="disp-theme">
+            <span class="sp-section-label">Theme</span>
+            <svg class="sp-sec-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="sp-sec-body open" id="sp-sec-disp-theme">
+            <div class="sp-sec-body-inner">
+              <div class="sp-row">
+                <span class="sp-label">Appearance</span>
+                <div class="sp-control">
+                  <span class="sp-toggle-mode-label" id="theme-mode-label">Dark</span>
+                  <label class="sp-toggle" title="Toggle light/dark mode">
+                    <input type="checkbox" id="theme-toggle" aria-label="Light mode">
+                    <span class="sp-toggle-track"><span class="sp-toggle-thumb"></span></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="sp-divider"></div>
-      <div class="sp-shortcuts-header" id="sp-shortcuts-header">
-        <span class="sp-section-label">Keyboard Shortcuts</span>
-        <button class="sp-shortcuts-toggle" id="sp-shortcuts-toggle" aria-label="Expand keyboard shortcuts" aria-expanded="false">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
-        </button>
+
+      <!-- AUDIO -->
+      <div class="sp-tab-panel" id="sp-panel-audio">
+        <div class="sp-tab-panel-inner">
+          <div class="sp-sec-hdr open" data-sec="aud-output">
+            <span class="sp-section-label">Output Device</span>
+            <svg class="sp-sec-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="sp-sec-body open" id="sp-sec-aud-output">
+            <div class="sp-sec-body-inner">
+              <div class="sp-row sp-col">
+                <select id="sp-device-select" class="sp-select">
+                  <option value="">Default</option>
+                </select>
+              </div>
+              <div id="sp-asio-warn" class="sp-asio-warn hidden" style="margin:2px 16px 4px">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="flex-shrink:0;margin-top:1px"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                <span>No ASIO drivers detected. For lowest latency, install your audio interface driver or <button class="sp-link-btn" id="sp-asio4all-btn">download ASIO4ALL ↗</button></span>
+              </div>
+            </div>
+          </div>
+          <div class="sp-divider"></div>
+          <div class="sp-sec-hdr open" data-sec="aud-metro">
+            <span class="sp-section-label">Metronome Click Sounds</span>
+            <svg class="sp-sec-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="sp-sec-body open" id="sp-sec-aud-metro">
+            <div class="sp-sec-body-inner">
+              <div style="padding:0 16px 8px">
+                <div class="click-sounds-grid">
+                  <div class="click-sound-row">
+                    <span class="click-type-label">Accent</span>
+                    <span class="click-sound-name" data-type="accent">Default</span>
+                    <button class="sp-btn-small load-click-btn" data-type="accent">Load…</button>
+                    <button class="sp-btn-small clear-click-btn hidden" data-type="accent">Clear</button>
+                  </div>
+                  <div class="click-sound-row">
+                    <span class="click-type-label">Quarter</span>
+                    <span class="click-sound-name" data-type="quarter">Default</span>
+                    <button class="sp-btn-small load-click-btn" data-type="quarter">Load…</button>
+                    <button class="sp-btn-small clear-click-btn hidden" data-type="quarter">Clear</button>
+                  </div>
+                  <div class="click-sound-row">
+                    <span class="click-type-label">Eighth</span>
+                    <span class="click-sound-name" data-type="eighth">Default</span>
+                    <button class="sp-btn-small load-click-btn" data-type="eighth">Load…</button>
+                    <button class="sp-btn-small clear-click-btn hidden" data-type="eighth">Clear</button>
+                  </div>
+                  <div class="click-sound-row">
+                    <span class="click-type-label">16th / Trip</span>
+                    <span class="click-sound-name" data-type="subdivision">Default</span>
+                    <button class="sp-btn-small load-click-btn" data-type="subdivision">Load…</button>
+                    <button class="sp-btn-small clear-click-btn hidden" data-type="subdivision">Clear</button>
+                  </div>
+                  <input type="file" id="click-file-input" accept=".wav,.mp3,.ogg" class="hidden">
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="sp-shortcuts-list hidden" id="sp-shortcuts-list">
-        <!-- dynamically populated by renderShortcuts() -->
+
+      <!-- EXPORT -->
+      <div class="sp-tab-panel" id="sp-panel-export">
+        <div class="sp-tab-panel-inner">
+          <p class="sp-empty-state">Export settings coming soon.</p>
+        </div>
       </div>
     </div>
   </div>
@@ -250,12 +330,13 @@
           <div id="mp-loop-handle-out" class="mp-loop-handle" data-handle="out"></div>
         </div>
         <div id="bb-time-row">
-          <div id="mp-time-display">0:00 / --:--</div>
+          <span id="mp-time-elapsed">0:00</span>
           <div id="mp-loop-times" class="mp-loop-times hidden">
             <span id="mp-loop-in-disp" class="mp-loop-time-val"></span>
             <span class="mp-loop-arrow">→</span>
             <span id="mp-loop-out-disp" class="mp-loop-time-val"></span>
           </div>
+          <span id="mp-time-total">--:--</span>
         </div>
       </div>
     </div>
@@ -277,7 +358,7 @@
       </div>
       <div class="mp-row mp-xpose-row">
         <button class="xpose-btn" id="mp-xpose-dec" aria-label="Transpose down" title="Transpose down">−</button>
-        <span id="mp-semitones-val" class="xpose-val">0st</span>
+        <span id="mp-semitones-val" class="xpose-val" title="Click to edit · Double-click to reset">0st</span>
         <button class="xpose-btn" id="mp-xpose-inc" aria-label="Transpose up" title="Transpose up">+</button>
         <button class="xpose-reset" id="mp-xpose-reset" title="Reset transpose" aria-label="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
       </div>
@@ -391,41 +472,59 @@
 
 <div id="chord-overlay">
   <div id="chord-box">
-    <div class="chord-resize chord-resize-n"></div>
-    <div class="chord-resize chord-resize-s"></div>
-    <div class="chord-resize chord-resize-e"></div>
-    <div class="chord-resize chord-resize-w"></div>
-    <div class="chord-resize chord-resize-ne"></div>
-    <div class="chord-resize chord-resize-nw"></div>
-    <div class="chord-resize chord-resize-se"></div>
-    <div class="chord-resize chord-resize-sw"></div>
+    <!-- Header -->
     <div class="chord-header">
-      <span class="chord-title">Chord Chart</span>
+      <div class="chord-header-left">
+        <span class="chord-title" id="chord-title"></span>
+        <span class="chord-subtitle">chord chart</span>
+      </div>
+      <div class="mode-toggle">
+        <button class="mode-btn" data-mode="view">View</button>
+        <button class="mode-btn" data-mode="edit">Edit</button>
+      </div>
       <button class="chord-close" id="chord-close">&times;</button>
     </div>
-    <div class="chord-tabs">
-      <button class="chord-tab active" data-chord-tab="pdf">Upload PDF</button>
-      <button class="chord-tab" data-chord-tab="chordpro">ChordPro</button>
+
+    <!-- Unsaved banner -->
+    <div class="unsaved-banner" id="chord-unsaved-banner" style="display:none">
+      You have unsaved changes — <a href="#" class="unsaved-save-link" id="chord-unsaved-save">save now</a>
     </div>
-    <div class="chord-tab-content" id="chord-tab-pdf">
-      <div id="chord-pdf-preview"></div>
-      <div class="chord-pdf-actions">
-        <input type="file" id="chord-pdf-input" accept=".pdf" style="display:none" />
-        <button class="btn" id="chord-pdf-upload">Choose PDF...</button>
-        <button class="btn chord-clear-btn" id="chord-pdf-clear" style="display:none">Remove PDF</button>
+
+    <!-- Edit toolbar -->
+    <div class="chord-toolbar" id="chord-toolbar" style="display:none">
+      <input type="file" id="chord-pdf-input" accept=".pdf" style="display:none" />
+      <button class="toolbar-btn" id="chord-pdf-upload">&#8593; Upload PDF</button>
+      <button class="toolbar-btn" id="chord-clear-btn">Clear</button>
+      <button class="toolbar-btn" id="chord-syntax-btn">? Syntax</button>
+      <div class="syntax-popover" id="chord-syntax-popover" style="display:none">
+        <div><code>[Chord]</code> — inline chord</div>
+        <div><code>{comment: Label}</code> — section label</div>
+        <div><code>{title: Name}</code> — song title</div>
+        <div><code>{key: A}</code> — key</div>
+        <div><code>{capo: 2}</code> — capo</div>
       </div>
     </div>
-    <div class="chord-tab-content" id="chord-tab-chordpro" style="display:none">
-      <textarea id="chord-chordpro-input" placeholder="Paste or type ChordPro here...&#10;&#10;Example:&#10;[G]Amazing [C]grace, how [G]sweet the sound" rows="10"></textarea>
-      <div id="chord-chordpro-preview"></div>
-      <div class="chord-chordpro-actions">
-        <button class="btn" id="chord-chordpro-clear" style="display:none">Clear</button>
+
+    <!-- View content -->
+    <div class="chord-view-content" id="chord-view-content">
+      <div class="chord-font-controls">
+        <button class="font-btn" id="chord-font-dec">A&#8722;</button>
+        <button class="font-btn" id="chord-font-inc">A+</button>
       </div>
+      <div class="chord-chart-render" id="chord-chart-render"></div>
+      <div id="saved-toast" style="position:absolute;bottom:24px;left:50%;transform:translateX(-50%);opacity:0;background:#0d3320;border:0.5px solid #1f6640;color:#6dffaa;font-size:11px;font-family:sans-serif;padding:4px 12px;border-radius:4px;pointer-events:none;white-space:nowrap;">&#10003; Saved</div>
     </div>
-    <div class="chord-actions">
-      <span id="chord-save-status"></span>
-      <button class="btn" id="chord-cancel">Close</button>
-      <button class="btn btn-accent" id="chord-save">Save</button>
+
+    <!-- Edit content -->
+    <div class="chord-edit-content" id="chord-edit-content" style="display:none">
+      <div id="chord-pdf-preview" style="display:none"></div>
+      <textarea class="chord-editor" id="chord-editor" placeholder="Paste or type ChordPro here&#8230;&#10;&#10;Example:&#10;{comment: Verse}&#10;[G]Amazing [C]grace, how [G]sweet the sound"></textarea>
+    </div>
+
+    <!-- Footer (Edit mode only) -->
+    <div class="chord-footer" id="chord-footer" style="display:none">
+      <button class="chord-discard-btn" id="chord-discard">Discard changes</button>
+      <button class="chord-save-btn" id="chord-save">Save</button>
     </div>
   </div>
 </div>
@@ -435,6 +534,7 @@
   <div class="ctx-item" data-action="info">Info</div>
   <div class="ctx-item" data-action="rename">Rename</div>
   <div class="ctx-item ctx-danger ctx-hidden" data-action="remove-from-playlist">Remove from Playlist</div>
+  <div class="ctx-item ctx-warn ctx-hidden" data-action="relocate">⚠ Relocate file…</div>
   <div class="ctx-item ctx-danger" data-action="delete">Delete from Library</div>
   <div class="ctx-separator"></div>
   <div class="ctx-item" data-action="select-all">Select All</div>

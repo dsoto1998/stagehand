@@ -141,9 +141,16 @@ impl StreamingSource {
             .map_err(|e| format!("Stream decode error: {e}"))?;
 
         let start_frame = (offset_secs * sample_rate as f64) as usize;
-        let to_skip = start_frame * channels as usize;
-        for _ in 0..to_skip {
-            if inner.next().is_none() { break; }
+        if start_frame > 0 {
+            // Fast path: Symphonia seek (O(1) for M4A keyframe index, avoids per-frame AAC decode)
+            let target = Duration::from_secs_f64(offset_secs.max(0.0));
+            if inner.try_seek(target).is_err() {
+                // Fallback: skip by iteration (slow for compressed formats, only on seek failure)
+                let to_skip = start_frame * channels as usize;
+                for _ in 0..to_skip {
+                    if inner.next().is_none() { break; }
+                }
+            }
         }
 
         frame_counter.store(start_frame as u64, Ordering::SeqCst);
@@ -163,6 +170,7 @@ impl StreamingSource {
     }
 
     fn seek_to(&mut self, secs: f64) {
+        let secs = secs.max(0.0);
         let start_frame = (secs * self.sample_rate as f64) as usize;
         let target = Duration::from_secs_f64(secs);
         // Fast path: rodio 0.19 Decoder::try_seek uses Symphonia's codec seek
@@ -301,7 +309,7 @@ impl RubberbandSource {
     fn check_loop(&mut self) {
         if !self.loop_state.enabled.load(Ordering::Relaxed) { return; }
         let sr = self.audio.sample_rate as f64;
-        let ch = self.audio.channels as usize;
+        let ch = (self.audio.channels as usize).max(1);
         let end_us = self.loop_state.end_us.load(Ordering::Relaxed);
         let end_sample = (end_us as f64 / 1_000_000.0 * sr) as usize * ch;
         if end_sample == 0 { return; }
@@ -334,7 +342,7 @@ impl RubberbandSource {
     fn handle_end(&mut self) {
         if self.loop_state.enabled.load(Ordering::Relaxed) {
             let sr = self.audio.sample_rate as f64;
-            let ch = self.audio.channels as usize;
+            let ch = (self.audio.channels as usize).max(1);
             let start_us = self.loop_state.start_us.load(Ordering::Relaxed);
             let start_sample = (start_us as f64 / 1_000_000.0 * sr) as usize * ch;
             self.read_pos = start_sample.min(self.audio.samples.len());
@@ -351,7 +359,7 @@ impl RubberbandSource {
             Some(r) => r.0,
             None => return,
         };
-        let ch = self.audio.channels as usize;
+        let ch = (self.audio.channels as usize).max(1);
 
         self.check_loop();
 
@@ -416,7 +424,7 @@ impl Iterator for RubberbandSource {
     type Item = f32;
 
     fn next(&mut self) -> Option<f32> {
-        let ch = self.audio.channels as usize;
+        let ch = (self.audio.channels as usize).max(1);
 
         if self.rb.is_some() {
             for _ in 0..256u16 {
@@ -626,6 +634,7 @@ impl AudioEngine {
             let bytes_vec: Vec<u8> = (*raw).to_vec();
             let Ok((samples, ch, sr)) = decode_to_samples(bytes_vec) else { return };
             if gen_arc.load(Ordering::SeqCst) != gen { return; }
+            if ch == 0 || sr == 0 { return; }
             let total_frames = samples.len() / ch as usize;
             let bg_duration = total_frames as f64 / sr as f64;
             dur_arc.store((bg_duration * 1_000_000.0) as u64, Ordering::SeqCst);
@@ -654,6 +663,12 @@ impl AudioEngine {
     ) -> Result<(), String> {
         self.stop_sink();
         self.ended.store(false, Ordering::SeqCst);
+
+        let sr = self.audio_sr.load(Ordering::Relaxed);
+        let ch = self.audio_ch.load(Ordering::Relaxed) as u16;
+        if sr == 0 || ch == 0 {
+            return Err("Audio format not ready (sample_rate or channels unknown)".into());
+        }
 
         let use_rb = semitones != 0 || (speed - 1.0).abs() > 1e-4;
 
@@ -690,8 +705,7 @@ impl AudioEngine {
         } else {
             // Streaming mode — immediate, no decode wait
             let raw = self.raw_bytes.lock().clone().ok_or("No track loaded")?;
-            let sr = self.audio_sr.load(Ordering::Relaxed);
-            let ch = self.audio_ch.load(Ordering::Relaxed) as u16;
+            // sr/ch already validated non-zero above
             // If decoded is already available, use RubberbandSource for instant seek support
             if let Some(decoded) = self.decoded_slot.lock().clone() {
                 let start_frame = (offset_secs * decoded.sample_rate as f64) as usize;

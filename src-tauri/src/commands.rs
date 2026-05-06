@@ -144,6 +144,10 @@ pub async fn audio_prefetch(
             Ok(r) => r,
             Err(e) => { log::warn!("[stagehand] audio_prefetch: decode failed: {e}"); return; }
         };
+        if channels == 0 || sample_rate == 0 {
+            log::warn!("[stagehand] audio_prefetch: bad codec params (ch={channels}, sr={sample_rate})");
+            return;
+        }
         let total_frames = samples.len() / channels as usize;
         let duration = cached_duration.unwrap_or(total_frames as f64 / sample_rate as f64);
         let peaks = match cached_peaks {
