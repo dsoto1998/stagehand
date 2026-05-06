@@ -10,8 +10,8 @@ Built with [Tauri 2](https://tauri.app/) (Rust backend, WebView frontend).
 
 ## Features
 
-- **Audio library** — Import WAV, MP3, FLAC, OGG/Opus. Files stored in app data dir; library persists across sessions.
-- **Waveform display** — Canvas-rendered with amplitude coloring. Click to seek.
+- **Audio library** — Import WAV, MP3, FLAC, OGG/Opus. Stays on disk in the app data folder.
+- **Waveform display** — Amplitude-colored. Click anywhere to seek.
 - **Playback** — Play/pause, per-track volume, miniplayer at the bottom of the sidebar.
 - **Transpose** — ±12 semitones per track via [Rubber Band](https://breakfastquay.com/rubberband/) (C++, vendored). Pitch-only — no tempo change.
 - **Speed** — Pitch-preserving playback speed via SoundTouch (AudioWorklet).
@@ -20,9 +20,9 @@ Built with [Tauri 2](https://tauri.app/) (Rust backend, WebView frontend).
 - **Playlists** — Create and reorder playlists, drag tracks in from the library.
 - **Song info** — Edit title, artist, album, and track number per track; bulk-edit across a selection.
 - **Chord charts** — Attach a PDF or ChordPro file per track, viewed in a resizable overlay.
-- **Album artwork** — Auto-fetched from iTunes API; replaceable per track.
+- **Album artwork** — Pulled from iTunes automatically; swap it out per track.
 - **ASIO support** — Windows device picker with ASIO device detection and latency hints.
-- **Keyboard shortcuts** — Space (play/pause), M (metronome), T (tap tempo), [ / ] (prev/next), and more.
+- **Keyboard shortcuts** — Space (play/pause), M (metronome), T (tap tempo), [ / ] (prev/next).
 
 ---
 
