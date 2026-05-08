@@ -13,6 +13,7 @@ export class TrackPlayer {
     this.pauseOffset = 0;
     this.duration = 0;
     this.semitones = 0;
+    this.cents     = 0;
     this.volume   = 1.0;
     this._masterVolume = 1.0; // kept in sync by ui-controller master vol slider
     this.speed    = 1.0;
@@ -100,6 +101,7 @@ export class TrackPlayer {
     await invoke('audio_play', {
       offsetSecs,
       semitones:   this.semitones,
+      cents:       this.cents,
       speed:       this.speed,
       volume:      vol,
       loopEnabled: this.loopEnabled,
@@ -140,6 +142,7 @@ export class TrackPlayer {
       await invoke('audio_seek', {
         offsetSecs:  t,
         semitones:   this.semitones,
+        cents:       this.cents,
         speed:       this.speed,
         volume:      this._vol,
         loopEnabled: this.loopEnabled,
@@ -162,13 +165,12 @@ export class TrackPlayer {
     invoke('audio_set_volume', { volume: this._vol }).catch(() => {});
   }
 
-  setSemitones(s) {
-    this.semitones = s;
-    if (!this.isPlaying) return;
+  _schedulePitchInvoke() {
     clearTimeout(this._semitoneDebounce);
     this._semitoneDebounce = setTimeout(() => {
       invoke('audio_set_semitones', {
         semitones:   this.semitones,
+        cents:       this.cents,
         speed:       this.speed,
         volume:      this._vol,
         loopEnabled: this.loopEnabled,
@@ -176,6 +178,18 @@ export class TrackPlayer {
         loopEnd:     this.loopEnd   * this.duration,
       }).catch(() => {});
     }, 150);
+  }
+
+  setSemitones(s) {
+    this.semitones = s;
+    if (!this.isPlaying) return;
+    this._schedulePitchInvoke();
+  }
+
+  setCents(c) {
+    this.cents = c;
+    if (!this.isPlaying) return;
+    this._schedulePitchInvoke();
   }
 
   setSpeed(s) {
@@ -189,6 +203,7 @@ export class TrackPlayer {
       invoke('audio_set_speed', {
         speed:       this.speed,
         semitones:   this.semitones,
+        cents:       this.cents,
         volume:      this._vol,
         loopEnabled: this.loopEnabled,
         loopStart:   this.loopStart * this.duration,

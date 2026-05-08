@@ -179,6 +179,7 @@ pub async fn audio_play(
     state: State<'_, EngineState>,
     offset_secs: f64,
     semitones: i32,
+    cents: f64,
     speed: f64,
     volume: f32,
     loop_enabled: bool,
@@ -190,7 +191,7 @@ pub async fn audio_play(
         let result = {
             let engine = state.0.lock();
             engine.set_loop(loop_enabled, loop_start, loop_end);
-            engine.play_with_params(offset_secs, semitones, speed, volume)
+            engine.play_with_params(offset_secs, semitones, cents, speed, volume)
         }; // engine lock released before any sleep
         match result {
             Ok(()) => return Ok(()),
@@ -245,6 +246,7 @@ pub async fn audio_seek(
     state: State<'_, EngineState>,
     offset_secs: f64,
     semitones: i32,
+    cents: f64,
     speed: f64,
     volume: f32,
     loop_enabled: bool,
@@ -256,7 +258,7 @@ pub async fn audio_seek(
         let result = {
             let engine = state.0.lock();
             engine.set_loop(loop_enabled, loop_start, loop_end);
-            engine.seek(offset_secs, semitones, speed, volume)
+            engine.seek(offset_secs, semitones, cents, speed, volume)
         };
         match result {
             Ok(()) => return Ok(()),
@@ -276,6 +278,7 @@ pub async fn audio_seek(
 pub async fn audio_set_semitones(
     state: State<'_, EngineState>,
     semitones: i32,
+    cents: f64,
     speed: f64,
     volume: f32,
     loop_enabled: bool,
@@ -284,7 +287,7 @@ pub async fn audio_set_semitones(
 ) -> Result<(), String> {
     let engine = state.0.lock();
     engine.set_loop(loop_enabled, loop_start, loop_end);
-    engine.set_semitones(semitones, speed, volume)
+    engine.set_semitones(semitones, cents, speed, volume)
 }
 
 #[tauri::command]
@@ -292,6 +295,7 @@ pub async fn audio_set_speed(
     state: State<'_, EngineState>,
     speed: f64,
     semitones: i32,
+    cents: f64,
     volume: f32,
     loop_enabled: bool,
     loop_start: f64,
@@ -299,7 +303,7 @@ pub async fn audio_set_speed(
 ) -> Result<(), String> {
     let engine = state.0.lock();
     engine.set_loop(loop_enabled, loop_start, loop_end);
-    engine.set_speed(speed, semitones, volume)
+    engine.set_speed(speed, semitones, cents, volume)
 }
 
 #[tauri::command]

@@ -954,6 +954,43 @@
     margin-right: 8px;
     width: 130px;
   }
+  .row-cents {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+    width: 110px;
+    opacity: 0;
+    transition: opacity 0.15s;
+    pointer-events: none;
+  }
+  .track-row:hover .row-cents,
+  .row-cents.cents-nonzero { opacity: 1; pointer-events: auto; }
+  .cents-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    min-width: 20px;
+    min-height: 24px;
+    font-size: 10px;
+    cursor: pointer;
+    border-radius: 2px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2px 4px;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+  .cents-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .cents-val {
+    font-size: 11px;
+    color: var(--text-dim);
+    min-width: 30px;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .cents-val.cents-active { color: var(--accent); }
   .xpose-reset {
     background: none;
     border: none;
@@ -1223,6 +1260,9 @@
   .mp-row-center { justify-content: center; }
   .mp-xpose-row { position: relative; }
   .mp-xpose-row #mp-xpose-reset { position: absolute; right: 0; }
+  .mp-cents-row { justify-content: center; gap: 6px; margin-top: -2px; }
+  .mp-cents-row .cents-val { min-width: 36px; }
+  .mp-cents-row .cents-btn { min-width: 24px; min-height: 24px; font-size: 10px; }
   .mp-row-center input[type=range] { width: 130px; flex: none; }
   #mp-vol, #mm-vol { width: 130px; flex: none; }
 
@@ -3308,6 +3348,13 @@
 }
 #bb-right .mp-xpose-row .xpose-reset {
   margin-left: 8px;
+}
+#bb-right .mp-cents-row {
+  margin-left: 0;
+  gap: 4px;
+  padding-left: 10px;
+  justify-content: flex-start;
+  margin-top: 0;
 }
 
 /* Chord icon in track rows — always visible */

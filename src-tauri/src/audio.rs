@@ -344,6 +344,7 @@ impl RubberbandSource {
         audio: Arc<DecodedAudio>,
         start_frame: usize,
         semitones: i32,
+        cents: f64,
         speed: f64,
         loop_state: Arc<LoopState>,
         frame_counter: Arc<AtomicU64>,
@@ -354,8 +355,8 @@ impl RubberbandSource {
         frame_counter.store(start_frame as u64, Ordering::SeqCst);
         ended.store(false, Ordering::SeqCst);
 
-        let rb = if semitones != 0 || (speed - 1.0).abs() > 1e-4 {
-            let pitch_scale = 2f64.powf(semitones as f64 / 12.0);
+        let rb = if semitones != 0 || cents.abs() > 1e-4 || (speed - 1.0).abs() > 1e-4 {
+            let pitch_scale = 2f64.powf((semitones as f64 + cents / 100.0) / 12.0);
             let time_ratio = 1.0 / speed;
             let options = RB_OPT_REALTIME | RB_OPT_THREADING_NEVER;
             let ptr = unsafe {
@@ -728,6 +729,7 @@ impl AudioEngine {
         &self,
         offset_secs: f64,
         semitones: i32,
+        cents: f64,
         speed: f64,
         volume: f32,
     ) -> Result<(), String> {
@@ -740,7 +742,7 @@ impl AudioEngine {
             return Err("Audio format not ready (sample_rate or channels unknown)".into());
         }
 
-        let use_rb = semitones != 0 || (speed - 1.0).abs() > 1e-4;
+        let use_rb = semitones != 0 || cents.abs() > 1e-4 || (speed - 1.0).abs() > 1e-4;
 
         if use_rb {
             // Need fully decoded audio — wait for background decode if in progress
@@ -765,7 +767,7 @@ impl AudioEngine {
             let sr = decoded.sample_rate;
             let start_frame = (offset_secs * sr as f64) as usize;
             let source = RubberbandSource::new(
-                decoded, start_frame, semitones, speed,
+                decoded, start_frame, semitones, cents, speed,
                 self.loop_state.clone(), self.frame_counter.clone(), self.ended.clone(),
             );
             let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
@@ -780,7 +782,7 @@ impl AudioEngine {
             if let Some(decoded) = self.decoded_slot.lock().clone() {
                 let start_frame = (offset_secs * decoded.sample_rate as f64) as usize;
                 let source = RubberbandSource::new(
-                    decoded, start_frame, 0, 1.0,
+                    decoded, start_frame, 0, 0.0, 1.0,
                     self.loop_state.clone(), self.frame_counter.clone(), self.ended.clone(),
                 );
                 let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
@@ -806,7 +808,7 @@ impl AudioEngine {
                         if let Some(decoded) = self.decoded_slot.lock().clone() {
                             let start_frame = (offset_secs * decoded.sample_rate as f64) as usize;
                             let source = RubberbandSource::new(
-                                decoded, start_frame, 0, 1.0,
+                                decoded, start_frame, 0, 0.0, 1.0,
                                 self.loop_state.clone(), self.frame_counter.clone(), self.ended.clone(),
                             );
                             let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
@@ -827,37 +829,40 @@ impl AudioEngine {
     }
 
     pub fn play(&self, volume: f32, offset_secs: f64) -> Result<(), String> {
-        self.play_with_params(offset_secs, 0, 1.0, volume)
+        self.play_with_params(offset_secs, 0, 0.0, 1.0, volume)
     }
 
     pub fn seek(
         &self,
         offset_secs: f64,
         semitones: i32,
+        cents: f64,
         speed: f64,
         volume: f32,
     ) -> Result<(), String> {
-        self.play_with_params(offset_secs, semitones, speed, volume)
+        self.play_with_params(offset_secs, semitones, cents, speed, volume)
     }
 
     pub fn set_semitones(
         &self,
         semitones: i32,
+        cents: f64,
         speed: f64,
         volume: f32,
     ) -> Result<(), String> {
         let pos = self.current_position_secs();
-        self.play_with_params(pos, semitones, speed, volume)
+        self.play_with_params(pos, semitones, cents, speed, volume)
     }
 
     pub fn set_speed(
         &self,
         speed: f64,
         semitones: i32,
+        cents: f64,
         volume: f32,
     ) -> Result<(), String> {
         let pos = self.current_position_secs();
-        self.play_with_params(pos, semitones, speed, volume)
+        self.play_with_params(pos, semitones, cents, speed, volume)
     }
 
     pub fn set_loop(&self, enabled: bool, start_secs: f64, end_secs: f64) {
