@@ -11,16 +11,18 @@ The legacy monolith (`rehearsal-tool-v1.html`) still exists at the project root 
 
 ---
 
-## Current Status: v1.0 (multi-file browser app)
+## Current Status: v1.1.0 (Tauri desktop app — Windows)
 
 ### Working Features
-- **Audio Library** — Import WAV, MP3, FLAC, OGG/Opus. Rename, delete, persist across sessions via IndexedDB.
-- **Waveform display** — Canvas-rendered from decoded AudioBuffer, amplitude-colored.
-- **Playback** — Play/pause, seek by clicking waveform, per-track volume slider.
-- **Transpose** — Per-track semitone slider (−12 to +12) using **Rubber Band WASM** (`rubberband-web@0.2.1`) via AudioWorkletNode. Node is bypassed at 0 semitones. Slider changes debounced 150ms to avoid audio glitch on every tick.
-- **Metronome** — BPM input (typable + ±1 buttons), tap tempo, subdivisions (1/4, 1/8, triplet, 1/16), beat flash visualizer, custom click sound loader, volume control.
-- **Master volume** — GainNode on AudioContext destination.
-- **Miniplayer** — Persistent panel at sidebar bottom: track name, play/pause, prev/next (always starts from 0:00), transpose slider, master volume slider.
+- **Audio Library** — Import WAV, MP3, FLAC, OGG/Opus/AIFF. Rename, delete, persist across sessions via filesystem (`$APPDATA/stagehand/library/`).
+- **Waveform display** — Canvas-rendered, amplitude-colored. Peaks computed from decoded audio.
+- **Playback** — Play/pause, seek, per-track volume slider. Streaming decode for instant start; background full-decode for seek/pitch support.
+- **Transpose** — Per-track semitone slider (−12 to +12) + cent fine-tune (±50¢) via click-to-open popover. Rubber Band C++ (vendored, compiled via `cc` crate) used for pitch shifting in Rust audio engine. Popover appears in both track card and miniplayer. Hold-to-repeat with acceleration on ±1¢ buttons.
+- **Metronome** — BPM input, tap tempo, subdivisions, beat flash, volume control.
+- **Master volume** — Per-track and global volume via rodio Sink.
+- **Miniplayer** — Persistent bottom panel: track name, play/pause, prev/next, transpose + cent controls, master volume.
+- **Device picker** — WASAPI and ASIO output device selection (Windows).
+- **GitHub Actions release** — `.github/workflows/release.yml` builds and publishes a Windows installer on `v*` tag push.
 
 ### Known Issues / In Progress
 - None currently.
@@ -198,6 +200,7 @@ Built iteratively in Claude.ai then Claude Code:
 8. **Phase 01 (Claude Code)** — split monolith into multi-file `renderer/` structure
 9. **Phase 02 (Claude Code)** — replaced phaze-worklet.js with Rubber Band WASM (`rubberband-web@0.2.1`); human listening test passed at ±7 semitones
 10. **Quick tasks (Claude Code)** — miniplayer added to sidebar bottom; 5 renderer bugs fixed (rename repeatability, meta-only IDB save, seek time display, transpose debounce, prev/next reset)
+11. **v1.1.0 release (Claude Code)** — per-track cent fine-tune (±50¢) with popover UI in track card and miniplayer; hold-to-repeat acceleration on ±1¢ buttons; Tauri desktop app packaging with GitHub Actions release workflow
 
 <!-- GSD:project-start source:PROJECT.md -->
 ## Project
@@ -287,6 +290,42 @@ Stagehand is a musician's rehearsal tool for playing along with recordings. The 
 <!-- GSD:stack-end -->
 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
+## CI / Release — Critical Notes
+
+### GitHub Actions release workflow (`.github/workflows/release.yml`)
+- Triggered by pushing a `v*` tag (e.g. `v1.1.0`)
+- Runs on `windows-latest`, builds the Tauri app, creates a GitHub release with the installer attached
+- Uses `tauri-apps/tauri-action@v0` for build + upload in a single step
+
+### tauri-action@v0 gotchas
+- **`tauriScript` is a prefix, not a full command.** The action always appends `build` to it. `tauriScript: npm run tauri:build` becomes `npm run tauri:build build` — wrong. The correct pattern is to have a `"tauri": "tauri"` script in `package.json` and let the action use its default (`npm run tauri build`).
+- **`skipBuild` is not a valid input** for `tauri-action@v0` — it is silently ignored and the action still runs its own build.
+- Valid inputs include: `tagName`, `releaseName`, `releaseBody`, `releaseDraft`, `prerelease`, `tauriScript`, `args`, `releaseId`, etc.
+
+### ASIO SDK requirement
+- `cpal` is compiled with `features = ["asio"]`, which requires the **Steinberg ASIO SDK** at compile time on Windows.
+- GitHub Actions `windows-latest` does not have it pre-installed.
+- The workflow downloads it before the build step:
+  ```powershell
+  Invoke-WebRequest -Uri "https://download.steinberg.net/sdk_downloads/asiosdk_2.3.3_2019-06-14.zip" ...
+  ```
+- Also requires `LIBCLANG_PATH` pointing to the LLVM bin directory (LLVM is pre-installed on `windows-latest` at `C:\Program Files\LLVM\bin`).
+
+### Git push restrictions in Claude Code agent environment
+- Direct `git push` to `main` is blocked (HTTP 403) — branch protection enforces PRs.
+- `git push` of tags is also blocked (HTTP 403).
+- **Workaround for all pushes to main:** push to a feature branch → create PR via `mcp__github__create_pull_request` → merge via `mcp__github__merge_pull_request`.
+- **Workaround for triggering a release:** have the user create/recreate the tag via GitHub web UI at **github.com/{owner}/{repo}/releases/new** — creating a release with a new tag fires the `push: tags` workflow trigger.
+- The GitHub mobile app does not support deleting tags — use a browser.
+- There is no `update_release` or `delete_tag` MCP tool available. Release description must be edited manually via the GitHub web UI or set via `releaseBody` in the workflow YAML.
+
+### package.json scripts convention
+```json
+"tauri": "tauri",        ← required for tauri-action default build command
+"tauri:dev": "tauri dev",
+"tauri:build": "tauri build"
+```
+
 ## Conventions
 
 Conventions not yet established. Will populate as patterns emerge during development.
