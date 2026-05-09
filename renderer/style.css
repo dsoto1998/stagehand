@@ -969,8 +969,11 @@
     padding: 2px 4px;
     line-height: 1;
     flex-shrink: 0;
+    user-select: none;
+    -webkit-user-select: none;
   }
   .cents-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .cents-btn:active { background: var(--bg-hover); }
   .cents-val {
     font-size: 11px;
     color: var(--text-dim);

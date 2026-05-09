@@ -4338,16 +4338,56 @@ document.getElementById('xp-inc').addEventListener('click', () => {
   const t = tracks.find(x => x.id === _xpPopTrackId);
   if (t) { applyTranspose(t.id, (t.semitones || 0) + 1); _syncXposePopover(); }
 });
-document.getElementById('xp-cdec').addEventListener('click', e => {
-  if (!_xpPopTrackId) return;
-  applyCents(_xpPopTrackId, e.ctrlKey ? -10 : -1);
-  _syncXposePopover();
-});
-document.getElementById('xp-cinc').addEventListener('click', e => {
-  if (!_xpPopTrackId) return;
-  applyCents(_xpPopTrackId, e.ctrlKey ? 10 : 1);
-  _syncXposePopover();
-});
+// Hold-to-repeat for cents buttons: immediate step, 400ms delay, then accelerating repeat.
+// Ctrl+click = ±10¢ jump (no repeat).
+(function setupCentsHold() {
+  function makeHold(btn, sign) {
+    let holdTimer = null;
+    let repeatTimer = null;
+
+    function stop() {
+      clearTimeout(holdTimer);
+      clearTimeout(repeatTimer);
+      holdTimer = null;
+      repeatTimer = null;
+    }
+
+    function step(delta) {
+      if (!_xpPopTrackId) return;
+      applyCents(_xpPopTrackId, delta);
+      _syncXposePopover();
+    }
+
+    function startRepeat() {
+      let interval = 160;
+      holdTimer = setTimeout(function tick() {
+        step(sign);
+        interval = Math.max(40, interval - 12);
+        repeatTimer = setTimeout(tick, interval);
+      }, 400);
+    }
+
+    btn.addEventListener('mousedown', e => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      if (e.ctrlKey) { step(sign * 10); return; }
+      step(sign);
+      startRepeat();
+    });
+    document.addEventListener('mouseup', stop);
+    btn.addEventListener('mouseleave', stop);
+    btn.addEventListener('touchstart', e => {
+      e.preventDefault();
+      step(sign);
+      startRepeat();
+    }, { passive: false });
+    btn.addEventListener('touchend', stop);
+    btn.addEventListener('touchcancel', stop);
+  }
+
+  makeHold(document.getElementById('xp-cdec'), -1);
+  makeHold(document.getElementById('xp-cinc'), +1);
+}());
 document.getElementById('xp-reset').addEventListener('click', () => {
   if (!_xpPopTrackId) return;
   applyTranspose(_xpPopTrackId, 0, true);
