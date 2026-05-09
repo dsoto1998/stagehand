@@ -28,6 +28,15 @@ jobs:
         with:
           workspaces: './src-tauri -> target'
 
+      - name: Install ASIO SDK
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://download.steinberg.net/sdk_downloads/asiosdk_2.3.3_2019-06-14.zip" -OutFile "$env:RUNNER_TEMP\asiosdk.zip"
+          Expand-Archive "$env:RUNNER_TEMP\asiosdk.zip" -DestinationPath "$env:RUNNER_TEMP\asio"
+          echo "CPAL_ASIO_DIR=$env:RUNNER_TEMP\asio\asiosdk_2.3.3_2019-06-14" >> $env:GITHUB_ENV
+          $llvm_bin = (Get-Command clang -ErrorAction Stop).Source | Split-Path -Parent
+          echo "LIBCLANG_PATH=$llvm_bin" >> $env:GITHUB_ENV
+
       - name: Install frontend deps
         run: npm install
 
