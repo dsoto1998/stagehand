@@ -1070,3 +1070,129 @@ pub fn compute_peaks(samples: &[f32], channels: usize, n: usize) -> Vec<f32> {
         })
         .collect()
 }
+
+// Pure function extracted for testability: semitone + cent offset → pitch scale factor.
+pub fn semitones_to_pitch_scale(semitones: i32, cents: f64) -> f64 {
+    2f64.powf((semitones as f64 + cents / 100.0) / 12.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // ── semitones_to_pitch_scale ──────────────────────────────────────────────
+
+    #[test]
+    fn pitch_scale_unison() {
+        let scale = semitones_to_pitch_scale(0, 0.0);
+        assert!((scale - 1.0).abs() < 1e-10, "0 semitones must be ratio 1.0, got {scale}");
+    }
+
+    #[test]
+    fn pitch_scale_octave_up() {
+        let scale = semitones_to_pitch_scale(12, 0.0);
+        assert!((scale - 2.0).abs() < 1e-10, "12 semitones must be ratio 2.0, got {scale}");
+    }
+
+    #[test]
+    fn pitch_scale_octave_down() {
+        let scale = semitones_to_pitch_scale(-12, 0.0);
+        assert!((scale - 0.5).abs() < 1e-10, "-12 semitones must be ratio 0.5, got {scale}");
+    }
+
+    #[test]
+    fn pitch_scale_perfect_fifth() {
+        // 7 semitones ≈ 1.498 (just above 3/2)
+        let scale = semitones_to_pitch_scale(7, 0.0);
+        assert!((scale - 1.498_307_07).abs() < 1e-5, "7 semitones ≈ 1.4983, got {scale}");
+    }
+
+    #[test]
+    fn pitch_scale_cent_offset_adds_to_semitones() {
+        // 0 semitones + 100 cents == 1 semitone
+        let via_cents    = semitones_to_pitch_scale(0, 100.0);
+        let via_semitone = semitones_to_pitch_scale(1, 0.0);
+        assert!((via_cents - via_semitone).abs() < 1e-10,
+            "0 semi + 100¢ should equal 1 semi; got {via_cents} vs {via_semitone}");
+    }
+
+    #[test]
+    fn pitch_scale_negative_cents() {
+        let with_neg_cents = semitones_to_pitch_scale(1, -50.0);
+        let half_semitone  = semitones_to_pitch_scale(0, 50.0);
+        assert!((with_neg_cents - half_semitone).abs() < 1e-10,
+            "1 semi − 50¢ should equal +50¢; got {with_neg_cents} vs {half_semitone}");
+    }
+
+    // ── compute_peaks ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn peaks_returns_n_buckets() {
+        let samples = vec![0.1f32; 2000];
+        let peaks = compute_peaks(&samples, 1, 100);
+        assert_eq!(peaks.len(), 100);
+    }
+
+    #[test]
+    fn peaks_finds_max_per_bucket() {
+        // 4 frames (mono), peaks split into 2 buckets of 2
+        let samples = vec![0.1f32, 0.9, 0.3, 0.2];
+        let peaks = compute_peaks(&samples, 1, 2);
+        assert_eq!(peaks.len(), 2);
+        assert!((peaks[0] - 0.9).abs() < 1e-6, "first bucket max should be 0.9, got {}", peaks[0]);
+        assert!((peaks[1] - 0.3).abs() < 1e-6, "second bucket max should be 0.3, got {}", peaks[1]);
+    }
+
+    #[test]
+    fn peaks_takes_abs_of_negative_samples() {
+        let samples = vec![-0.8f32, 0.2, -0.5, 0.1];
+        let peaks = compute_peaks(&samples, 1, 2);
+        assert!((peaks[0] - 0.8).abs() < 1e-6, "should abs −0.8 → 0.8, got {}", peaks[0]);
+    }
+
+    #[test]
+    fn peaks_handles_stereo_channels() {
+        // 4 frames × 2 channels = 8 samples, split into 2 buckets
+        let samples: Vec<f32> = vec![0.1, 0.2, 0.9, 0.8, 0.3, 0.4, 0.5, 0.6];
+        let peaks = compute_peaks(&samples, 2, 2);
+        assert_eq!(peaks.len(), 2);
+        assert!((peaks[0] - 0.9).abs() < 1e-6, "stereo bucket 0 max should be 0.9, got {}", peaks[0]);
+    }
+
+    #[test]
+    fn peaks_empty_samples_returns_zeros() {
+        let peaks = compute_peaks(&[], 1, 4);
+        assert_eq!(peaks.len(), 4);
+        assert!(peaks.iter().all(|&p| p == 0.0));
+    }
+
+    #[test]
+    fn peaks_single_sample() {
+        let peaks = compute_peaks(&[0.7f32], 1, 1);
+        assert_eq!(peaks.len(), 1);
+        assert!((peaks[0] - 0.7).abs() < 1e-6);
+    }
+
+    // ── LoopState ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn loop_state_default_disabled() {
+        let ls = LoopState::new();
+        assert!(!ls.enabled.load(std::sync::atomic::Ordering::Relaxed));
+        assert_eq!(ls.start_us.load(std::sync::atomic::Ordering::Relaxed), 0);
+        assert_eq!(ls.end_us.load(std::sync::atomic::Ordering::Relaxed), 0);
+    }
+
+    #[test]
+    fn loop_state_stores_microseconds() {
+        use std::sync::atomic::Ordering;
+        let ls = LoopState::new();
+        // 2.5 seconds = 2_500_000 µs
+        ls.enabled.store(true, Ordering::Relaxed);
+        ls.start_us.store(2_500_000, Ordering::Relaxed);
+        ls.end_us.store(5_000_000, Ordering::Relaxed);
+        assert!(ls.enabled.load(Ordering::Relaxed));
+        assert_eq!(ls.start_us.load(Ordering::Relaxed), 2_500_000);
+        assert_eq!(ls.end_us.load(Ordering::Relaxed), 5_000_000);
+    }
+}
