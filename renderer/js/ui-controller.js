@@ -4382,7 +4382,7 @@ document.getElementById('xp-st-val').addEventListener('dblclick', () => {
 // Close popover on outside click
 document.addEventListener('click', e => {
   if (!_xpPopTrackId) return;
-  if (!e.target.closest('#xpose-popover') && !e.target.closest('.xpose-val[data-id]')) {
+  if (!e.target.closest('#xpose-popover') && !e.target.closest('.xpose-val[data-id]') && !e.target.closest('#mp-semitones-val')) {
     closeXposePopover();
   }
 }, true);
