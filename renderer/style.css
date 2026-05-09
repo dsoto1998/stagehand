@@ -954,18 +954,6 @@
     margin-right: 8px;
     width: 130px;
   }
-  .row-cents {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    flex-shrink: 0;
-    width: 110px;
-    opacity: 0;
-    transition: opacity 0.15s;
-    pointer-events: none;
-  }
-  .track-row:hover .row-cents,
-  .row-cents.cents-nonzero { opacity: 1; pointer-events: auto; }
   .cents-btn {
     background: none;
     border: 1px solid var(--border);
@@ -3374,3 +3362,38 @@
 }
 .row-chord-btn:hover { color: var(--text-secondary); opacity: 0.6; }
 .row-chord-btn.has-chart { color: var(--accent); opacity: 1; }
+
+/* ── TRANSPOSE + CENTS POPOVER ─────────────────────────────── */
+.xpose-popover {
+  position: fixed;
+  z-index: 9000;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-bright);
+  border-radius: 6px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  min-width: 150px;
+}
+.xpose-popover[hidden] { display: none; }
+.xpose-pop-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+.xpose-pop-val {
+  min-width: 48px;
+  text-align: center;
+  font-size: 13px;
+  cursor: default;
+}
+.xpose-pop-val.xpose-active { color: var(--cyan); }
+.xpose-pop-reset {
+  align-self: center;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+}

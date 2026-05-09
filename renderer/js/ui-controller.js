@@ -1918,14 +1918,9 @@ function buildTrackRow(track) {
     <div class="row-timesig">${track.timeSig ? escHtml(track.timeSig) : ''}</div>
     <div class="row-xpose">
       <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}" aria-label="Transpose down" title="Transpose down (Shift: −1¢, Ctrl+Shift: −10¢)">−</button>
-      <span class="xpose-val${hasOffset ? ' xpose-active' : ''}">${escHtml(xposeValFull)}</span>
+      <span class="xpose-val${hasOffset ? ' xpose-active' : ''}" data-id="${escHtml(track.id)}" title="Click to adjust">${escHtml(xposeValFull)}</span>
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}" aria-label="Transpose up" title="Transpose up (Shift: +1¢, Ctrl+Shift: +10¢)">+</button>
       <button class="xpose-reset${hasOffset ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose" aria-label="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
-    </div>
-    <div class="row-cents${cts !== 0 ? ' cents-nonzero' : ''}">
-      <button class="cents-btn cents-dec" data-id="${escHtml(track.id)}" title="−1¢  (Ctrl+click: −10¢)">◄</button>
-      <span class="cents-val${cts !== 0 ? ' cents-active' : ''}">${escHtml(ctsLabel)}</span>
-      <button class="cents-btn cents-inc" data-id="${escHtml(track.id)}" title="+1¢  (Ctrl+click: +10¢)">►</button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
     <button class="row-ctx-btn" data-id="${escHtml(track.id)}" title="More options" aria-label="More options">···</button>
@@ -2003,6 +1998,7 @@ function applyTranspose(id, newSemitones, resetCents = false) {
     if (resetEl) resetEl.classList.toggle('xpose-reset-visible', hasOffset);
     if (centsEl) syncMiniplayerCents(track);
   }
+  if (_xpPopTrackId === id) _syncXposePopover();
   renderCurrentTab();
 }
 
@@ -2020,6 +2016,7 @@ function applyCents(id, delta) {
     if (resetEl) resetEl.classList.toggle('xpose-reset-visible', hasOffset);
     syncMiniplayerCents(track);
   }
+  if (_xpPopTrackId === id) _syncXposePopover();
   renderCurrentTab();
 }
 
@@ -2125,14 +2122,9 @@ function buildArtistDrillTrackRow(track) {
     <div class="row-timesig">${track.timeSig ? escHtml(track.timeSig) : ''}</div>
     <div class="row-xpose">
       <button class="xpose-btn xpose-dec" data-id="${escHtml(track.id)}" title="Transpose down (Shift: −1¢, Ctrl+Shift: −10¢)">−</button>
-      <span class="xpose-val${hasOffset2 ? ' xpose-active' : ''}">${escHtml(xposeVal2Full)}</span>
+      <span class="xpose-val${hasOffset2 ? ' xpose-active' : ''}" data-id="${escHtml(track.id)}" title="Click to adjust">${escHtml(xposeVal2Full)}</span>
       <button class="xpose-btn xpose-inc" data-id="${escHtml(track.id)}" title="Transpose up (Shift: +1¢, Ctrl+Shift: +10¢)">+</button>
       <button class="xpose-reset${hasOffset2 ? ' xpose-reset-visible' : ''}" data-id="${escHtml(track.id)}" title="Reset transpose"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/></svg></button>
-    </div>
-    <div class="row-cents${cts2 !== 0 ? ' cents-nonzero' : ''}">
-      <button class="cents-btn cents-dec" data-id="${escHtml(track.id)}" title="−1¢  (Ctrl+click: −10¢)">◄</button>
-      <span class="cents-val${cts2 !== 0 ? ' cents-active' : ''}">${escHtml(ctsLabel2)}</span>
-      <button class="cents-btn cents-inc" data-id="${escHtml(track.id)}" title="+1¢  (Ctrl+click: +10¢)">►</button>
     </div>
     <div class="row-dur">${escHtml(dur)}</div>
   `);
@@ -4284,22 +4276,14 @@ trackList.addEventListener('click', e => {
     else                         applyTranspose(t.id, (t.semitones || 0) + 1);
     return;
   }
-  const cdec = e.target.closest('.cents-dec');
-  if (cdec) {
+  // Clicks on xpose-val open the popover
+  const xval = e.target.closest('.xpose-val[data-id]');
+  if (xval) {
     e.stopPropagation();
-    applyCents(cdec.dataset.id, e.ctrlKey ? -10 : -1);
+    if (_xpPopTrackId === xval.dataset.id) closeXposePopover();
+    else openXposePopover(xval.dataset.id, xval);
     return;
   }
-  const cinc = e.target.closest('.cents-inc');
-  if (cinc) {
-    e.stopPropagation();
-    applyCents(cinc.dataset.id, e.ctrlKey ? 10 : 1);
-    return;
-  }
-
-  // Clicks on the semitone value are handled by the dblclick listener — don't trigger play
-  if (e.target.closest('.xpose-val')) return;
-  if (e.target.closest('.cents-val')) return;
 
   // Track row click -> select (File Explorer style), double-click -> play
   const row = e.target.closest('.track-row[data-id]');
@@ -4362,44 +4346,102 @@ trackList.addEventListener('click', e => {
   updateSelectionClasses();
 });
 
-// Semitone value double-click → inline edit (library rows)
-trackList.addEventListener('dblclick', e => {
-  const valEl = e.target.closest('.xpose-val');
-  if (!valEl) return;
-  const row = valEl.closest('.track-row[data-id]');
-  if (!row) return;
-  e.stopPropagation();
-  const track = tracks.find(t => t.id === row.dataset.id);
-  if (!track) return;
-  const current = track.semitones || 0;
+// ─── TRANSPOSE + CENTS POPOVER ───────────────────────────────
+let _xpPopTrackId = null;
 
+function openXposePopover(trackId, anchorEl) {
+  _xpPopTrackId = trackId;
+  _syncXposePopover();
+  const pop = document.getElementById('xpose-popover');
+  pop.hidden = false;
+  // Position below anchor, clamped to viewport
+  const rect = anchorEl.getBoundingClientRect();
+  const pw = pop.offsetWidth || 160;
+  const left = Math.min(rect.left, window.innerWidth - pw - 8);
+  pop.style.left = Math.max(4, left) + 'px';
+  pop.style.top  = (rect.bottom + 4) + 'px';
+}
+
+function closeXposePopover() {
+  document.getElementById('xpose-popover').hidden = true;
+  _xpPopTrackId = null;
+}
+
+function _syncXposePopover() {
+  if (!_xpPopTrackId) return;
+  const track = tracks.find(t => t.id === _xpPopTrackId);
+  if (!track) return;
+  const st  = track.semitones || 0;
+  const cts = track.cents ?? 0;
+  document.getElementById('xp-st-val').textContent    = st > 0 ? `+${st}st` : `${st}st`;
+  document.getElementById('xp-cents-val').textContent  = cts > 0 ? `+${cts}¢` : `${cts}¢`;
+  document.getElementById('xp-st-val').classList.toggle('xpose-active', st !== 0);
+  document.getElementById('xp-cents-val').classList.toggle('cents-active', cts !== 0);
+  document.getElementById('xp-reset').classList.toggle('xpose-reset-visible', st !== 0 || cts !== 0);
+}
+
+document.getElementById('xp-dec').addEventListener('click', () => {
+  if (!_xpPopTrackId) return;
+  const t = tracks.find(x => x.id === _xpPopTrackId);
+  if (t) { applyTranspose(t.id, (t.semitones || 0) - 1); _syncXposePopover(); }
+});
+document.getElementById('xp-inc').addEventListener('click', () => {
+  if (!_xpPopTrackId) return;
+  const t = tracks.find(x => x.id === _xpPopTrackId);
+  if (t) { applyTranspose(t.id, (t.semitones || 0) + 1); _syncXposePopover(); }
+});
+document.getElementById('xp-cdec').addEventListener('click', e => {
+  if (!_xpPopTrackId) return;
+  applyCents(_xpPopTrackId, e.ctrlKey ? -10 : -1);
+  _syncXposePopover();
+});
+document.getElementById('xp-cinc').addEventListener('click', e => {
+  if (!_xpPopTrackId) return;
+  applyCents(_xpPopTrackId, e.ctrlKey ? 10 : 1);
+  _syncXposePopover();
+});
+document.getElementById('xp-reset').addEventListener('click', () => {
+  if (!_xpPopTrackId) return;
+  applyTranspose(_xpPopTrackId, 0, true);
+  _syncXposePopover();
+});
+
+// Double-click semitone value inside popover → inline type
+document.getElementById('xp-st-val').addEventListener('dblclick', () => {
+  if (!_xpPopTrackId) return;
+  const track = tracks.find(t => t.id === _xpPopTrackId);
+  if (!track) return;
+  const valEl  = document.getElementById('xp-st-val');
+  const current = track.semitones || 0;
   const input = document.createElement('input');
   input.type = 'text';
   input.value = current;
   input.className = 'xpose-inline-input';
+  input.style.width = '44px';
   input.setAttribute('aria-label', 'Semitones (-12 to +12)');
-
   valEl.replaceWith(input);
-  input.focus();
-  input.select();
-
+  input.focus(); input.select();
   function commit() {
-    const raw = input.value.trim();
-    const parsed = parseInt(raw, 10);
+    const parsed = parseInt(input.value.trim(), 10);
     const val = isNaN(parsed) ? current : Math.max(-12, Math.min(12, parsed));
     input.replaceWith(valEl);
     applyTranspose(track.id, val);
+    _syncXposePopover();
   }
-  function cancel() {
-    input.replaceWith(valEl);
-  }
-
-  input.addEventListener('keydown', e => {
-    if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+  input.addEventListener('keydown', ev => {
+    if (ev.key === 'Enter')  { ev.preventDefault(); commit(); }
+    if (ev.key === 'Escape') { ev.preventDefault(); input.replaceWith(valEl); }
   });
-  input.addEventListener('blur', cancel);
+  input.addEventListener('blur', commit);
 });
+
+// Close popover on outside click
+document.addEventListener('click', e => {
+  if (!_xpPopTrackId) return;
+  if (!e.target.closest('#xpose-popover') && !e.target.closest('.xpose-val[data-id]')) {
+    closeXposePopover();
+  }
+}, true);
 
 // Album row right-click → Set Artwork
 const artFileInput = document.createElement('input');
