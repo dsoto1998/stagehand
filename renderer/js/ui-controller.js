@@ -855,7 +855,6 @@ function showMiniplayer(trackId) {
   mpStVal.textContent = miniplayerXposeLabel(track);
   mpStVal.classList.toggle('xpose-active', hasOffset);
   document.getElementById('mp-xpose-reset').classList.toggle('xpose-reset-visible', hasOffset);
-  syncMiniplayerCents(track);
   if (track.bpm) { Metronome.setBpm(track.bpm); syncMetroMini(); }
   if (track.timeSig) {
     const [num, den] = track.timeSig.split('/').map(Number);
@@ -1234,58 +1233,11 @@ document.getElementById('mp-xpose-reset').addEventListener('click', () => {
   applyTranspose(currentPlayingId, 0, true);
 });
 
-document.getElementById('mp-cents-dec').addEventListener('click', e => {
-  if (!currentPlayingId) return;
-  applyCents(currentPlayingId, e.ctrlKey ? -10 : -1);
-});
-document.getElementById('mp-cents-inc').addEventListener('click', e => {
-  if (!currentPlayingId) return;
-  applyCents(currentPlayingId, e.ctrlKey ? 10 : 1);
-});
-
-let _xposeValClickTimer = null;
 document.getElementById('mp-semitones-val').addEventListener('click', () => {
-  if (_xposeValClickTimer) {
-    clearTimeout(_xposeValClickTimer);
-    _xposeValClickTimer = null;
-    if (currentPlayingId) applyTranspose(currentPlayingId, 0, true);
-    return;
-  }
-  _xposeValClickTimer = setTimeout(() => {
-    _xposeValClickTimer = null;
-    if (!currentPlayingId) return;
-    const track = tracks.find(t => t.id === currentPlayingId);
-    if (!track) return;
-    const valEl = document.getElementById('mp-semitones-val');
-    const current = track.semitones || 0;
-
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = current;
-    input.className = 'xpose-inline-input';
-    input.setAttribute('aria-label', 'Semitones (-12 to +12)');
-
-    valEl.replaceWith(input);
-    input.focus();
-    input.select();
-
-    function commit() {
-      const raw = input.value.trim();
-      const parsed = parseInt(raw, 10);
-      const val = isNaN(parsed) ? current : Math.max(-12, Math.min(12, parsed));
-      input.replaceWith(valEl);
-      applyTranspose(track.id, val);
-    }
-    function cancel() {
-      input.replaceWith(valEl);
-    }
-
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); commit(); }
-      if (e.key === 'Escape') { e.preventDefault(); cancel(); }
-    });
-    input.addEventListener('blur', cancel);
-  }, 250);
+  if (!currentPlayingId) return;
+  const valEl = document.getElementById('mp-semitones-val');
+  if (_xpPopTrackId === currentPlayingId) closeXposePopover();
+  else openXposePopover(currentPlayingId, valEl);
 });
 
 document.getElementById('mp-vol').addEventListener('input', function() {
@@ -1971,14 +1923,17 @@ function buildTrackRow(track) {
 }
 
 function miniplayerXposeLabel(track) {
-  const st = track.semitones || 0;
-  const stLabel = st > 0 ? `+${st}` : `${st}`;
+  const st  = track.semitones || 0;
+  const cts = track.cents ?? 0;
+  const stLabel  = st  > 0 ? `+${st}`   : `${st}`;
+  const ctsLabel = cts > 0 ? ` +${cts}¢` : cts < 0 ? ` ${cts}¢` : '';
   if (track.keyRoot != null) {
-    return st !== 0
+    const keyPart = st !== 0
       ? `${transposedKeyName(track.keyRoot, track.keyMode, st)} (${stLabel})`
       : getKeyName(track.keyRoot, track.keyMode);
+    return ctsLabel ? keyPart + ctsLabel : keyPart;
   }
-  return stLabel;
+  return stLabel + ctsLabel;
 }
 
 function applyTranspose(id, newSemitones, resetCents = false) {
@@ -1992,11 +1947,9 @@ function applyTranspose(id, newSemitones, resetCents = false) {
   if (id === currentPlayingId) {
     const valEl    = document.getElementById('mp-semitones-val');
     const resetEl  = document.getElementById('mp-xpose-reset');
-    const centsEl  = document.getElementById('mp-cents-val');
     const hasOffset = track.semitones !== 0 || (track.cents ?? 0) !== 0;
     if (valEl)   { valEl.textContent = miniplayerXposeLabel(track); valEl.classList.toggle('xpose-active', hasOffset); }
     if (resetEl) resetEl.classList.toggle('xpose-reset-visible', hasOffset);
-    if (centsEl) syncMiniplayerCents(track);
   }
   if (_xpPopTrackId === id) _syncXposePopover();
   renderCurrentTab();
@@ -2014,18 +1967,9 @@ function applyCents(id, delta) {
     const hasOffset = track.semitones !== 0 || track.cents !== 0;
     if (valEl)   { valEl.textContent = miniplayerXposeLabel(track); valEl.classList.toggle('xpose-active', hasOffset); }
     if (resetEl) resetEl.classList.toggle('xpose-reset-visible', hasOffset);
-    syncMiniplayerCents(track);
   }
   if (_xpPopTrackId === id) _syncXposePopover();
   renderCurrentTab();
-}
-
-function syncMiniplayerCents(track) {
-  const centsEl = document.getElementById('mp-cents-val');
-  if (!centsEl) return;
-  const c = track.cents ?? 0;
-  centsEl.textContent = c > 0 ? `+${c}¢` : `${c}¢`;
-  centsEl.classList.toggle('cents-active', c !== 0);
 }
 
 // ─── VIRTUAL SCROLL ENGINE ────────────────────────────────────

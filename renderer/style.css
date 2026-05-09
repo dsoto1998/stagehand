@@ -1248,10 +1248,7 @@
   .mp-row-center { justify-content: center; }
   .mp-xpose-row { position: relative; }
   .mp-xpose-row #mp-xpose-reset { position: absolute; right: 0; }
-  .mp-cents-row { justify-content: center; gap: 6px; margin-top: -2px; }
-  .mp-cents-row .cents-val { min-width: 36px; }
-  .mp-cents-row .cents-btn { min-width: 24px; min-height: 24px; font-size: 10px; }
-  .mp-row-center input[type=range] { width: 130px; flex: none; }
+.mp-row-center input[type=range] { width: 130px; flex: none; }
   #mp-vol, #mm-vol { width: 130px; flex: none; }
 
   .mp-vol-icon {
@@ -3336,13 +3333,6 @@
 }
 #bb-right .mp-xpose-row .xpose-reset {
   margin-left: 8px;
-}
-#bb-right .mp-cents-row {
-  margin-left: 0;
-  gap: 4px;
-  padding-left: 10px;
-  justify-content: flex-start;
-  margin-top: 0;
 }
 
 /* Chord icon in track rows — always visible */
