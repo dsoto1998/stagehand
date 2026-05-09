@@ -40,3 +40,4 @@ jobs:
           releaseName: 'Stagehand ${{ github.ref_name }}'
           releaseDraft: false
           prerelease: false
+          tauriScript: npm run tauri:build
