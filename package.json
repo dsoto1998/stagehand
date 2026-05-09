@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "setup": "npm install && cp node_modules/rubberband-web/public/rubberband-processor.js renderer/js/",
+    "tauri": "tauri",
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build"
   },
