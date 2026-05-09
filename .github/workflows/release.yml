@@ -49,3 +49,8 @@ jobs:
           releaseName: 'Stagehand ${{ github.ref_name }}'
           releaseDraft: false
           prerelease: false
+          releaseBody: |
+            ## What's new in v1.1.0
+
+            ### Cent fine-tune
+            Each track now has a ±50¢ fine-tune control alongside the semitone slider — useful for tracks that are slightly off-pitch without needing a full semitone shift. Click the cent value to open the popover in both the track card and the miniplayer. Hold the ±1¢ buttons for accelerating repeat.
