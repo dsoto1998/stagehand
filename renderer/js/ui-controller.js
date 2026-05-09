@@ -4298,12 +4298,16 @@ function openXposePopover(trackId, anchorEl) {
   _syncXposePopover();
   const pop = document.getElementById('xpose-popover');
   pop.hidden = false;
-  // Position below anchor, clamped to viewport
   const rect = anchorEl.getBoundingClientRect();
   const pw = pop.offsetWidth || 160;
+  const ph = pop.offsetHeight || 80;
   const left = Math.min(rect.left, window.innerWidth - pw - 8);
   pop.style.left = Math.max(4, left) + 'px';
-  pop.style.top  = (rect.bottom + 4) + 'px';
+  // Flip above anchor if not enough room below
+  const spaceBelow = window.innerHeight - rect.bottom;
+  pop.style.top = spaceBelow >= ph + 8
+    ? (rect.bottom + 4) + 'px'
+    : (rect.top - ph - 4) + 'px';
 }
 
 function closeXposePopover() {
