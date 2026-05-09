@@ -31,7 +31,10 @@ jobs:
       - name: Install frontend deps
         run: npm install
 
-      - name: Build & release
+      - name: Build
+        run: npm run tauri:build
+
+      - name: Release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -40,4 +43,4 @@ jobs:
           releaseName: 'Stagehand ${{ github.ref_name }}'
           releaseDraft: false
           prerelease: false
-          tauriScript: npm run tauri:build
+          skipBuild: true
