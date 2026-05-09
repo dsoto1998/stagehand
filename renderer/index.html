@@ -177,7 +177,23 @@
       <!-- EXPORT -->
       <div class="sp-tab-panel" id="sp-panel-export">
         <div class="sp-tab-panel-inner">
-          <p class="sp-empty-state">Export settings coming soon.</p>
+          <div class="sp-sec-hdr open" data-sec="exp-library">
+            <span class="sp-section-label">Library</span>
+            <svg class="sp-sec-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="sp-sec-body open" id="sp-sec-exp-library">
+            <div class="sp-sec-body-inner">
+              <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 16px">
+                <span class="sp-label">Track metadata</span>
+                <div class="sp-control">
+                  <button class="sp-btn-small" id="export-library-json-btn">Export JSON…</button>
+                </div>
+              </div>
+              <div style="padding:0 16px 8px">
+                <p class="sp-hint">Saves name, artist, album, duration, format, and file path for every track in your library. Does not include audio data.</p>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </div>
