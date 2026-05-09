@@ -17,10 +17,6 @@ beforeEach(async () => {
   vi.resetModules();
   invoke.mockClear();
   writeAudioTemp.mockClear();
-
-  vi.mock('../renderer/js/tauri-api.js', () => ({ invoke, writeAudioTemp }));
-  vi.mock('../renderer/js/library-manager.js', () => ({ saveMeta: vi.fn(async () => undefined) }));
-
   const mod = await import('../renderer/js/track-player.js');
   TrackPlayer = mod.TrackPlayer;
 });

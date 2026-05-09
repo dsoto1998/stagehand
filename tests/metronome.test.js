@@ -29,29 +29,6 @@ vi.mock('../renderer/js/audio-engine.js', () => {
 let Metronome, TapTempo;
 beforeEach(async () => {
   vi.resetModules();
-  // Re-register mock after module reset
-  vi.mock('../renderer/js/audio-engine.js', () => {
-    const fakeNode = {
-      connect: vi.fn(),
-      gain: { value: 0, setValueAtTime: vi.fn(), linearRampToValueAtTime: vi.fn(), exponentialRampToValueAtTime: vi.fn() },
-      frequency: { value: 0 },
-      type: 'sine',
-      start: vi.fn(),
-      stop: vi.fn(),
-    };
-    const fakeCtx = {
-      currentTime: 0,
-      createOscillator: () => ({ ...fakeNode }),
-      createGain: () => ({ ...fakeNode }),
-      createBufferSource: () => ({ ...fakeNode, buffer: null }),
-    };
-    return {
-      resume: vi.fn(() => fakeCtx),
-      getCtx: vi.fn(() => fakeCtx),
-      getMaster: vi.fn(() => fakeNode),
-      getMetronomeGain: vi.fn(() => fakeNode),
-    };
-  });
   const mod = await import('../renderer/js/metronome.js');
   Metronome = mod.Metronome;
   TapTempo = mod.TapTempo;

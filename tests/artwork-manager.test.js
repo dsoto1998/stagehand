@@ -25,12 +25,6 @@ beforeEach(async () => {
   vi.resetModules();
   vi.clearAllMocks();
   global.fetch = vi.fn();
-
-  vi.mock('../renderer/js/library-manager.js', () => ({
-    getArtwork: vi.fn(async () => null),
-    setArtwork: vi.fn(async () => undefined),
-  }));
-
   const amMod = await import('../renderer/js/artwork-manager.js');
   const lmMod = await import('../renderer/js/library-manager.js');
   AM = amMod;
