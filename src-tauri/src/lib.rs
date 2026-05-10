@@ -1,8 +1,11 @@
 pub mod audio;
 pub mod commands;
+pub mod live_input;
+pub mod vst_host;
 
-use commands::EngineState;
+use commands::{EngineState, LiveInputState};
 use audio::AudioEngine;
+use live_input::LiveInputEngine;
 use parking_lot::Mutex;
 use tauri::Manager;
 
@@ -24,7 +27,9 @@ pub fn run() {
             }
             let engine = AudioEngine::new(app.handle().clone())
                 .expect("Failed to init audio engine");
+            let vst_slot = engine.vst_slot.clone();
             app.manage(EngineState(Mutex::new(engine)));
+            app.manage(LiveInputState(Mutex::new(LiveInputEngine::new(vst_slot))));
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -48,6 +53,19 @@ pub fn run() {
             commands::open_url,
             commands::library_check_paths,
             commands::open_audio_files_dialog,
+            commands::vst_scan,
+            commands::vst_load,
+            commands::vst_unload,
+            commands::vst_process_test,
+            commands::vst_get_latency,
+            commands::vst_bypass,
+            commands::live_input_get_input_devices,
+            commands::live_input_start,
+            commands::live_input_stop,
+            commands::live_input_set_input_gain,
+            commands::live_input_set_output_gain,
+            commands::live_input_set_mute,
+            commands::live_input_status,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
