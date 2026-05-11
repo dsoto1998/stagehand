@@ -2601,6 +2601,288 @@
     padding: 8px 14px 12px;
   }
 
+  /* ── GUITAR PANEL ────────────────────────────────────── */
+  #panel-guitar.active {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    overflow-y: auto;
+  }
+  .gp-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    max-width: 720px;
+  }
+  .gp-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  /* Status line — dim text under device select; click toggles stream */
+  .gp-status-line {
+    background: none;
+    border: none;
+    padding: 0;
+    margin: -4px 0 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    cursor: pointer;
+    text-align: left;
+    transition: color 0.1s;
+  }
+  .gp-status-line:hover { color: var(--text-secondary); }
+  .gp-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  .gp-status-dot.live { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+
+  /* Advanced disclosure */
+  .gp-advanced { display: flex; flex-direction: column; }
+  .gp-advanced-hdr {
+    background: none;
+    border: none;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+    color: var(--text-dim);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    transition: color 0.1s;
+    user-select: none;
+  }
+  .gp-advanced-hdr:hover { color: var(--text-secondary); }
+  .gp-advanced-chev { transition: transform 0.15s ease; }
+  .gp-advanced-hdr[aria-expanded="true"] .gp-advanced-chev { transform: rotate(90deg); }
+  .gp-advanced-body {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.22s ease;
+  }
+  .gp-advanced-body.open { grid-template-rows: 1fr; }
+  .gp-advanced-body > * {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .gp-advanced-body.open > * { padding-top: 8px; }
+  .gp-card-hdr {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 14px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-primary);
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  .gp-field {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    min-width: 0;
+  }
+  .gp-field-row {
+    display: flex;
+    gap: 10px;
+  }
+  .gp-field-row .gp-field { flex: 1; }
+  .gp-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-dim);
+    font-weight: 500;
+  }
+  .gp-select {
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    padding: 6px 8px;
+    border-radius: 3px;
+    outline: none;
+    width: 100%;
+    min-width: 0;
+  }
+  .gp-select:hover { border-color: var(--border-bright); }
+  .gp-select:focus { border-color: var(--accent); }
+
+  .gp-chan-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .gp-chan-chip {
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    padding: 4px 9px;
+    border-radius: 3px;
+    cursor: pointer;
+    user-select: none;
+    min-width: 26px;
+    text-align: center;
+    transition: all 0.1s;
+  }
+  .gp-chan-chip:hover { border-color: var(--border-bright); color: var(--text-secondary); }
+  .gp-chan-chip.active {
+    background: var(--accent-glow);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+  .gp-chan-empty {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
+
+  .gp-gain-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .gp-gain-label {
+    width: 50px;
+    flex-shrink: 0;
+  }
+  .gp-gain-slider {
+    flex: 1;
+    -webkit-appearance: none;
+    appearance: none;
+    height: 4px;
+    background: var(--border);
+    outline: none;
+    border-radius: 2px;
+    min-width: 0;
+  }
+  .gp-gain-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    cursor: pointer;
+  }
+  .gp-gain-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    cursor: pointer;
+  }
+  .gp-gain-val {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-width: 50px;
+    text-align: right;
+  }
+  .gp-toggle-row { display: flex; gap: 8px; }
+  .gp-toggle-btn {
+    flex: 1;
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    padding: 7px;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.1s;
+  }
+  .gp-toggle-btn:hover { border-color: var(--border-bright); background: var(--bg-hover); }
+  .gp-toggle-btn.active {
+    background: var(--red);
+    border-color: var(--red);
+    color: #fff;
+  }
+
+  .gp-plugin-display {
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .gp-plugin-name {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 18px;
+    font-weight: 700;
+    color: var(--text-secondary);
+  }
+  .gp-plugin-name.loaded { color: var(--text-primary); }
+  .gp-plugin-meta {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .gp-plugin-path {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 0;
+  }
+  .gp-btn-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .gp-btn-row .btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: var(--bg-base);
+    font-weight: 600;
+  }
+  .gp-btn-row .btn.active:hover {
+    background: var(--accent-dim);
+    border-color: var(--accent-dim);
+  }
+
+  /* Guitar nav-item live indicator dot */
+  #guitar-badge {
+    background: var(--cyan);
+    border: none;
+    border-radius: 50%;
+    width: 8px;
+    height: 8px;
+    padding: 0;
+    font-size: 0;
+    color: transparent;
+    box-shadow: 0 0 6px var(--cyan);
+    align-self: center;
+  }
+
   /* ── METRONOME MINIPLAYER ────────────────────────────── */
   #metro-mini {
     margin: 0 -12px 0;

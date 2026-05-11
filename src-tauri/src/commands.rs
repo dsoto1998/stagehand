@@ -422,6 +422,18 @@ pub async fn library_check_paths(paths: Vec<String>) -> Result<Vec<bool>, String
     Ok(paths.iter().map(|p| std::path::Path::new(p).exists()).collect())
 }
 
+#[tauri::command]
+pub async fn open_vst_dialog() -> Result<Option<String>, String> {
+    let common_vst3 = std::path::PathBuf::from("C:\\Program Files\\Common Files\\VST3");
+    let mut dlg = rfd::AsyncFileDialog::new()
+        .set_title("Load VST3 Plugin")
+        .add_filter("VST3 Plugin", &["vst3"]);
+    if common_vst3.exists() {
+        dlg = dlg.set_directory(common_vst3);
+    }
+    Ok(dlg.pick_file().await.map(|f| f.path().to_string_lossy().into_owned()))
+}
+
 // ─── VST3 commands ───────────────────────────────────────────────────────────
 //
 // Single-slot model: AudioEngine holds one Arc<Mutex<Option<VstHost>>>.
