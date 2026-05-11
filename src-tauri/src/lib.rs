@@ -53,6 +53,7 @@ pub fn run() {
             commands::open_url,
             commands::library_check_paths,
             commands::open_audio_files_dialog,
+            commands::open_vst_dialog,
             commands::vst_scan,
             commands::vst_load,
             commands::vst_unload,

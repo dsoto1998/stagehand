@@ -194,6 +194,12 @@
           <span>Library</span>
           <span class="nav-badge" id="lib-badge">0</span>
         </div>
+
+        <div class="nav-item" data-panel="guitar">
+          <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 2v6"/><path d="M9 8h6"/><circle cx="12" cy="14" r="3"/><path d="M9 14c0 4-3 6-6 8 2-3 4-5 4-8"/><path d="M15 14c0 4 3 6 6 8-2-3-4-5-4-8"/></svg></span>
+          <span>Guitar</span>
+          <span class="nav-badge hidden" id="guitar-badge">●</span>
+        </div>
       </div>
 
       <div id="sidebar-bottom">
@@ -299,6 +305,113 @@
         </div>
       </div>
 
+      <!-- GUITAR PANEL -->
+      <div class="panel" id="panel-guitar">
+        <div class="panel-header">
+          <div class="panel-title">Guitar</div>
+        </div>
+
+        <div class="gp-stack">
+
+          <!-- INPUT CARD -->
+          <div class="gp-card">
+            <div class="gp-card-hdr">Input</div>
+
+            <div class="gp-field">
+              <label class="gp-label">Device</label>
+              <select id="gp-device-select" class="gp-select"></select>
+            </div>
+
+            <div class="gp-status-line" id="gp-status-line">
+              <span class="gp-status-dot" id="gp-status-dot"></span>
+              <span class="gp-status-text" id="gp-status-text">Stopped</span>
+            </div>
+
+            <div class="gp-field">
+              <label class="gp-label">Input Source</label>
+              <select id="gp-input-source-select" class="gp-select"></select>
+            </div>
+
+            <div class="gp-field">
+              <label class="gp-label">Output Channels</label>
+              <div class="gp-chan-wrap" id="gp-output-chans"></div>
+            </div>
+
+            <!-- Advanced disclosure -->
+            <div class="gp-advanced">
+              <button type="button" class="gp-advanced-hdr" id="gp-advanced-hdr" aria-expanded="false">
+                <svg class="gp-advanced-chev" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+                <span>Advanced</span>
+              </button>
+              <div class="gp-advanced-body" id="gp-advanced-body">
+                <div class="gp-field-row">
+                  <div class="gp-field">
+                    <label class="gp-label">Buffer</label>
+                    <select id="gp-buffer-select" class="gp-select">
+                      <option value="64">64</option>
+                      <option value="128">128</option>
+                      <option value="256" selected>256</option>
+                      <option value="512">512</option>
+                      <option value="1024">1024</option>
+                    </select>
+                  </div>
+                  <div class="gp-field">
+                    <label class="gp-label">Sample Rate</label>
+                    <select id="gp-rate-select" class="gp-select">
+                      <option value="44100" selected>44100</option>
+                      <option value="48000">48000</option>
+                      <option value="88200">88200</option>
+                      <option value="96000">96000</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LEVELS CARD -->
+          <div class="gp-card">
+            <div class="gp-card-hdr">Levels</div>
+
+            <div class="gp-gain-row">
+              <label class="gp-label gp-gain-label">Input</label>
+              <input type="range" id="gp-input-gain" class="gp-gain-slider" min="0" max="200" value="100">
+              <span id="gp-input-gain-val" class="gp-gain-val">0 dB</span>
+            </div>
+
+            <div class="gp-gain-row">
+              <label class="gp-label gp-gain-label">Output</label>
+              <input type="range" id="gp-output-gain" class="gp-gain-slider" min="0" max="200" value="100">
+              <span id="gp-output-gain-val" class="gp-gain-val">0 dB</span>
+            </div>
+
+            <div class="gp-toggle-row">
+              <button class="gp-toggle-btn" id="gp-mute-btn">Mute Input</button>
+            </div>
+          </div>
+
+          <!-- PLUGIN CARD -->
+          <div class="gp-card">
+            <div class="gp-card-hdr">Plugin</div>
+
+            <div class="gp-plugin-display">
+              <div class="gp-plugin-name" id="gp-plugin-name">No plugin loaded</div>
+              <div class="gp-plugin-meta">
+                <span id="gp-plugin-path" class="gp-plugin-path"></span>
+                <span id="gp-plugin-latency" class="gp-plugin-latency">0.0 ms</span>
+              </div>
+            </div>
+
+            <div class="gp-btn-row">
+              <button class="btn" id="gp-load-btn">Load Plugin…</button>
+              <button class="btn" id="gp-gui-btn" disabled>Show Plugin GUI</button>
+              <button class="btn" id="gp-bypass-btn" disabled>Bypass</button>
+              <button class="btn btn-ghost" id="gp-unload-btn" disabled>Unload</button>
+            </div>
+          </div>
+
+        </div>
+      </div>
 
     </div><!-- /main -->
   </div><!-- /body -->

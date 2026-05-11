@@ -7,6 +7,7 @@ import { Metronome, TapTempo } from './metronome.js';
 import { renderWaveform, buildWaveformLayers, renderPlayerWaveform } from './waveform.js';
 import * as ArtworkManager from './artwork-manager.js';
 import { listen, invoke, writeAudioFile, scanLibraryDir, convertFileSrc } from './tauri-api.js';
+import { initGuitarPanel } from './guitar-panel.js';
 
 
 // ─── KEY CONSTANTS ────────────────────────────────────────────
@@ -4039,6 +4040,9 @@ document.querySelectorAll('.nav-item[data-panel]').forEach(item => {
     document.getElementById(panelId).classList.add('active');
   });
 });
+
+// ─── GUITAR PANEL INIT ───────────────────────────────────────
+initGuitarPanel();
 
 
 // ─── TAB SWITCHING ───────────────────────────────────────────
