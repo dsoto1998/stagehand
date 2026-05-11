@@ -490,6 +490,55 @@ pub async fn vst_bypass(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn vst_open_gui(
+    app: tauri::AppHandle,
+    state: State<'_, EngineState>,
+) -> Result<(), String> {
+    use tauri::Manager;
+    let window = app
+        .get_webview_window("main")
+        .ok_or("Main window not found")?;
+    // Tauri 2.10 exposes hwnd() on Windows. HWND is a transparent newtype around *mut c_void.
+    #[cfg(target_os = "windows")]
+    let hwnd_usize = {
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        hwnd.0 as usize
+    };
+    #[cfg(not(target_os = "windows"))]
+    let hwnd_usize: usize = 0;
+
+    let slot = state.0.lock().vst_slot.clone();
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    app.run_on_main_thread(move || {
+        let mut guard = slot.lock();
+        let result = match guard.as_mut() {
+            Some(host) => host.open_gui(hwnd_usize as *mut std::ffi::c_void),
+            None => Err("No VST plugin loaded".into()),
+        };
+        let _ = tx.send(result);
+    })
+    .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn vst_close_gui(
+    app: tauri::AppHandle,
+    state: State<'_, EngineState>,
+) -> Result<(), String> {
+    let slot = state.0.lock().vst_slot.clone();
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    app.run_on_main_thread(move || {
+        if let Some(host) = slot.lock().as_mut() {
+            host.close_gui();
+        }
+        let _ = tx.send(());
+    })
+    .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())
+}
+
 // ─── Live input commands ─────────────────────────────────────────────────────
 
 #[tauri::command]

@@ -59,6 +59,8 @@ pub fn run() {
             commands::vst_process_test,
             commands::vst_get_latency,
             commands::vst_bypass,
+            commands::vst_open_gui,
+            commands::vst_close_gui,
             commands::live_input_get_input_devices,
             commands::live_input_start,
             commands::live_input_stop,
