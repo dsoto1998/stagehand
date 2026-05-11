@@ -6,6 +6,10 @@ use parking_lot::Mutex;
 use rodio::{OutputStream, OutputStreamHandle, Sink, Source};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
+use crate::vst_host::VstHost;
+
+/// VST3 plugin block size — must match `MAX_BLOCK_SIZE` in vst_host.rs.
+const VST_BLOCK_FRAMES: usize = 512;
 
 // ── !Send OutputStream wrapper ───────────────────────────────────────────────
 struct SendStream { _stream: OutputStream }
@@ -543,6 +547,150 @@ impl Source for RubberbandSource {
     fn total_duration(&self) -> Option<Duration> { None }
 }
 
+// ── VstInsertSource — inserts loaded VST3 plugin between inner source and Sink ──
+//
+// Pulls interleaved samples from `inner`, accumulates 512-frame blocks, hands them
+// to the VstHost in the engine's vst_slot, drains processed output. When no VST is
+// loaded, slot is locked, or VST is bypassed, falls back to passthrough for the block.
+//
+// All buffers preallocated in `new()` — zero allocation on the audio thread.
+pub(crate) struct VstInsertSource<S: Source<Item = f32>> {
+    inner: S,
+    vst_slot: Arc<Mutex<Option<VstHost>>>,
+    in_buf: Vec<f32>,    // accumulating block (interleaved)
+    in_len: usize,       // samples currently in in_buf
+    out_buf: Vec<f32>,   // ready-to-drain processed block (interleaved)
+    out_len: usize,      // valid samples in out_buf
+    out_pos: usize,
+    channels: u16,
+    block_samples: usize, // VST_BLOCK_FRAMES * channels
+    inner_sample_rate: u32,
+    inner_done: bool,
+}
+
+impl<S: Source<Item = f32>> VstInsertSource<S> {
+    pub fn new(inner: S, vst_slot: Arc<Mutex<Option<VstHost>>>) -> Self {
+        let channels = inner.channels();
+        let sample_rate = inner.sample_rate();
+        let block_samples = VST_BLOCK_FRAMES * channels as usize;
+        Self {
+            inner,
+            vst_slot,
+            in_buf: vec![0.0; block_samples],
+            in_len: 0,
+            out_buf: vec![0.0; block_samples],
+            out_len: 0,
+            out_pos: 0,
+            channels,
+            block_samples,
+            inner_sample_rate: sample_rate,
+            inner_done: false,
+        }
+    }
+
+    /// Process the currently accumulated `in_buf[..in_len]` and fill `out_buf`.
+    /// Stereo path goes through the VST; mono/other channels always passthrough
+    /// (Stage 2 supports stereo only — VstHost::process_block expects 2ch).
+    fn flush_block(&mut self) {
+        let valid = self.in_len;
+        if valid == 0 {
+            self.out_len = 0;
+            self.out_pos = 0;
+            return;
+        }
+
+        // Non-stereo: always passthrough — plugin only supports stereo in/out.
+        if self.channels != 2 {
+            self.out_buf[..valid].copy_from_slice(&self.in_buf[..valid]);
+            self.out_len = valid;
+            self.out_pos = 0;
+            self.in_len = 0;
+            return;
+        }
+
+        // try_lock — never block the audio thread.
+        let mut handled = false;
+        if let Some(mut slot) = self.vst_slot.try_lock() {
+            if let Some(host) = slot.as_mut() {
+                host.process_block(&self.in_buf[..self.block_samples],
+                                   &mut self.out_buf[..self.block_samples]);
+                handled = true;
+            }
+        }
+        if !handled {
+            // No plugin loaded, lock contended, or process_block is itself a passthrough
+            // (bypassed) — copy what we have.
+            self.out_buf[..valid].copy_from_slice(&self.in_buf[..valid]);
+        }
+
+        self.out_len = valid;
+        self.out_pos = 0;
+        self.in_len = 0;
+    }
+}
+
+impl<S: Source<Item = f32>> Iterator for VstInsertSource<S> {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<f32> {
+        // Drain any pending processed samples first.
+        if self.out_pos < self.out_len {
+            let s = self.out_buf[self.out_pos];
+            self.out_pos += 1;
+            return Some(s);
+        }
+
+        if self.inner_done {
+            return None;
+        }
+
+        // Accumulate up to one full block from inner.
+        while self.in_len < self.block_samples {
+            match self.inner.next() {
+                Some(s) => {
+                    self.in_buf[self.in_len] = s;
+                    self.in_len += 1;
+                }
+                None => {
+                    self.inner_done = true;
+                    break;
+                }
+            }
+        }
+
+        if self.in_len == 0 {
+            return None;
+        }
+
+        // Zero-pad partial final block so process_block always sees a full block.
+        for i in self.in_len..self.block_samples {
+            self.in_buf[i] = 0.0;
+        }
+        // Remember real length so we trim out_buf to it.
+        let real_len = self.in_len;
+        // process_block writes to out_buf; we then expose only real_len samples.
+        // Temporarily mark in_len as full so flush_block knows it's safe; then
+        // override out_len with the real length.
+        self.in_len = self.block_samples;
+        self.flush_block();
+        self.out_len = real_len;
+
+        if self.out_len == 0 {
+            return None;
+        }
+        let s = self.out_buf[self.out_pos];
+        self.out_pos += 1;
+        Some(s)
+    }
+}
+
+impl<S: Source<Item = f32>> Source for VstInsertSource<S> {
+    fn current_frame_len(&self) -> Option<usize> { None }
+    fn channels(&self) -> u16 { self.channels }
+    fn sample_rate(&self) -> u32 { self.inner_sample_rate }
+    fn total_duration(&self) -> Option<Duration> { None }
+}
+
 // ── AudioEngine ───────────────────────────────────────────────────────────────
 pub struct AudioEngine {
     _stream: SendStream,
@@ -562,6 +710,8 @@ pub struct AudioEngine {
     audio_ch: Arc<AtomicU32>,
     ended: Arc<AtomicBool>,
     pub prefetch: Arc<Mutex<Option<PrefetchEntry>>>,
+    /// Currently loaded VST3 plugin (single-slot; Stage 5 may extend to chain).
+    pub vst_slot: Arc<Mutex<Option<VstHost>>>,
     app: AppHandle,
 }
 
@@ -632,6 +782,7 @@ impl AudioEngine {
             audio_ch,
             ended,
             prefetch: Arc::new(Mutex::new(None)),
+            vst_slot: Arc::new(Mutex::new(None)),
             app,
         })
     }

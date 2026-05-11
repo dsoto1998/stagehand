@@ -1,10 +1,14 @@
-use tauri::State;
+use tauri::{Emitter, State};
 use parking_lot::Mutex;
 use serde::Serialize;
 use cpal::traits::{DeviceTrait, HostTrait};
 use crate::audio::{AudioEngine, LoadResult, PrefetchEntry, decode_to_samples, compute_peaks};
+use crate::vst_host::{VstHost, VstPluginInfo};
+use crate::live_input::{LiveInputEngine, LiveInputConfig, LiveInputStatus, InputDeviceInfo, enumerate_input_devices};
 
 pub struct EngineState(pub Mutex<AudioEngine>);
+
+pub struct LiveInputState(pub Mutex<LiveInputEngine>);
 
 // ─── Library ─────────────────────────────────────────────────────────────────
 
@@ -416,4 +420,176 @@ pub async fn open_audio_files_dialog() -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn library_check_paths(paths: Vec<String>) -> Result<Vec<bool>, String> {
     Ok(paths.iter().map(|p| std::path::Path::new(p).exists()).collect())
+}
+
+// ─── VST3 commands ───────────────────────────────────────────────────────────
+//
+// Single-slot model: AudioEngine holds one Arc<Mutex<Option<VstHost>>>.
+// Loading replaces any existing slot contents; unloading clears it.
+
+#[tauri::command]
+pub async fn vst_scan(path: String) -> Result<Vec<VstPluginInfo>, String> {
+    Ok(VstHost::scan(&path))
+}
+
+#[tauri::command]
+pub async fn vst_load(
+    app: tauri::AppHandle,
+    state: State<'_, EngineState>,
+    path: String,
+    sample_rate: Option<f64>,
+) -> Result<(), String> {
+    let sr = sample_rate.unwrap_or(44100.0);
+    let host = VstHost::load(&path, sr)?;
+    let latency = host.latency_samples;
+
+    // Grab the slot Arc, then drop the engine lock before swapping the slot.
+    let slot = state.0.lock().vst_slot.clone();
+    *slot.lock() = Some(host);
+
+    let latency_ms = (latency as f64 / sr) * 1000.0;
+    let _ = app.emit("vst_latency", serde_json::json!({
+        "latency_samples": latency,
+        "latency_ms": latency_ms,
+    }));
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn vst_unload(state: State<'_, EngineState>) -> Result<(), String> {
+    let slot = state.0.lock().vst_slot.clone();
+    *slot.lock() = None;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn vst_process_test(state: State<'_, EngineState>) -> Result<(), String> {
+    let slot = state.0.lock().vst_slot.clone();
+    let mut guard = slot.lock();
+    let host = guard.as_mut().ok_or("No VST plugin loaded")?;
+    host.process_test()
+}
+
+#[tauri::command]
+pub async fn vst_get_latency(state: State<'_, EngineState>) -> Result<u32, String> {
+    let slot = state.0.lock().vst_slot.clone();
+    let guard = slot.lock();
+    let host = guard.as_ref().ok_or("No VST plugin loaded")?;
+    Ok(host.get_latency())
+}
+
+#[tauri::command]
+pub async fn vst_bypass(
+    state: State<'_, EngineState>,
+    bypassed: bool,
+) -> Result<(), String> {
+    let slot = state.0.lock().vst_slot.clone();
+    let mut guard = slot.lock();
+    let host = guard.as_mut().ok_or("No VST plugin loaded")?;
+    host.set_bypass(bypassed);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn vst_open_gui(
+    app: tauri::AppHandle,
+    state: State<'_, EngineState>,
+) -> Result<(), String> {
+    use tauri::Manager;
+    let window = app
+        .get_webview_window("main")
+        .ok_or("Main window not found")?;
+    // Tauri 2.10 exposes hwnd() on Windows. HWND is a transparent newtype around *mut c_void.
+    #[cfg(target_os = "windows")]
+    let hwnd_usize = {
+        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
+        hwnd.0 as usize
+    };
+    #[cfg(not(target_os = "windows"))]
+    let hwnd_usize: usize = 0;
+
+    let slot = state.0.lock().vst_slot.clone();
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    app.run_on_main_thread(move || {
+        let mut guard = slot.lock();
+        let result = match guard.as_mut() {
+            Some(host) => host.open_gui(hwnd_usize as *mut std::ffi::c_void),
+            None => Err("No VST plugin loaded".into()),
+        };
+        let _ = tx.send(result);
+    })
+    .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+pub async fn vst_close_gui(
+    app: tauri::AppHandle,
+    state: State<'_, EngineState>,
+) -> Result<(), String> {
+    let slot = state.0.lock().vst_slot.clone();
+    let (tx, rx) = std::sync::mpsc::channel::<()>();
+    app.run_on_main_thread(move || {
+        if let Some(host) = slot.lock().as_mut() {
+            host.close_gui();
+        }
+        let _ = tx.send(());
+    })
+    .map_err(|e| e.to_string())?;
+    rx.recv().map_err(|e| e.to_string())
+}
+
+// ─── Live input commands ─────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn live_input_get_input_devices() -> Result<Vec<InputDeviceInfo>, String> {
+    Ok(enumerate_input_devices())
+}
+
+#[tauri::command]
+pub async fn live_input_start(
+    state: State<'_, LiveInputState>,
+    config: LiveInputConfig,
+) -> Result<(), String> {
+    state.0.lock().start(config)
+}
+
+#[tauri::command]
+pub async fn live_input_stop(state: State<'_, LiveInputState>) -> Result<(), String> {
+    state.0.lock().stop();
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn live_input_set_input_gain(
+    state: State<'_, LiveInputState>,
+    gain: f32,
+) -> Result<(), String> {
+    state.0.lock().set_input_gain(gain);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn live_input_set_output_gain(
+    state: State<'_, LiveInputState>,
+    gain: f32,
+) -> Result<(), String> {
+    state.0.lock().set_output_gain(gain);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn live_input_set_mute(
+    state: State<'_, LiveInputState>,
+    muted: bool,
+) -> Result<(), String> {
+    state.0.lock().set_mute(muted);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn live_input_status(
+    state: State<'_, LiveInputState>,
+) -> Result<LiveInputStatus, String> {
+    Ok(state.0.lock().status())
 }
