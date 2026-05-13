@@ -32,6 +32,8 @@ The legacy monolith (`rehearsal-tool-v1.html`) still exists at the project root 
 - **Keyboard shortcuts** — 15 configurable shortcuts (playback, loop, metronome, library) stored in `localStorage`. Editable via Settings panel.
 - **Chord charts** — Per-track: PDF upload or ChordPro text editor. Always-visible icon (0.25 opacity). Stored in IDB.
 - **Settings panel** — Multi-tab (General, Display, Audio, Export). General tab: artwork cache clear, keyboard shortcuts editor.
+- **Guitar panel (Live Input)** — Live audio input via WASAPI or ASIO. Input device picker, input source (mono/stereo channel selection), input/output gain knobs, mute, buffer size, sample rate. Stream auto-starts on device select; debounced restart on settings change.
+- **VST3 plugin hosting** — Load a single .vst3 plugin (flat file or bundle) through the Guitar panel. Plugin processes the live input signal in the audio output callback. Supports bypass, open/close native plugin GUI (floating Win32 window), latency reporting. Tested with Helix Native (separate-component plugin).
 - **GitHub Actions release** — `.github/workflows/release.yml` builds and publishes Windows installer on `v*` tag push.
 - **Test suite** — Vitest unit tests in `tests/` covering library-manager, metronome, track-player, artwork-manager.
 
@@ -56,6 +58,7 @@ stagehand/
 │       ├── library-manager.js   ← IndexedDB CRUD for tracks, playlists, settings, artwork
 │       ├── track-player.js      ← Tauri IPC proxy (invoke audio_* commands)
 │       ├── ui-controller.js     ← DOM bindings, virtual scroll, tabs, miniplayer, shortcuts
+│       ├── guitar-panel.js      ← Guitar panel: live input device picker, gain knobs, VST plugin loader
 │       ├── metronome.js         ← Web Audio lookahead scheduler + tap tempo
 │       ├── waveform.js          ← Canvas waveform renderer
 │       ├── artwork-manager.js   ← artwork resolution: embedded → iTunes → IDB cache
@@ -66,7 +69,7 @@ stagehand/
 │       └── vendor/
 │           └── jsmediatags.min.js   ← ID3 tag reader (loaded globally in index.html)
 ├── src-tauri/
-│   ├── Cargo.toml               ← Rust deps: tauri 2, rodio, symphonia, cpal (ASIO), rubberband (vendored)
+│   ├── Cargo.toml               ← Rust deps: tauri 2, rodio, symphonia, cpal (ASIO), rubberband (vendored), vst3, ringbuf
 │   ├── tauri.conf.json          ← window config, CSP, asset protocol scope
 │   ├── build.rs                 ← compiles vendored Rubber Band C++ via `cc` crate
 │   ├── capabilities/
@@ -74,8 +77,10 @@ stagehand/
 │   ├── src/
 │   │   ├── main.rs              ← Tauri builder entry point
 │   │   ├── lib.rs               ← registers all commands with tauri::Builder
-│   │   ├── audio.rs             ← AudioEngine struct: rodio sink, Rubber Band, prefetch cache
-│   │   └── commands.rs          ← all #[tauri::command] handlers
+│   │   ├── audio.rs             ← AudioEngine struct: rodio sink, Rubber Band, prefetch cache, vst_slot Arc
+│   │   ├── commands.rs          ← all #[tauri::command] handlers
+│   │   ├── live_input.rs        ← LiveInputEngine: cpal input→ring buffer→VST→output
+│   │   └── vst_host.rs          ← VstHost: VST3 COM loading, processing, GUI (Windows)
 │   └── vendor/
 │       └── rubberband/          ← vendored Rubber Band C++ source (compiled at build time)
 ├── tests/
@@ -94,23 +99,90 @@ stagehand/
 
 ## Audio Architecture
 
-### Tauri / Rust Audio Engine (`src-tauri/src/audio.rs`)
+### Two Independent Audio Paths
 
-Track audio routes entirely through Rust. The Web Audio API is **only** used for the metronome click sound.
+There are **two completely separate audio paths** — they do NOT share a pipeline. They mix at the OS device level.
 
 ```
-[Filesystem or IDB ArrayBuffer]
-        │
-  invoke('audio_load_file') or invoke('audio_load')
-        │
-[Rust AudioEngine]
-  - symphonia decode → f32 samples
-  - Rubber Band C++ pitch/time shifting
-  - rodio Sink → WASAPI or ASIO output
+PATH A — Music Playback (unchanged from v1.x)
+  [Filesystem] → invoke('audio_load_file')
+              → Rust AudioEngine
+              → symphonia decode → f32 samples
+              → Rubber Band C++ pitch/time shifting
+              → rodio Sink → WASAPI or ASIO output
+
+PATH B — Live Input (Guitar Panel)
+  [Audio input device] → cpal input stream callback
+                       → SPSC ring buffer (RING_FRAMES=8192 stereo)
+                       → cpal output callback
+                       → VST3 process_block() (if loaded)
+                       → WASAPI or ASIO output
 ```
 
-Key Rust commands (all in `src-tauri/src/commands.rs`):
+### Rust Audio Engine (`src-tauri/src/audio.rs`)
 
+Key patterns:
+- `AudioEngine` holds a rodio `Sink`, a `RubberBandStretcher`, a `Mutex<Option<PrefetchEntry>>` prefetch cache, and a `vst_slot: Arc<Mutex<Option<VstHost>>>` shared with `LiveInputEngine`.
+- `play_with_params` / `seek` / `set_semitones` / `set_speed` restart the stretcher and re-fill the sink from the decoded sample buffer.
+- `decode_to_samples()` uses symphonia to decode any supported format to `Vec<f32>` interleaved samples.
+- `compute_peaks()` downsamples to 600 bins for waveform display.
+- `audio_play` / `audio_seek` poll on `decode_pending` with 100ms sleep up to 8s (symphonia async decode path).
+
+### Live Input Engine (`src-tauri/src/live_input.rs`)
+
+Handles real-time audio passthrough from an input device through an optional VST3 plugin to an output device.
+
+Key patterns:
+- `LiveInputEngine` holds `input_stream`, `output_stream`, and atomic knobs (`input_gain`, `output_gain`, `muted`).
+- `LiveInputEngine` shares `vst_slot: Arc<Mutex<Option<VstHost>>>` with `AudioEngine` — same VST instance used by both.
+- cpal callbacks are zero-allocation: uses pre-allocated `Vec<f32>` scratch buffers (`in_scratch`, `pull_scratch`, `process_scratch`).
+- ASIO: `BufferSize::Default` and device-reported SR must be used — ASIO drivers reject Fixed buffer size or non-native SR.
+- WASAPI: `BufferSize::Fixed(cfg.buffer_size)` and user-specified `SampleRate(cfg.sample_rate)` work.
+- ASIO uses same `Device` for both input and output streams (single ASIO device represents both directions).
+- WASAPI: separate input/output device lookup; first checks `input_devices()`, then `output_devices()`.
+- Ring buffer: `HeapRb::<f32>::new(RING_FRAMES * 2)` — stereo interleaved, RING_FRAMES=8192.
+- Output callback chunked in `VST_MAX_FRAMES=512` blocks to match `MAX_BLOCK_SIZE` in `vst_host.rs`.
+- Underrun counter tracked atomically; zeroed on restart.
+
+### VST3 Host (`src-tauri/src/vst_host.rs`)
+
+All `unsafe` code in the codebase lives here. Every unsafe block carries a one-line safety comment.
+
+Key patterns:
+- `VstHost::load()`: LoadLibraryW → GetPluginFactory → find "Audio Module Class" → createInstance IComponent → queryInterface IAudioProcessor → initialize/setupProcessing/setActive/setProcessing.
+- `setup_controller()`: resolves `IEditController` eagerly during `load()` — NOT lazily on GUI open. Required for Helix Native (separate-component plugin) to avoid crash on first paint.
+- Two paths for controller: (A) single-component: cast `IComponent → IEditController`; (B) separate-component (Helix Native): `getControllerClassId` + factory `createInstance`.
+- `IConnectionPoint` bidirectional connect between component and controller — required for separate-component plugins.
+- `process_block()`: deinterleave stereo input → VST3 planar format → process → reinterleave → output. Passes through on bypass or error.
+- `open_gui()`: creates a floating Win32 `WS_OVERLAPPEDWINDOW` using `CreateWindowExW`, then calls `IPlugView::attached(hwnd, kPlatformTypeHWND)`. Must be called from main UI thread.
+- `close_gui()`: calls `IPlugView::removed()` before `DestroyWindow` per VST3 spec.
+- `StagehandHostApp` implements `IHostApplication` — required; without it Helix Native crashes on `createInstance(IMessage)`.
+- `StagehandAttributeList` / `StagehandMessage` implement `IAttributeList` / `IMessage` — required for IConnectionPoint::notify.
+- `MemoryStream` implements `IBStream` — used for component→controller state sync via `getState`/`setComponentState`.
+- `StagehandPlugFrame` implements `IPlugFrame::resizeView` — resizes floating container window when plugin requests size change.
+- Crash filter: `SetUnhandledExceptionFilter(crash_filter)` logs faulting address + module name before process dies.
+- Drop order: close GUI → drop edit_controller → setProcessing(0) → setActive(0) → terminate() → ManuallyDrop processor/component/factory → FreeLibrary.
+
+### Metronome (Web Audio only)
+- `AudioContext` + `GainNode` (metronomeGain) — no track audio goes through here.
+- `audio-engine.js` exports `getCtx()`, `resume()`, `getMetronomeGain()`. `setMasterVolume()` is a no-op (master volume goes via `invoke('audio_set_volume')`).
+
+---
+
+## Tauri Commands
+
+All commands are in `src-tauri/src/commands.rs` and registered in `lib.rs`.
+
+### Library / Filesystem
+| Command | Purpose |
+|---------|---------|
+| `library_get_dir` | Return `$APPDATA/stagehand/library/` path |
+| `library_scan` | Scan library dir; return `{id, name, path, ext, size}[]` |
+| `library_check_paths` | Check if file paths still exist on disk |
+| `open_audio_files_dialog` | Native file open dialog for audio import |
+| `open_url` | Open URL in default browser |
+
+### Music Playback (PATH A)
 | Command | Purpose |
 |---------|---------|
 | `audio_load_file` | Load from filesystem path; checks prefetch cache first |
@@ -128,22 +200,35 @@ Key Rust commands (all in `src-tauri/src/commands.rs`):
 | `audio_set_loop` | Set loop enabled/start/end |
 | `audio_get_devices` | List WASAPI + ASIO output devices |
 | `audio_set_device` | Switch output device |
-| `library_get_dir` | Return `$APPDATA/stagehand/library/` path |
-| `library_scan` | Scan library dir; return `{id, name, path, ext, size}[]` |
-| `library_check_paths` | Check if file paths still exist on disk |
-| `open_audio_files_dialog` | Native file open dialog for audio import |
-| `open_url` | Open URL in default browser (for chord charts etc.) |
 
-### Rust audio.rs key patterns
-- `AudioEngine` holds a rodio `Sink`, a `RubberBandStretcher`, and a `Mutex<Option<PrefetchEntry>>` prefetch cache.
-- `play_with_params` / `seek` / `set_semitones` / `set_speed` restart the stretcher and re-fill the sink from the decoded sample buffer.
-- `decode_to_samples()` uses symphonia to decode any supported format to `Vec<f32>` interleaved samples.
-- `compute_peaks()` downsamples to 600 bins for waveform display.
-- `audio_play` / `audio_seek` poll on `decode_pending` with 100ms sleep up to 8s (symphonia async decode path).
+### VST3 Plugin (shared between PATH A and PATH B via vst_slot Arc)
+| Command | Purpose |
+|---------|---------|
+| `open_vst_dialog` | Native file dialog filtered to .vst3 files |
+| `vst_scan` | Scan a directory for .vst3 bundles; returns `{name, path}[]` |
+| `vst_load` | Load + initialize a VST3 plugin at the given path |
+| `vst_unload` | Unload the current plugin (close GUI first) |
+| `vst_process_test` | Push one block of silence through plugin (Stage 1 test) |
+| `vst_get_latency` | Return plugin latency in samples |
+| `vst_bypass` | Toggle bypass mode on the loaded plugin |
+| `vst_open_gui` | Open plugin editor as floating Win32 window (main thread only) |
+| `vst_close_gui` | Close plugin editor window (main thread only) |
 
-### Metronome (Web Audio only)
-- `AudioContext` + `GainNode` (metronomeGain) — no track audio goes through here.
-- `audio-engine.js` exports `getCtx()`, `resume()`, `getMetronomeGain()`. `setMasterVolume()` is a no-op (master volume goes via `invoke('audio_set_volume')`).
+### Live Input (PATH B)
+| Command | Purpose |
+|---------|---------|
+| `live_input_get_input_devices` | Enumerate input devices (ASIO + WASAPI); returns `{name, is_asio, channels, default_sample_rate}[]` |
+| `live_input_start` | Start live audio passthrough with `LiveInputConfig` |
+| `live_input_stop` | Stop live audio passthrough |
+| `live_input_set_input_gain` | Adjust input gain (0.0–8.0 linear) |
+| `live_input_set_output_gain` | Adjust output gain (0.0–8.0 linear) |
+| `live_input_set_mute` | Mute/unmute input signal |
+| `live_input_status` | Return `LiveInputStatus` (running, device, channels, SR, underruns) |
+
+### Rust Events (Tauri emit → JS listen)
+| Event | Payload | Purpose |
+|-------|---------|---------|
+| `vst_latency` | `{ latency_ms: number }` | Plugin reports latency after load; Guitar panel updates display |
 
 ---
 
@@ -156,11 +241,39 @@ Key Rust commands (all in `src-tauri/src/commands.rs`):
 | `ui-controller.js` | All DOM wiring, panel routing, virtual scroll, tab state machine, miniplayer, keyboard shortcuts, settings panel |
 | `library-manager.js` | IndexedDB CRUD: all object stores |
 | `track-player.js` | Thin wrapper around Tauri IPC. Holds per-track state (semitones, cents, speed, volume, loopStart/End). Does NOT touch Web Audio. |
+| `guitar-panel.js` | Live input device picker, gain knobs, VST plugin loader/bypass/GUI. Config persisted in `localStorage`. |
 | `tauri-api.js` | `invoke()` / `listen()` / `convertFileSrc()` / `writeAudioFile()` / `scanLibraryDir()` shims over `window.__TAURI__` |
 | `artwork-manager.js` | Resolve artwork: IDB cache → embedded (jsmediatags) → iTunes Search API fallback |
 | `metronome.js` | Lookahead scheduler using `AudioContext.currentTime` |
 | `waveform.js` | Canvas renderer using cached peaks array |
 | `icons.js` | Exported `ICONS` object with inline SVG strings |
+
+### Guitar Panel (`guitar-panel.js`)
+
+Config structure (stored in `localStorage` key `stagehand_guitar_config`):
+```js
+{
+  deviceName: '',        // selected input device name
+  isAsio: false,         // ASIO vs WASAPI
+  bufferSize: 256,       // samples (WASAPI only; ASIO ignores this)
+  sampleRate: 44100,     // Hz (WASAPI only; ASIO uses driver default)
+  inputSource: 'mono:0', // 'mono:<ch>' or 'stereo:<ch>,<ch>'
+  outputChannels: [0,1], // output channel indices to write to
+  inputGain: 1.0,
+  outputGain: 1.0,
+  muted: false,
+  pluginPath: '',
+  bypassed: false,
+  advancedOpen: false,
+}
+```
+
+Key behaviors:
+- Stream auto-starts on device select; restarts (debounced 500ms) on any setting change while running.
+- Clicking the status line toggles stop/start.
+- `live` CSS class on status dot + hidden guitar badge show running state.
+- `refreshDevices()` called on panel init and on guitar nav click.
+- Plugin latency: `listen('vst_latency', ...)` updates `#gp-plugin-latency` element.
 
 ### Virtual Scroll
 - `ROW_H = 50` px fixed row height.
@@ -353,6 +466,18 @@ All audio commands go through `invoke()` in `tauri-api.js`. Never call `window._
 ### Artwork keys
 Keyed by `"artist::album"` when both present; falls back to `"track::id"`. Use `ArtworkManager.artworkKeyFor(track)`.
 
+### VST3 safety invariants
+- All unsafe code lives in `vst_host.rs`. Every unsafe block has a one-line safety comment.
+- `VstHost` is `Send + Sync` (wrapped in `parking_lot::Mutex`) — the audio thread only calls `process_block()` via `try_lock()`.
+- Drop order matters: GUI → edit_controller → setProcessing(0) → setActive(0) → terminate() → ManuallyDrop COM releases → FreeLibrary.
+- `vst_open_gui` / `vst_close_gui` must be called from the Tauri main UI thread (use `app.run_on_main_thread()`).
+- Do not add `unsafe` outside `vst_host.rs` without strong justification.
+
+### Live input constraints
+- Music playback (PATH A) is never routed through the live input pipeline — the two paths mix at the OS device level.
+- ASIO requires `BufferSize::Default` — never pass `BufferSize::Fixed` for ASIO devices.
+- Maximum supported input channels: 2 (mono or stereo pair). Maximum output channels: exactly 2.
+
 ---
 
 ## Roadmap
@@ -364,6 +489,8 @@ Keyed by `"artist::album"` when both present; falls back to `"track::id"`. Use `
 - ✓ Artist drill-down with back navigation
 - ✓ Chord charts per track (PDF + ChordPro editor, IDB persistence)
 - ✓ Keyboard shortcuts (15 actions, configurable)
+- ✓ Guitar panel: live input passthrough via WASAPI/ASIO
+- ✓ VST3 plugin hosting (single plugin, Helix Native tested)
 - [ ] Playlists CRUD (create, rename, delete, add tracks, reorder, play through) — Phase 5
 
 ### v3 — Electron migration (future)
@@ -373,8 +500,8 @@ Keyed by `"artist::album"` when both present; falls back to `"track::id"`. Use `
 - Package with `electron-builder` for `.exe` / `.dmg`
 
 ### Future panels (stubs reserved in sidebar)
-- **Live Input** — `getUserMedia` → `MediaStreamSourceNode`, input monitor + gain
-- **VST Plugin Panel** — Plugin chain UI; actual DSP awaits Electron bridge
+- **Live Input** — already partially implemented in Guitar panel
+- **VST Plugin Panel** — single plugin in Guitar panel today; multi-plugin chain awaits Electron bridge
 
 ---
 
