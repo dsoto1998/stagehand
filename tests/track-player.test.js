@@ -277,3 +277,283 @@ describe('TrackPlayer.setLoopPoints', () => {
     }));
   });
 });
+
+// ─── loadFile ─────────────────────────────────────────────────────────────────
+
+describe('TrackPlayer.loadFile', () => {
+  it('sets _loaded, duration, and peaks after loading', async () => {
+    const p = makePlayer();
+    await p.loadFile('/music/song.wav');
+    expect(p._loaded).toBe(true);
+    expect(p.duration).toBe(180.0);
+    expect(p.peaks).toHaveLength(3);
+  });
+
+  it('calls audio_load_file with the provided path when not prefetched', async () => {
+    const p = makePlayer('trk_1');
+    await p.loadFile('/music/song.wav');
+    const loadCall = invoke.mock.calls.find(c => c[0] === 'audio_load_file');
+    expect(loadCall[1].path).toBe('/music/song.wav');
+    expect(loadCall[1].keepFile).toBe(true);
+  });
+
+  it('passes empty path to audio_load_file when prefetch cache is hot', async () => {
+    // Queue one-time return values: prefetch=true, then load result
+    invoke.mockImplementationOnce(async () => true);
+    invoke.mockImplementationOnce(async () => ({ duration: 180.0, peaks: [0.1], sample_rate: 44100 }));
+    const p = makePlayer('trk_prefetch');
+    await p.loadFile('/music/song.wav');
+    const loadCall = invoke.mock.calls.find(c => c[0] === 'audio_load_file');
+    expect(loadCall[1].path).toBe('');
+  });
+
+  it('passes cachedMeta fields to the invoke call', async () => {
+    const meta = { peaks: [0.5], nativeDuration: 120.0, sampleRate: 48000 };
+    const p = makePlayer();
+    await p.loadFile('/music/song.wav', meta);
+    const loadCall = invoke.mock.calls.find(c => c[0] === 'audio_load_file');
+    expect(loadCall[1].cachedPeaks).toEqual([0.5]);
+    expect(loadCall[1].cachedDuration).toBe(120.0);
+    expect(loadCall[1].cachedSampleRate).toBe(48000);
+  });
+
+  it('sets peaks to null when result returns an empty peaks array', async () => {
+    invoke.mockImplementationOnce(async () => false);
+    invoke.mockImplementationOnce(async () => ({ duration: 60.0, peaks: [], sample_rate: 44100 }));
+    const p = makePlayer();
+    await p.loadFile('/music/song.wav');
+    expect(p.peaks).toBeNull();
+  });
+});
+
+// ─── setSpeed ─────────────────────────────────────────────────────────────────
+
+describe('TrackPlayer.setSpeed', () => {
+  it('updates speed state', () => {
+    const p = makePlayer();
+    p.setSpeed(1.5);
+    expect(p.speed).toBe(1.5);
+  });
+
+  it('does not invoke IPC when not playing', () => {
+    const p = makePlayer();
+    p.setSpeed(1.5);
+    expect(invoke).not.toHaveBeenCalledWith('audio_set_speed', expect.anything());
+  });
+
+  it('marks _seekedWhilePaused when speed changes while paused', async () => {
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8));
+    await p.play(0, 1.0);
+    await p.pause();
+    p.setSpeed(0.5);
+    expect(p._seekedWhilePaused).toBe(true);
+  });
+
+  it('debounces audio_set_speed when playing', async () => {
+    vi.useFakeTimers();
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8));
+    await p.play(0, 1.0);
+    invoke.mockClear();
+    p.setSpeed(0.75);
+    expect(invoke).not.toHaveBeenCalledWith('audio_set_speed', expect.anything());
+    vi.advanceTimersByTime(200);
+    expect(invoke).toHaveBeenCalledWith('audio_set_speed', expect.objectContaining({ speed: 0.75 }));
+    vi.useRealTimers();
+  });
+
+  it('sends current semitones and volume along with speed', async () => {
+    vi.useFakeTimers();
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8));
+    p.semitones = 3;
+    p.cents = 10;
+    await p.play(0, 1.0);
+    invoke.mockClear();
+    p.setSpeed(1.25);
+    vi.advanceTimersByTime(200);
+    const call = invoke.mock.calls.find(c => c[0] === 'audio_set_speed');
+    expect(call[1]).toMatchObject({ speed: 1.25, semitones: 3, cents: 10 });
+    vi.useRealTimers();
+  });
+});
+
+// ─── _schedulePitchInvoke debounce ────────────────────────────────────────────
+
+describe('TrackPlayer pitch debounce', () => {
+  it('fires audio_set_semitones after debounce delay when playing', async () => {
+    vi.useFakeTimers();
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8));
+    await p.play(0, 1.0);
+    invoke.mockClear();
+    p.setSemitones(3);
+    expect(invoke).not.toHaveBeenCalledWith('audio_set_semitones', expect.anything());
+    vi.advanceTimersByTime(200);
+    expect(invoke).toHaveBeenCalledWith('audio_set_semitones', expect.objectContaining({ semitones: 3 }));
+    vi.useRealTimers();
+  });
+
+  it('coalesces rapid setSemitones calls into a single IPC call', async () => {
+    vi.useFakeTimers();
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8));
+    await p.play(0, 1.0);
+    invoke.mockClear();
+    p.setSemitones(1);
+    p.setSemitones(3);
+    p.setSemitones(7);
+    vi.advanceTimersByTime(200);
+    const calls = invoke.mock.calls.filter(c => c[0] === 'audio_set_semitones');
+    expect(calls).toHaveLength(1);
+    expect(calls[0][1].semitones).toBe(7);
+    vi.useRealTimers();
+  });
+
+  it('fires audio_set_semitones with current cents value', async () => {
+    vi.useFakeTimers();
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8));
+    await p.play(0, 1.0);
+    p.cents = 25;
+    invoke.mockClear();
+    p.setSemitones(5);
+    vi.advanceTimersByTime(200);
+    const call = invoke.mock.calls.find(c => c[0] === 'audio_set_semitones');
+    expect(call[1].cents).toBe(25);
+    vi.useRealTimers();
+  });
+
+  it('does not fire IPC for setCents when not playing', () => {
+    const p = makePlayer();
+    p.setCents(25);
+    expect(p.cents).toBe(25);
+    expect(invoke).not.toHaveBeenCalledWith('audio_set_semitones', expect.anything());
+  });
+});
+
+// ─── seek edge cases ──────────────────────────────────────────────────────────
+
+describe('TrackPlayer.seek — edge cases', () => {
+  it('sets _seekedWhilePaused when seeking while not playing', async () => {
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8));
+    await p.seek(0.5);
+    expect(p._seekedWhilePaused).toBe(true);
+  });
+
+  it('does NOT set _seekedWhilePaused when seeking while playing', async () => {
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8));
+    await p.play(0, 1.0);
+    await p.seek(0.5);
+    expect(p._seekedWhilePaused).not.toBe(true);
+  });
+
+  it('calls onProgress with fraction and absolute time when not playing', async () => {
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8)); // duration = 180
+    const onProgress = vi.fn();
+    p.onProgress = onProgress;
+    await p.seek(0.5);
+    expect(onProgress).toHaveBeenCalledWith(0.5, expect.closeTo(90.0, 1));
+  });
+
+  it('passes loop points as absolute seconds to audio_seek', async () => {
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8)); // duration = 180
+    p.loopStart = 0.25;
+    p.loopEnd = 0.75;
+    await p.play(0, 1.0);
+    invoke.mockClear();
+    await p.seek(0.5);
+    const call = invoke.mock.calls.find(c => c[0] === 'audio_seek');
+    expect(call[1].loopStart).toBeCloseTo(45.0, 1);
+    expect(call[1].loopEnd).toBeCloseTo(135.0, 1);
+  });
+});
+
+// ─── resume edge case ─────────────────────────────────────────────────────────
+
+describe('TrackPlayer.resume — edge cases', () => {
+  it('does nothing when not loaded', async () => {
+    const p = makePlayer();
+    await p.resume();
+    expect(invoke).not.toHaveBeenCalledWith('audio_resume');
+    expect(p.isPlaying).toBe(false);
+  });
+});
+
+// ─── play uses pauseOffset / _vol when args omitted ──────────────────────────
+
+describe('TrackPlayer.play — defaults', () => {
+  it('uses pauseOffset as offset when no offset argument is given', async () => {
+    const p = makePlayer();
+    await p.loadBuffer(new ArrayBuffer(8));
+    await p.play(0, 1.0);
+    await p.pause(); // sets pauseOffset = 10.5
+    invoke.mockClear();
+    await p.play(); // no offset arg
+    const call = invoke.mock.calls.find(c => c[0] === 'audio_play');
+    expect(call[1].offsetSecs).toBe(10.5);
+  });
+
+  it('uses _vol when no effectiveVolume argument is given', async () => {
+    const p = makePlayer();
+    p.volume = 0.8;
+    p._masterVolume = 0.5;
+    await p.loadBuffer(new ArrayBuffer(8));
+    invoke.mockClear();
+    await p.play();
+    const call = invoke.mock.calls.find(c => c[0] === 'audio_play');
+    expect(call[1].volume).toBeCloseTo(0.8 * 0.5 * 0.75, 5);
+  });
+});
+
+// ─── masterVolume interaction ─────────────────────────────────────────────────
+
+describe('TrackPlayer — masterVolume interaction', () => {
+  it('_vol scales proportionally with _masterVolume', () => {
+    const p = makePlayer();
+    p.volume = 1.0;
+    p._masterVolume = 1.0;
+    const full = p._vol;
+    p._masterVolume = 0.5;
+    expect(p._vol).toBeCloseTo(full * 0.5, 5);
+  });
+
+  it('setVolume IPC call uses current _masterVolume', () => {
+    const p = makePlayer();
+    p._masterVolume = 0.5;
+    p.setVolume(1.0);
+    const call = invoke.mock.calls.find(c => c[0] === 'audio_set_volume');
+    expect(call[1].volume).toBeCloseTo(1.0 * 0.5 * 0.75, 5);
+  });
+});
+
+// ─── error handling ───────────────────────────────────────────────────────────
+
+describe('TrackPlayer — fire-and-forget IPC calls do not throw', () => {
+  it('setVolume swallows IPC rejection', async () => {
+    invoke.mockRejectedValueOnce(new Error('IPC error'));
+    const p = makePlayer();
+    expect(() => p.setVolume(0.5)).not.toThrow();
+    // allow the rejected promise to settle without unhandled rejection
+    await Promise.resolve();
+  });
+
+  it('setLoopEnabled swallows IPC rejection', async () => {
+    invoke.mockRejectedValueOnce(new Error('IPC error'));
+    const p = makePlayer();
+    expect(() => p.setLoopEnabled(true)).not.toThrow();
+    await Promise.resolve();
+  });
+
+  it('setLoopPoints swallows IPC rejection', async () => {
+    invoke.mockRejectedValueOnce(new Error('IPC error'));
+    const p = makePlayer();
+    expect(() => p.setLoopPoints(0.1, 0.9)).not.toThrow();
+    await Promise.resolve();
+  });
+});
