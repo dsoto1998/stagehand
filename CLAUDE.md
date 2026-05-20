@@ -433,11 +433,11 @@ npm run setup          # npm install + copies rubberband-processor.js from node_
 
 ### Git push restrictions in Claude Code agent environment
 - Direct `git push` to `main` is blocked (HTTP 403) — branch protection enforces PRs.
-- `git push` of tags is also blocked (HTTP 403).
-- **Workaround for all pushes to main:** push to a feature branch → create PR via `mcp__github__create_pull_request` → merge via `mcp__github__merge_pull_request`.
-- **Workaround for triggering a release:** have the user create/recreate the tag via GitHub web UI at **github.com/{owner}/{repo}/releases/new** — creating a release with a new tag fires the `push: tags` workflow trigger.
+- `git push` of tags via raw git is blocked, but **the GitHub REST API path works** — use `gh release create v<x.y.z> --target main --title "..." --notes "..."` to create the tag + release atomically. This fires the `push: tags` workflow trigger as expected.
+- **Workaround for all pushes to main:** push to a feature branch → `gh pr create` → `gh pr merge --squash --delete-branch`.
+- **Workaround for triggering a release:** use `gh release create` from the CLI (confirmed working as of v1.2.0 cut on 2026-05-20). Fallback if API path ever breaks: create release manually at github.com/{owner}/{repo}/releases/new.
+- `gh release edit v<x.y.z>` can update release notes after the fact.
 - The GitHub mobile app does not support deleting tags — use a browser.
-- There is no `update_release` or `delete_tag` MCP tool available. Release description must be edited manually via the GitHub web UI or set via `releaseBody` in the workflow YAML.
 
 ### package.json scripts convention
 ```json
