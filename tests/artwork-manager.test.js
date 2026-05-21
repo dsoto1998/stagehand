@@ -193,3 +193,171 @@ describe('warmCache', () => {
     expect(LM.getArtwork).toHaveBeenCalledTimes(2);
   });
 });
+
+// ─── extractEmbeddedArt ───────────────────────────────────────────────────────
+
+describe('extractEmbeddedArt', () => {
+  it('returns null when jsmediatags is not available', async () => {
+    delete global.jsmediatags;
+    const result = await AM.extractEmbeddedArt(new ArrayBuffer(8));
+    expect(result).toBeNull();
+  });
+
+  it('returns null when the tag has no picture field', async () => {
+    global.jsmediatags = {
+      read: (_blob, { onSuccess }) => onSuccess({ tags: { picture: null } }),
+    };
+    const result = await AM.extractEmbeddedArt(new ArrayBuffer(8));
+    expect(result).toBeNull();
+    delete global.jsmediatags;
+  });
+
+  it('returns null when picture.data is missing', async () => {
+    global.jsmediatags = {
+      read: (_blob, { onSuccess }) => onSuccess({ tags: { picture: { format: 'image/jpeg' } } }),
+    };
+    const result = await AM.extractEmbeddedArt(new ArrayBuffer(8));
+    expect(result).toBeNull();
+    delete global.jsmediatags;
+  });
+
+  it('returns a data URL when valid embedded art is found', async () => {
+    global.jsmediatags = {
+      read: (_blob, { onSuccess }) =>
+        onSuccess({ tags: { picture: { data: [0xff, 0xd8, 0xff], format: 'image/jpeg' } } }),
+    };
+    const result = await AM.extractEmbeddedArt(new ArrayBuffer(8));
+    expect(result).toBe('data:image/jpeg;base64,STUB'); // our FileReader stub returns this
+    delete global.jsmediatags;
+  });
+
+  it('returns null when jsmediatags fires onError', async () => {
+    global.jsmediatags = {
+      read: (_blob, { onError }) => onError(new Error('parse fail')),
+    };
+    const result = await AM.extractEmbeddedArt(new ArrayBuffer(8));
+    expect(result).toBeNull();
+    delete global.jsmediatags;
+  });
+});
+
+// ─── fetchItunesArt album matching (via resolveArtwork) ──────────────────────
+
+describe('fetchItunesArt — album matching and URL transform', () => {
+  it('prefers an exact album name match over the first result', async () => {
+    const exactUrl  = 'https://is1-ssl.mzstatic.com/image/thumb/exact/100x100bb.jpg';
+    const wrongUrl  = 'https://is1-ssl.mzstatic.com/image/thumb/wrong/100x100bb.jpg';
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [
+          { collectionName: 'Something Else', artworkUrl100: wrongUrl },
+          { collectionName: 'Abbey Road',     artworkUrl100: exactUrl },
+        ],
+      }),
+    });
+    const result = await AM.resolveArtwork(
+      { id: 'trk_1', artist: 'Beatles', album: 'Abbey Road' }, null
+    );
+    expect(result).toBe(exactUrl.replace('100x100bb', '600x600bb'));
+  });
+
+  it('falls back to the first result when no album name matches', async () => {
+    const firstUrl = 'https://is1-ssl.mzstatic.com/image/thumb/first/100x100bb.jpg';
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [{ collectionName: 'Something Else', artworkUrl100: firstUrl }],
+      }),
+    });
+    const result = await AM.resolveArtwork(
+      { id: 'trk_2', artist: 'Beatles', album: 'Abbey Road' }, null
+    );
+    expect(result).toBe(firstUrl.replace('100x100bb', '600x600bb'));
+  });
+
+  it('replaces 100x100bb with 600x600bb in the returned URL', async () => {
+    const url = 'https://is1-ssl.mzstatic.com/image/thumb/abc/100x100bb.jpg';
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [{ collectionName: 'Album', artworkUrl100: url }],
+      }),
+    });
+    const result = await AM.resolveArtwork(
+      { id: 'trk_3', artist: 'X', album: 'Album' }, null
+    );
+    expect(result).toContain('600x600bb');
+    expect(result).not.toContain('100x100bb');
+  });
+
+  it('returns null when artworkUrl100 is missing from the best result', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [{ collectionName: 'Abbey Road' }], // no artworkUrl100
+      }),
+    });
+    const result = await AM.resolveArtwork(
+      { id: 'trk_4', artist: 'Beatles', album: 'Abbey Road' }, null
+    );
+    expect(result).toBeNull();
+  });
+
+  it('returns null when results is not an array', async () => {
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ results: null }),
+    });
+    const result = await AM.resolveArtwork(
+      { id: 'trk_5', artist: 'X', album: 'Y' }, null
+    );
+    expect(result).toBeNull();
+  });
+
+  it('does not call fetch when both artist and album are empty', async () => {
+    await AM.resolveArtwork({ id: 'trk_6', artist: '', album: '' }, null);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+});
+
+// ─── resolveAndStoreArtwork ───────────────────────────────────────────────────
+
+describe('resolveAndStoreArtwork', () => {
+  it('calls setArtwork in IDB when artwork is found', async () => {
+    const validUrl = 'https://is1-ssl.mzstatic.com/image/thumb/abc/100x100bb.jpg';
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        results: [{ collectionName: 'Abbey Road', artworkUrl100: validUrl }],
+      }),
+    });
+    const track = { id: 'trk_1', artist: 'Beatles', album: 'Abbey Road' };
+    await AM.resolveAndStoreArtwork(track, null);
+    expect(LM.setArtwork).toHaveBeenCalled();
+  });
+
+  it('skips everything when the track is already in memory cache', async () => {
+    const track = { id: 'trk_1', artist: '', album: '' };
+    await AM.resolveArtwork(track, null); // prime cache
+    LM.getArtwork.mockClear();
+    await AM.resolveAndStoreArtwork(track, null);
+    expect(LM.getArtwork).not.toHaveBeenCalled();
+    expect(LM.setArtwork).not.toHaveBeenCalled();
+  });
+
+  it('does not call setArtwork when no artwork is found', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false });
+    const track = { id: 'trk_99', artist: 'None', album: 'Nothing' };
+    await AM.resolveAndStoreArtwork(track, null);
+    expect(LM.setArtwork).not.toHaveBeenCalled();
+  });
+
+  it('caches null so repeated calls skip the network', async () => {
+    global.fetch = vi.fn().mockResolvedValue({ ok: false });
+    const track = { id: 'trk_42', artist: 'X', album: 'Y' };
+    await AM.resolveAndStoreArtwork(track, null);
+    // getCachedArtwork returns null, not undefined, confirming null is cached
+    expect(AM.getCachedArtwork(track)).toBeNull();
+  });
+});
