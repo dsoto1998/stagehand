@@ -972,12 +972,10 @@ document.getElementById('mp-play').addEventListener('click', () => {
 });
 
 document.addEventListener('keydown', (e) => {
-  // Media keys (Firefox dispatches these as keydown; Chrome handles via mediaSession)
+  // MediaPlay / MediaPause (directional, separate keys) — handled in keydown.
+  // MediaPlayPause / MediaTrackNext / MediaTrackPrevious / MediaStop are
+  // registered as global shortcuts in Rust and handled via Tauri events below.
   switch (e.key) {
-    case 'MediaPlayPause':
-      e.preventDefault();
-      document.getElementById('mp-play').click();
-      return;
     case 'MediaPlay':
       e.preventDefault();
       if (!players[currentPlayingId]?.isPlaying) document.getElementById('mp-play').click();
@@ -985,22 +983,6 @@ document.addEventListener('keydown', (e) => {
     case 'MediaPause':
       e.preventDefault();
       if (players[currentPlayingId]?.isPlaying) document.getElementById('mp-play').click();
-      return;
-    case 'MediaStop':
-      e.preventDefault();
-      if (currentPlayingId && players[currentPlayingId]) {
-        players[currentPlayingId].stop();
-        hideMiniplayer();
-        renderCurrentTab();
-      }
-      return;
-    case 'MediaTrackNext':
-      e.preventDefault();
-      document.getElementById('mp-next').click();
-      return;
-    case 'MediaTrackPrevious':
-      e.preventDefault();
-      document.getElementById('mp-prev').click();
       return;
   }
   // Focus search works from anywhere, even inside inputs
@@ -1067,6 +1049,21 @@ if ('mediaSession' in navigator) {
   });
   navigator.mediaSession.setActionHandler('nexttrack', () => {
     document.getElementById('mp-next').click();
+  });
+}
+
+// Global media key shortcuts (fired from Rust even when app is minimized)
+if (window.__TAURI__) {
+  listen('media-play-pause', () => { document.getElementById('mp-play').click(); });
+  listen('media-next-track', () => { document.getElementById('mp-next').click(); });
+  listen('media-prev-track', () => { document.getElementById('mp-prev').click(); });
+  listen('media-stop', () => {
+    if (!currentPlayingId) return;
+    const player = players[currentPlayingId];
+    if (!player) return;
+    player.stop();
+    hideMiniplayer();
+    renderCurrentTab();
   });
 }
 
