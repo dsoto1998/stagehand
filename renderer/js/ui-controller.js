@@ -1,4 +1,5 @@
 // ─── UI CONTROLLER ───────────────────────────────────────────
+import { formatTime, formatSize, matchShortcut as _matchShortcut, matchesQuery, sortTracks } from './ui-utils.js';
 import { resume, getCtx, setMasterVolume } from './audio-engine.js';
 import { ICONS } from './icons.js';
 import * as LibraryManager from './library-manager.js';
@@ -72,16 +73,7 @@ function _saveShortcuts() {
 
 let shortcuts = _loadShortcuts();
 
-function matchShortcut(e, id) {
-  const sc = shortcuts[id];
-  if (!sc) return false;
-  const mods = sc.modifiers || [];
-  if (mods.includes('Ctrl')  !== (e.ctrlKey || e.metaKey)) return false;
-  if (mods.includes('Shift') !== e.shiftKey) return false;
-  if (mods.includes('Alt')   !== e.altKey)   return false;
-  const k = sc.key;
-  return e.key === k || (k.length === 1 && e.key.toLowerCase() === k.toLowerCase());
-}
+function matchShortcut(e, id) { return _matchShortcut(e, shortcuts[id]); }
 
 // ─── VIRTUAL SCROLL STATE ─────────────────────────────────────
 const ROW_H = 50;       // px — must match CSS .track-row height
@@ -116,17 +108,7 @@ let plHoverTimer = null;    // timer handle for playlist row hover-to-open
 let plHoverTargetId = null; // playlist ID currently being hovered
 
 // ─── UTILITY ─────────────────────────────────────────────────
-function formatTime(sec) {
-  if (!isFinite(sec)) return '0:00';
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${m}:${s.toString().padStart(2,'0')}`;
-}
-
-function formatSize(bytes) {
-  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
-  return (bytes / (1024*1024)).toFixed(1) + ' MB';
-}
+// formatTime and formatSize imported from ui-utils.js
 
 function updateRangeFill(el) {
   const min = parseFloat(el.min) || 0;
@@ -689,57 +671,11 @@ let songsSortField = localStorage.getItem('songs_sort_field') || 'name';
 let songsSortDir   = localStorage.getItem('songs_sort_dir')   || 'asc';
 let searchQuery    = '';
 
-function matchesSearch(track) {
-  if (!searchQuery) return true;
-  const q = searchQuery.toLowerCase();
-  return (track.name   || '').toLowerCase().includes(q)
-      || (track.artist || '').toLowerCase().includes(q)
-      || (track.album  || '').toLowerCase().includes(q);
-}
+function matchesSearch(track) { return matchesQuery(track, searchQuery); }
 
 function getSortedFilteredTracks() {
   const source = searchQuery ? tracks.filter(matchesSearch) : tracks;
-  const dir = songsSortDir === 'asc' ? 1 : -1;
-  // Pre-compute album→year so all tracks from same album sort as a unit
-  const albumYearMap = new Map();
-  if (songsSortField === 'album') {
-    tracks.forEach(t => {
-      const key = (t.album || '').trim();
-      if (t.releaseDate && !albumYearMap.has(key)) albumYearMap.set(key, t.releaseDate);
-    });
-  }
-  return [...source].sort((a, b) => {
-    switch (songsSortField) {
-      case 'artist': {
-        const c = (a.artist || '').localeCompare(b.artist || '');
-        return c !== 0 ? dir * c : (a.name || '').localeCompare(b.name || '');
-      }
-      case 'album': {
-        const ya = albumYearMap.get((a.album || '').trim()) || '';
-        const yb = albumYearMap.get((b.album || '').trim()) || '';
-        if (!ya && !yb) {
-          const c = (a.album || '').localeCompare(b.album || '');
-          if (c !== 0) return c;
-          const ta = a.trackNumber || 0, tb = b.trackNumber || 0;
-          if (ta !== tb) return ta - tb;
-          return (a.name || '').localeCompare(b.name || '');
-        }
-        if (!ya) return 1;
-        if (!yb) return -1;
-        const c = yb.localeCompare(ya); // newest first when dir=asc(1)
-        if (c !== 0) return dir * c;
-        const ca = (a.album || '').localeCompare(b.album || '');
-        if (ca !== 0) return ca;
-        const ta = a.trackNumber || 0, tb = b.trackNumber || 0;
-        if (ta !== tb) return ta - tb;
-        return (a.name || '').localeCompare(b.name || '');
-      }
-      case 'addedAt':  return dir * ((a.addedAt  || 0) - (b.addedAt  || 0));
-      case 'duration': return dir * ((a.duration || 0) - (b.duration || 0));
-      case 'bpm':      return dir * ((a.bpm || 0) - (b.bpm || 0));
-      default:         return dir * (a.name || '').localeCompare(b.name || '');
-    }
-  });
+  return sortTracks(source, songsSortField, songsSortDir, tracks);
 }
 
 // ─── SELECTION STATE ─────────────────────────────────────────

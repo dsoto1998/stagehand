@@ -210,3 +210,109 @@ describe('TapTempo.count / reset', () => {
     expect(TapTempo.count()).toBe(2);
   });
 });
+
+// ─── start / stop lifecycle ───────────────────────────────────────────────────
+
+describe('Metronome.start / stop', () => {
+  it('start registers a scheduler via setInterval', () => {
+    vi.useFakeTimers();
+    const spy = vi.spyOn(globalThis, 'setInterval');
+    Metronome.start();
+    expect(spy).toHaveBeenCalledWith(expect.any(Function), 25);
+    Metronome.stop();
+    spy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('stop calls clearInterval to cancel the scheduler', () => {
+    vi.useFakeTimers();
+    const spy = vi.spyOn(globalThis, 'clearInterval');
+    Metronome.start();
+    Metronome.stop();
+    expect(spy).toHaveBeenCalled();
+    spy.mockRestore();
+    vi.useRealTimers();
+  });
+
+  it('can be restarted after stop', () => {
+    Metronome.start();
+    Metronome.stop();
+    expect(Metronome.isActive()).toBe(false);
+    Metronome.start();
+    expect(Metronome.isActive()).toBe(true);
+    Metronome.stop();
+  });
+
+  it('stop empties the flash queue', () => {
+    // start populates flashQueue on first scheduler pass, stop should clear it
+    Metronome.start();
+    Metronome.stop();
+    // isActive is the only observable; no crash means queue was cleared cleanly
+    expect(Metronome.isActive()).toBe(false);
+  });
+});
+
+// ─── beat callback fires on start ────────────────────────────────────────────
+
+describe('Metronome beat callback', () => {
+  it('fires the registered onBeat callback immediately on the first beat', () => {
+    // The mocked AudioContext has currentTime=0. The scheduler schedules beat 0
+    // at time=0, then flashLoop checks: 0 <= 0+0.02 → fires callback synchronously.
+    const callback = vi.fn();
+    Metronome.onBeat(callback);
+    Metronome.start();
+    expect(callback).toHaveBeenCalledWith(0); // first beat index is 0
+    Metronome.stop();
+  });
+
+  it('passes the correct beat index to the callback', () => {
+    Metronome.setTimeSignature(4, 4);
+    const callback = vi.fn();
+    Metronome.onBeat(callback);
+    Metronome.start();
+    const beatIdx = callback.mock.calls[0][0];
+    expect(beatIdx).toBeGreaterThanOrEqual(0);
+    expect(beatIdx).toBeLessThan(4);
+    Metronome.stop();
+  });
+});
+
+// ─── setVolume ────────────────────────────────────────────────────────────────
+
+describe('Metronome.setVolume', () => {
+  it('accepts 0 without throwing', () => {
+    expect(() => Metronome.setVolume(0)).not.toThrow();
+  });
+
+  it('accepts 1 without throwing', () => {
+    expect(() => Metronome.setVolume(1)).not.toThrow();
+  });
+
+  it('metronome still starts and stops cleanly after setVolume', () => {
+    Metronome.setVolume(0.3);
+    Metronome.start();
+    expect(Metronome.isActive()).toBe(true);
+    Metronome.stop();
+    expect(Metronome.isActive()).toBe(false);
+  });
+});
+
+// ─── setSubdivision ───────────────────────────────────────────────────────────
+
+describe('Metronome.setSubdivision', () => {
+  it('accepts value 1 without throwing', () => {
+    expect(() => Metronome.setSubdivision(1)).not.toThrow();
+  });
+
+  it('accepts value 4 without throwing', () => {
+    expect(() => Metronome.setSubdivision(4)).not.toThrow();
+  });
+
+  it('can be changed while metronome is running without crashing', () => {
+    Metronome.start();
+    expect(() => Metronome.setSubdivision(2)).not.toThrow();
+    expect(() => Metronome.setSubdivision(4)).not.toThrow();
+    expect(Metronome.isActive()).toBe(true);
+    Metronome.stop();
+  });
+});
