@@ -7,7 +7,7 @@
 
 **Stagehand** is a musician's rehearsal tool for playing along with recordings. The app is a Tauri v2 desktop application (Windows primary target) combining a `renderer/` web frontend (HTML + CSS + ES modules) with a Rust audio backend (`src-tauri/`). The long-term target remains an Electron app with native VST3 plugin hosting.
 
-The legacy monolith (`rehearsal-tool-v1.html`) still exists at the project root but is orphaned — `renderer/index.html` is the active entry point.
+`renderer/index.html` is the active entry point. The legacy monolith (`rehearsal-tool-v1.html`) has been deleted.
 
 ---
 
@@ -49,7 +49,6 @@ The legacy monolith (`rehearsal-tool-v1.html`) still exists at the project root 
 stagehand/
 ├── package.json                 ← scripts, deps (rubberband-web, vitest, tauri CLI)
 ├── vitest.config.js             ← test configuration (node environment, fake-indexeddb)
-├── rehearsal-tool-v1.html       ← ORPHANED monolith, do not edit
 ├── renderer/
 │   ├── index.html               ← active entry point (loaded by Tauri webview)
 │   ├── style.css
@@ -432,6 +431,7 @@ npm run setup          # npm install + copies rubberband-processor.js from node_
 - Also requires `LIBCLANG_PATH` pointing to the LLVM bin directory (LLVM is pre-installed on `windows-latest` at `C:\Program Files\LLVM\bin`).
 
 ### Git push restrictions in Claude Code agent environment
+- Repo is **public** (changed from private 2026-05-20). Branch protection on `main` is formally active: PR required, force-push blocked, deletion blocked.
 - Direct `git push` to `main` is blocked (HTTP 403) — branch protection enforces PRs.
 - `git push` of tags via raw git is blocked, but **the GitHub REST API path works** — use `gh release create v<x.y.z> --target main --title "..." --notes "..."` to create the tag + release atomically. This fires the `push: tags` workflow trigger as expected.
 - **Workaround for all pushes to main:** push to a feature branch → `gh pr create` → `gh pr merge --squash --delete-branch`.

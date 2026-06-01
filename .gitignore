@@ -2,3 +2,7 @@ node_modules/
 .claude/worktrees/
 src-tauri/target/
 src-tauri/gen/
+
+# Local dev artifacts (not needed in repo)
+asio/
+todo/
