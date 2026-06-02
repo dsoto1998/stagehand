@@ -200,9 +200,9 @@ function startPoll() {
     if (!running) { stopPoll(); return; }
     try {
       const status = await invoke('live_input_status');
-      // Decay toward zero each tick; snap up instantly to new peak.
       displayLevel = Math.max(status.peak_level, displayLevel * 0.80);
       updateMeter(displayLevel);
+      updateUnderrunBadge(status.underruns ?? 0);
     } catch (_) {}
   }, 100);
 }
@@ -221,14 +221,31 @@ function stopPoll() {
 function updateStatusLine() {
   const dot = document.getElementById('gp-status-dot');
   const text = document.getElementById('gp-status-text');
+  const underrunBadge = document.getElementById('gp-underrun-badge');
   dot.classList.toggle('live', running);
   if (running) {
-    text.textContent = `Live — ${cfg.deviceName} — ${cfg.bufferSize} samples`;
+    const driver = cfg.isAsio
+      ? 'ASIO'
+      : `${cfg.bufferSize} samples @ ${cfg.sampleRate} Hz`;
+    text.textContent = `Live — ${cfg.deviceName} — ${driver}`;
   } else {
     text.textContent = 'Stopped';
+    if (underrunBadge) { underrunBadge.classList.add('hidden'); underrunBadge.textContent = ''; }
   }
   const badge = document.getElementById('guitar-badge');
   if (badge) badge.classList.toggle('hidden', !running);
+}
+
+function updateUnderrunBadge(underruns) {
+  const badge = document.getElementById('gp-underrun-badge');
+  if (!badge) return;
+  if (underruns > 0) {
+    badge.textContent = `${underruns} underrun${underruns === 1 ? '' : 's'}`;
+    badge.classList.remove('hidden');
+  } else {
+    badge.classList.add('hidden');
+    badge.textContent = '';
+  }
 }
 
 // ── Start / Stop / Restart ──────────────────────────────────
@@ -251,6 +268,7 @@ async function startInput() {
       },
     });
     running = true;
+    updateUnderrunBadge(0);
     updateStatusLine();
     startPoll();
   } catch (e) {
