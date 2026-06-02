@@ -593,7 +593,7 @@ export function initGuitarPanel() {
   // Auto-refresh device list while Guitar panel is active (hot-plug detection).
   function startDevicePoll() {
     if (devicePollTimer) return;
-    devicePollTimer = setInterval(() => refreshDevices(), 5000);
+    devicePollTimer = setInterval(() => { if (!running) refreshDevices(); }, 5000);
   }
   function stopDevicePoll() {
     if (devicePollTimer) { clearInterval(devicePollTimer); devicePollTimer = null; }
