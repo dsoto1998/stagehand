@@ -9,6 +9,7 @@
 //   - Click the status line to toggle stop/start.
 
 import { invoke, listen } from './tauri-api.js';
+import { ICONS } from './icons.js';
 
 const LS_KEY = 'stagehand_guitar_config';
 const RESTART_DEBOUNCE_MS = 500;
@@ -213,6 +214,10 @@ function stopPoll() {
 }
 
 // ── Status line ────────────────────────────────────────────
+// Shows cfg.bufferSize and cfg.sampleRate (requested values). For WASAPI input
+// the actual input sample rate is the device's native rate, which may differ from
+// cfg.sampleRate — see live_input.rs. Status line has no way to show actual rate
+// without an extra invoke; mismatch is visible as pitch/speed drift if it occurs.
 function updateStatusLine() {
   const dot = document.getElementById('gp-status-dot');
   const text = document.getElementById('gp-status-text');
@@ -459,12 +464,15 @@ export function initGuitarPanel() {
 
   // Mute
   const muteBtn = document.getElementById('gp-mute-btn');
-  muteBtn.classList.toggle('active', cfg.muted);
-  muteBtn.textContent = cfg.muted ? 'Unmute Input' : 'Mute Input';
+  function applyMuteState() {
+    muteBtn.innerHTML = cfg.muted ? ICONS.micOff : ICONS.mic;
+    muteBtn.title = cfg.muted ? 'Unmute input' : 'Mute input';
+    muteBtn.classList.toggle('active', cfg.muted);
+  }
+  applyMuteState();
   muteBtn.addEventListener('click', () => {
     cfg.muted = !cfg.muted;
-    muteBtn.classList.toggle('active', cfg.muted);
-    muteBtn.textContent = cfg.muted ? 'Unmute Input' : 'Mute Input';
+    applyMuteState();
     saveCfg();
     invoke('live_input_set_mute', { muted: cfg.muted }).catch(() => {});
   });
@@ -484,10 +492,43 @@ export function initGuitarPanel() {
     }
   }).catch(() => {});
 
+  // Refresh button
+  const refreshBtn = document.getElementById('gp-refresh-btn');
+  refreshBtn.innerHTML = ICONS.refresh;
+  refreshBtn.addEventListener('click', async () => {
+    const prev = cfg.deviceName;
+    refreshBtn.classList.add('spinning');
+    refreshBtn.disabled = true;
+    await refreshDevices();
+    const sel = document.getElementById('gp-device-select');
+    if (prev && [...sel.options].some(o => o.value === prev)) {
+      sel.value = prev;
+      cfg.deviceName = prev;
+    }
+    refreshBtn.classList.remove('spinning');
+    refreshBtn.disabled = false;
+  });
+
   // Initial render
   updatePluginDisplay();
   updateStatusLine();
   refreshDevices();
+
+  // Auto-reload last plugin (fire and forget)
+  if (cfg.pluginPath) {
+    invoke('vst_load', { path: cfg.pluginPath, sampleRate: cfg.sampleRate })
+      .then(() => {
+        pluginLoaded = true;
+        updatePluginDisplay();
+        notify('Plugin reloaded', 'success');
+      })
+      .catch(() => {
+        cfg.pluginPath = '';
+        cfg.bypassed = false;
+        saveCfg();
+        updatePluginDisplay();
+      });
+  }
 
   // Refresh devices when user clicks the Guitar nav
   document.querySelector('.nav-item[data-panel="guitar"]')?.addEventListener('click', () => {
