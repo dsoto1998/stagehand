@@ -6,6 +6,7 @@ pub mod vst_host;
 use commands::{EngineState, LiveInputState};
 use audio::AudioEngine;
 use live_input::LiveInputEngine;
+use std::sync::Arc;
 use parking_lot::Mutex;
 use tauri::{Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Shortcut, ShortcutState};
@@ -48,7 +49,7 @@ pub fn run() {
                 .expect("Failed to init audio engine");
             let vst_slot = engine.vst_slot.clone();
             app.manage(EngineState(Mutex::new(engine)));
-            app.manage(LiveInputState(Mutex::new(LiveInputEngine::new(vst_slot))));
+            app.manage(LiveInputState(Arc::new(Mutex::new(LiveInputEngine::new(vst_slot)))));
 
             for code in [
                 Code::MediaPlayPause,

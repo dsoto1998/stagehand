@@ -36,6 +36,7 @@ let running = false;
 let pluginLoaded = false;
 let restartTimer = null;
 let pollTimer = null;
+let devicePollTimer = null;
 let displayLevel = 0;
 
 // ── Persistence ──────────────────────────────────────────────
@@ -589,8 +590,21 @@ export function initGuitarPanel() {
       });
   }
 
-  // Refresh devices when user clicks the Guitar nav
+  // Auto-refresh device list while Guitar panel is active (hot-plug detection).
+  function startDevicePoll() {
+    if (devicePollTimer) return;
+    devicePollTimer = setInterval(() => refreshDevices(), 5000);
+  }
+  function stopDevicePoll() {
+    if (devicePollTimer) { clearInterval(devicePollTimer); devicePollTimer = null; }
+  }
+
   document.querySelector('.nav-item[data-panel="guitar"]')?.addEventListener('click', () => {
     refreshDevices();
+    startDevicePoll();
+  });
+  // Stop polling when another panel becomes active.
+  document.querySelectorAll('.nav-item:not([data-panel="guitar"])').forEach(item => {
+    item.addEventListener('click', stopDevicePoll);
   });
 }

@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use tauri::{Emitter, State};
 use parking_lot::Mutex;
 use serde::Serialize;
@@ -8,7 +9,7 @@ use crate::live_input::{LiveInputEngine, LiveInputConfig, LiveInputStatus, Input
 
 pub struct EngineState(pub Mutex<AudioEngine>);
 
-pub struct LiveInputState(pub Mutex<LiveInputEngine>);
+pub struct LiveInputState(pub Arc<Mutex<LiveInputEngine>>);
 
 // ─── Library ─────────────────────────────────────────────────────────────────
 
@@ -555,7 +556,10 @@ pub async fn vst_close_gui(
 
 #[tauri::command]
 pub async fn live_input_get_input_devices() -> Result<Vec<InputDeviceInfo>, String> {
-    Ok(enumerate_input_devices())
+    // spawn_blocking: ASIO COM init is not safe on tokio async threads.
+    tokio::task::spawn_blocking(enumerate_input_devices)
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -563,13 +567,22 @@ pub async fn live_input_start(
     state: State<'_, LiveInputState>,
     config: LiveInputConfig,
 ) -> Result<(), String> {
-    state.0.lock().start(config)
+    // spawn_blocking: find_device + stream creation call into ASIO COM, which
+    // requires an STA thread. Tokio pool threads are MTA and will fail to find
+    // ASIO devices.
+    let engine = Arc::clone(&state.0);
+    tokio::task::spawn_blocking(move || engine.lock().start(config))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn live_input_stop(state: State<'_, LiveInputState>) -> Result<(), String> {
-    state.0.lock().stop();
-    Ok(())
+    // spawn_blocking: dropping ASIO streams calls COM cleanup; same STA requirement.
+    let engine = Arc::clone(&state.0);
+    tokio::task::spawn_blocking(move || engine.lock().stop())
+        .await
+        .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
