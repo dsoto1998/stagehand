@@ -6,7 +6,7 @@
 //     setting change while running. Helix Native re-init can take 1-3s; the
 //     resulting audio glitch is the documented cost of changing source/buffer
 //     while live and is accepted in lieu of a manual Start/Stop control.
-//   - Click the status line to toggle stop/start.
+//   - Status line is read-only; stream always runs when a device is set.
 
 import { invoke, listen } from './tauri-api.js';
 import { ICONS } from './icons.js';
@@ -490,11 +490,6 @@ export function initGuitarPanel() {
   });
   applyAdvancedState();
 
-  // Status line click → toggle
-  document.getElementById('gp-status-line').addEventListener('click', () => {
-    if (running) stopInput();
-    else startInput();
-  });
 
   // Gain sliders
   const inGain = document.getElementById('gp-input-gain');
