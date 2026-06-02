@@ -50,6 +50,8 @@ pub struct LiveInputStatus {
     pub buffer_size: u32,
     pub sample_rate: u32,
     pub underruns: u64,
+    /// Absolute peak level of the last input block (0.0–1.0+). Used by JS level meter.
+    pub peak_level: f32,
 }
 
 /// Wrap !Send Stream in a Send newtype — same pattern as SendStream in audio.rs.
@@ -69,6 +71,7 @@ pub struct LiveInputEngine {
     output_gain: Arc<AtomicU32>,
     muted: Arc<AtomicBool>,
     underruns: Arc<AtomicU64>,
+    peak_level: Arc<AtomicU32>,    // f32 bits; abs peak of last input block
 }
 
 impl LiveInputEngine {
@@ -82,6 +85,7 @@ impl LiveInputEngine {
             output_gain: Arc::new(AtomicU32::new(pack_gain(1.0))),
             muted: Arc::new(AtomicBool::new(false)),
             underruns: Arc::new(AtomicU64::new(0)),
+            peak_level: Arc::new(AtomicU32::new(pack_gain(0.0))),
         }
     }
 
@@ -106,6 +110,7 @@ impl LiveInputEngine {
             buffer_size: cfg.as_ref().map(|c| c.buffer_size).unwrap_or(0),
             sample_rate: cfg.as_ref().map(|c| c.sample_rate).unwrap_or(0),
             underruns: self.underruns.load(Ordering::Relaxed),
+            peak_level: unpack_gain(self.peak_level.load(Ordering::Relaxed)),
         }
     }
 
@@ -114,6 +119,7 @@ impl LiveInputEngine {
         self.input_stream = None;
         self.output_stream = None;
         self.config = None;
+        self.peak_level.store(pack_gain(0.0), Ordering::Relaxed);
     }
 
     pub fn start(&mut self, cfg: LiveInputConfig) -> Result<(), String> {
@@ -167,8 +173,10 @@ impl LiveInputEngine {
 
         // ASIO drivers control buffer size + sample rate themselves (Focusrite control panel).
         // Requesting Fixed buffer or specific SR fails — use Default and let the driver decide.
-        // WASAPI is more flexible — honor the user's choice if specified.
-        let buffer_size = if cfg.is_asio {
+        // WASAPI input: always use BufferSize::Default — many USB/webcam devices reject Fixed.
+        // WASAPI output: honor user's buffer size choice for latency control.
+        let in_buffer_size = BufferSize::Default;
+        let out_buffer_size = if cfg.is_asio {
             BufferSize::Default
         } else {
             BufferSize::Fixed(cfg.buffer_size)
@@ -182,12 +190,12 @@ impl LiveInputEngine {
         let stream_in_cfg = StreamConfig {
             channels: device_in_channels,
             sample_rate,
-            buffer_size: buffer_size.clone(),
+            buffer_size: in_buffer_size,
         };
         let stream_out_cfg = StreamConfig {
             channels: device_out_channels,
             sample_rate,
-            buffer_size,
+            buffer_size: out_buffer_size,
         };
 
         // SPSC ring carries stereo interleaved (L,R,L,R...) samples.
@@ -200,6 +208,7 @@ impl LiveInputEngine {
         let muted = self.muted.clone();
         let underruns = self.underruns.clone();
         let vst_slot = self.vst_slot.clone();
+        let peak_level_cb = self.peak_level.clone();
 
         // Resolve input channel mapping outside the hot path.
         let in_ch_indices = cfg.input_channels.clone();
@@ -251,6 +260,10 @@ impl LiveInputEngine {
                 in_scratch[f * 2] = l_raw;
                 in_scratch[f * 2 + 1] = r_raw;
             }
+
+            // Track peak for JS level meter (abs max of the post-gain block).
+            let peak = in_scratch[..needed].iter().map(|s| s.abs()).fold(0.0_f32, f32::max);
+            peak_level_cb.store(peak.to_bits(), Ordering::Relaxed);
 
             let _ = producer.push_slice(&in_scratch[..needed]);
         };

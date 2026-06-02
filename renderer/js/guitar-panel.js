@@ -34,6 +34,8 @@ let devices = [];
 let running = false;
 let pluginLoaded = false;
 let restartTimer = null;
+let pollTimer = null;
+let displayLevel = 0;
 
 // ── Persistence ──────────────────────────────────────────────
 function loadCfg() {
@@ -181,6 +183,35 @@ function renderOutputChips() {
   }
 }
 
+// ── Level meter ───────────────────────────────────────────
+function updateMeter(level) {
+  const bar = document.getElementById('gp-level-bar');
+  if (!bar) return;
+  const pct = Math.min(level * 100, 100).toFixed(1);
+  bar.style.width = `${pct}%`;
+  bar.classList.toggle('warn', level > 0.7 && level <= 0.9);
+  bar.classList.toggle('clip', level > 0.9);
+}
+
+function startPoll() {
+  if (pollTimer) return;
+  pollTimer = setInterval(async () => {
+    if (!running) { stopPoll(); return; }
+    try {
+      const status = await invoke('live_input_status');
+      // Decay toward zero each tick; snap up instantly to new peak.
+      displayLevel = Math.max(status.peak_level, displayLevel * 0.80);
+      updateMeter(displayLevel);
+    } catch (_) {}
+  }, 100);
+}
+
+function stopPoll() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+  displayLevel = 0;
+  updateMeter(0);
+}
+
 // ── Status line ────────────────────────────────────────────
 function updateStatusLine() {
   const dot = document.getElementById('gp-status-dot');
@@ -216,6 +247,7 @@ async function startInput() {
     });
     running = true;
     updateStatusLine();
+    startPoll();
   } catch (e) {
     running = false;
     updateStatusLine();
@@ -229,6 +261,7 @@ async function stopInput() {
     console.warn('[guitar] stop failed', e);
   }
   running = false;
+  stopPoll();
   updateStatusLine();
 }
 function scheduleRestart() {

@@ -32,10 +32,10 @@
 - **Keyboard shortcuts** — 15 configurable shortcuts (playback, loop, metronome, library) stored in `localStorage`. Editable via Settings panel.
 - **Chord charts** — Per-track: PDF upload or ChordPro text editor. Always-visible icon (0.25 opacity). Stored in IDB.
 - **Settings panel** — Multi-tab (General, Display, Audio, Export). General tab: artwork cache clear, keyboard shortcuts editor.
-- **Guitar panel (Live Input)** — Live audio input via WASAPI or ASIO. Input device picker, input source (mono/stereo channel selection), input/output gain knobs, mute, buffer size, sample rate. Stream auto-starts on device select; debounced restart on settings change.
+- **Guitar panel (Live Input)** — Live audio input via WASAPI or ASIO. Input device picker, input source (mono/stereo channel selection), input/output gain knobs, mute, buffer size, sample rate. Stream auto-starts on device select; debounced restart on settings change. Input level meter (5px bar, green→amber→red, 100ms poll, 0.80 decay).
 - **VST3 plugin hosting** — Load a single .vst3 plugin (flat file or bundle) through the Guitar panel. Plugin processes the live input signal in the audio output callback. Supports bypass, open/close native plugin GUI (floating Win32 window), latency reporting. Tested with Helix Native (separate-component plugin).
 - **GitHub Actions release** — `.github/workflows/release.yml` builds and publishes Windows installer on `v*` tag push.
-- **Test suite** — Vitest unit tests in `tests/` covering library-manager, metronome, track-player, artwork-manager.
+- **Test suite** — Vitest unit tests in `tests/` covering library-manager, metronome, track-player, artwork-manager, ui-utils. 192 tests total.
 
 ### Known Issues / In Progress
 - Playlists tab: empty state only ("No playlists yet") — CRUD is Phase 5 scope.
@@ -57,6 +57,7 @@ stagehand/
 │       ├── library-manager.js   ← IndexedDB CRUD for tracks, playlists, settings, artwork
 │       ├── track-player.js      ← Tauri IPC proxy (invoke audio_* commands)
 │       ├── ui-controller.js     ← DOM bindings, virtual scroll, tabs, miniplayer, shortcuts
+│       ├── ui-utils.js          ← pure utility fns (no DOM/state): formatTime, formatSize, matchShortcut, matchesQuery, sortTracks
 │       ├── guitar-panel.js      ← Guitar panel: live input device picker, gain knobs, VST plugin loader
 │       ├── metronome.js         ← Web Audio lookahead scheduler + tap tempo
 │       ├── waveform.js          ← Canvas waveform renderer
@@ -84,6 +85,7 @@ stagehand/
 │       └── rubberband/          ← vendored Rubber Band C++ source (compiled at build time)
 ├── tests/
 │   ├── setup.js                 ← fake-indexeddb + browser API polyfills
+│   ├── ui-utils.test.js
 │   ├── library-manager.test.js
 │   ├── metronome.test.js
 │   ├── track-player.test.js
@@ -222,7 +224,7 @@ All commands are in `src-tauri/src/commands.rs` and registered in `lib.rs`.
 | `live_input_set_input_gain` | Adjust input gain (0.0–8.0 linear) |
 | `live_input_set_output_gain` | Adjust output gain (0.0–8.0 linear) |
 | `live_input_set_mute` | Mute/unmute input signal |
-| `live_input_status` | Return `LiveInputStatus` (running, device, channels, SR, underruns) |
+| `live_input_status` | Return `LiveInputStatus` (running, device, channels, SR, underruns, peak_level) |
 
 ### Rust Events (Tauri emit → JS listen)
 | Event | Payload | Purpose |
@@ -238,6 +240,7 @@ All commands are in `src-tauri/src/commands.rs` and registered in `lib.rs`.
 | Module | Role |
 |--------|------|
 | `ui-controller.js` | All DOM wiring, panel routing, virtual scroll, tab state machine, miniplayer, keyboard shortcuts, settings panel |
+| `ui-utils.js` | Pure utility fns (no DOM, no module state): `formatTime`, `formatSize`, `matchShortcut`, `matchesQuery`, `sortTracks`. Imported by `ui-controller.js`; fully unit-tested. |
 | `library-manager.js` | IndexedDB CRUD: all object stores |
 | `track-player.js` | Thin wrapper around Tauri IPC. Holds per-track state (semitones, cents, speed, volume, loopStart/End). Does NOT touch Web Audio. |
 | `guitar-panel.js` | Live input device picker, gain knobs, VST plugin loader/bypass/GUI. Config persisted in `localStorage`. |
@@ -381,7 +384,7 @@ npm run test:coverage # coverage report (v8)
 
 Coverage includes all `renderer/js/*.js` except `rubberband-processor.js` and `soundtouch-processor.js` (large binary-embedded worklets).
 
-Tests live in `tests/*.test.js` and import directly from `renderer/js/`.
+Tests live in `tests/*.test.js` and import directly from `renderer/js/`. 192 tests across 5 files as of v1.2.0.
 
 ---
 

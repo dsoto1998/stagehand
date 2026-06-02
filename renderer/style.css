@@ -2801,6 +2801,23 @@
     min-width: 50px;
     text-align: right;
   }
+  .gp-level-meter {
+    height: 5px;
+    background: var(--bg-hover);
+    border-radius: 3px;
+    margin: 2px 0 10px;
+    overflow: hidden;
+  }
+  .gp-level-bar {
+    height: 100%;
+    width: 0%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.06s ease-out;
+  }
+  .gp-level-bar.warn { background: #ffa502; }
+  .gp-level-bar.clip { background: var(--red); }
+
   .gp-toggle-row { display: flex; gap: 8px; }
   .gp-toggle-btn {
     flex: 1;
