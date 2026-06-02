@@ -568,7 +568,10 @@ export function initGuitarPanel() {
   // Initial render
   updatePluginDisplay();
   updateStatusLine();
-  refreshDevices();
+  // Auto-start stream after device list is ready
+  refreshDevices().then(async () => {
+    if (cfg.deviceName && !running) await startInput();
+  });
 
   // Auto-reload last plugin (fire and forget)
   if (cfg.pluginPath) {
