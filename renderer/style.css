@@ -2662,6 +2662,38 @@
   }
 
   /* Advanced disclosure */
+  .gp-signal-path {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px 0 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+  }
+  .gp-sp-node {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-dim);
+    transition: color 0.2s;
+  }
+  .gp-sp-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-dim);
+    flex-shrink: 0;
+    transition: background 0.2s, box-shadow 0.2s;
+  }
+  .gp-sp-label { white-space: nowrap; max-width: 72px; overflow: hidden; text-overflow: ellipsis; }
+  .gp-sp-arrow { color: var(--text-dim); flex-shrink: 0; }
+  /* active = stream running */
+  .gp-sp-node.active { color: var(--text-secondary); }
+  .gp-sp-node.active .gp-sp-dot { background: var(--cyan); box-shadow: 0 0 4px var(--cyan); }
+  /* plugin states */
+  .gp-sp-node.plugin-bypass .gp-sp-dot { background: #ffa502; box-shadow: 0 0 4px #ffa502; }
+  .gp-sp-node.plugin-bypass { color: #ffa502; }
+
   .gp-advanced { display: flex; flex-direction: column; }
   .gp-advanced-hdr {
     background: none;

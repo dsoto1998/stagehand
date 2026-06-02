@@ -234,6 +234,43 @@ function updateStatusLine() {
   }
   const badge = document.getElementById('guitar-badge');
   if (badge) badge.classList.toggle('hidden', !running);
+  updateSignalPath();
+}
+
+function updateSignalPath() {
+  const nodeIn     = document.getElementById('gp-sp-in');
+  const nodeGain   = document.getElementById('gp-sp-gain');
+  const nodePlugin = document.getElementById('gp-sp-plugin');
+  const nodeOut    = document.getElementById('gp-sp-out');
+  const inLabel    = document.getElementById('gp-sp-in-label');
+  const plugLabel  = document.getElementById('gp-sp-plugin-label');
+  if (!nodeIn) return;
+
+  // In node: short device name or "In"
+  const shortName = cfg.deviceName
+    ? cfg.deviceName.replace(/\s*\(.*?\)\s*/g, '').trim().split(' ').slice(0, 2).join(' ')
+    : 'In';
+  inLabel.textContent = shortName || 'In';
+  inLabel.title = cfg.deviceName || '';
+
+  // Active state for In / Gain / Out
+  [nodeIn, nodeGain, nodeOut].forEach(n => n.classList.toggle('active', running));
+
+  // Plugin node
+  nodePlugin.classList.remove('active', 'plugin-bypass');
+  if (pluginLoaded && cfg.pluginPath) {
+    const name = cfg.pluginPath.split(/[\\/]/).pop().replace(/\.vst3$/i, '');
+    plugLabel.textContent = name;
+    plugLabel.title = name;
+    if (cfg.bypassed) {
+      nodePlugin.classList.add('plugin-bypass');
+    } else {
+      nodePlugin.classList.add('active');
+    }
+  } else {
+    plugLabel.textContent = '—';
+    plugLabel.title = '';
+  }
 }
 
 function updateUnderrunBadge(underruns) {
@@ -326,6 +363,7 @@ function updatePluginDisplay() {
     bypassBtn.classList.remove('active');
     bypassBtn.textContent = 'Bypass';
   }
+  updateSignalPath();
 }
 
 async function loadPlugin() {
