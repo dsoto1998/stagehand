@@ -181,7 +181,13 @@ impl LiveInputEngine {
         } else {
             BufferSize::Fixed(cfg.buffer_size)
         };
-        let sample_rate = if cfg.is_asio {
+        // WASAPI input: always use the device's native SR. Many USB/webcam devices only
+        // support non-standard rates (16000, 32000 Hz) and reject cfg.sample_rate with
+        // "stream type not supported". The ring buffer is rate-agnostic, so samples pass
+        // through regardless. If in/out rates differ, user hears pitch/speed drift — they
+        // should set Advanced → Sample Rate to match the device's native rate to avoid it.
+        let in_sample_rate = SampleRate(device_sample_rate);
+        let out_sample_rate = if cfg.is_asio {
             SampleRate(device_sample_rate)
         } else {
             SampleRate(cfg.sample_rate)
@@ -189,12 +195,12 @@ impl LiveInputEngine {
 
         let stream_in_cfg = StreamConfig {
             channels: device_in_channels,
-            sample_rate,
+            sample_rate: in_sample_rate,
             buffer_size: in_buffer_size,
         };
         let stream_out_cfg = StreamConfig {
             channels: device_out_channels,
-            sample_rate,
+            sample_rate: out_sample_rate,
             buffer_size: out_buffer_size,
         };
 
@@ -385,12 +391,13 @@ impl LiveInputEngine {
         self.config = Some(cfg);
         self.underruns.store(0, Ordering::Relaxed);
 
-        log::info!("[live_input] started: device={} in_ch={:?} out_ch={:?} buf={} sr={}",
+        log::info!("[live_input] started: device={} in_ch={:?} out_ch={:?} buf={} in_sr={} out_sr={}",
             self.config.as_ref().unwrap().device_name,
             self.config.as_ref().unwrap().input_channels,
             self.config.as_ref().unwrap().output_channels,
             self.config.as_ref().unwrap().buffer_size,
-            self.config.as_ref().unwrap().sample_rate);
+            in_sample_rate.0,
+            out_sample_rate.0);
         let _ = SampleFormat::F32; // silence unused-import warning under cfg variants
         Ok(())
     }
