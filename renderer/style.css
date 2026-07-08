@@ -2625,33 +2625,40 @@
   }
 
   /* Status line — dim text under device select; click toggles stream */
-  .gp-status-line {
-    background: none;
-    border: none;
-    padding: 0;
-    margin: -4px 0 0;
+
+  /* Advanced disclosure */
+  .gp-signal-path {
     display: flex;
     align-items: center;
-    gap: 7px;
+    gap: 4px;
+    padding: 6px 0 4px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-dim);
-    cursor: pointer;
-    text-align: left;
-    transition: color 0.1s;
+    font-size: 10px;
   }
-  .gp-status-line:hover { color: var(--text-secondary); }
-  .gp-status-dot {
+  .gp-sp-node {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-dim);
+    transition: color 0.2s;
+  }
+  .gp-sp-dot {
     width: 7px;
     height: 7px;
     border-radius: 50%;
     background: var(--text-dim);
     flex-shrink: 0;
-    transition: background 0.15s;
+    transition: background 0.2s, box-shadow 0.2s;
   }
-  .gp-status-dot.live { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
+  .gp-sp-label { white-space: nowrap; max-width: 72px; overflow: hidden; text-overflow: ellipsis; }
+  .gp-sp-arrow { color: var(--text-dim); flex-shrink: 0; }
+  /* active = stream running */
+  .gp-sp-node.active { color: var(--text-secondary); }
+  .gp-sp-node.active .gp-sp-dot { background: var(--cyan); box-shadow: 0 0 4px var(--cyan); }
+  /* plugin states */
+  .gp-sp-node.plugin-bypass .gp-sp-dot { background: #ffa502; box-shadow: 0 0 4px #ffa502; }
+  .gp-sp-node.plugin-bypass { color: #ffa502; }
 
-  /* Advanced disclosure */
   .gp-advanced { display: flex; flex-direction: column; }
   .gp-advanced-hdr {
     background: none;
@@ -2693,6 +2700,8 @@
     color: var(--text-primary);
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
   }
   .gp-field {
     display: flex;
@@ -2818,6 +2827,31 @@
   .gp-level-bar.warn { background: #ffa502; }
   .gp-level-bar.clip { background: var(--red); }
 
+  .gp-device-row { display: flex; gap: 6px; align-items: center; }
+  .gp-device-row .gp-select { flex: 1; }
+
+  .gp-icon-btn {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 14px;
+    flex-shrink: 0;
+    transition: all 0.1s;
+  }
+  .gp-icon-btn:hover { border-color: var(--border-bright); color: var(--text-primary); background: var(--bg-hover); }
+  .gp-icon-btn.active { background: var(--red); border-color: var(--red); color: #fff; }
+  .gp-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  @keyframes gp-spin { to { transform: rotate(360deg); } }
+  .gp-icon-btn.spinning svg { animation: gp-spin 0.6s linear infinite; }
+
   .gp-toggle-row { display: flex; gap: 8px; }
   .gp-toggle-btn {
     flex: 1;
@@ -2837,6 +2871,128 @@
     background: var(--red);
     border-color: var(--red);
     color: #fff;
+  }
+
+  /* ── Plugin chain ─── */
+  .gp-chain-hdr-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+  .gp-plugin-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 24px;
+  }
+
+  .gp-plugin-empty {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 8px 0 4px;
+  }
+
+  .gp-plugin-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 6px;
+    cursor: default;
+    transition: border-color 0.1s, background 0.1s;
+  }
+  .gp-plugin-row.dragging { opacity: 0.45; border-style: dashed; }
+  .gp-plugin-row.drag-over { border-color: var(--accent); background: var(--accent-glow); }
+
+  .gp-plugin-drag-handle {
+    cursor: grab;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 0 2px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .gp-plugin-drag-handle:active { cursor: grabbing; }
+
+  .gp-plugin-row-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .gp-plugin-row-name {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .gp-plugin-row-latency {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .gp-plugin-row-actions {
+    display: flex;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+  .gp-row-bypass-btn.active { background: #ffa502; border-color: #ffa502; color: #000; }
+  .gp-row-remove-btn { font-size: 16px; font-weight: 700; line-height: 1; }
+
+  .gp-latency-total {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    padding: 2px 0 4px;
+  }
+
+  /* Preset section */
+  .gp-preset-section {
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .gp-preset-hdr {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .gp-preset-save-row, .gp-preset-load-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .gp-preset-input {
+    flex: 1;
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    padding: 4px 8px;
+    outline: none;
+  }
+  .gp-preset-input:focus { border-color: var(--accent); }
+  .gp-preset-select-el { flex: 1; }
+  .btn.btn-xs {
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .gp-card-hdr .btn.btn-xs.active {
+    background: #ffa502;
+    border-color: #ffa502;
+    color: #000;
   }
 
   .gp-plugin-display {

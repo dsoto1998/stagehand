@@ -32,8 +32,8 @@
 - **Keyboard shortcuts** — 15 configurable shortcuts (playback, loop, metronome, library) stored in `localStorage`. Editable via Settings panel.
 - **Chord charts** — Per-track: PDF upload or ChordPro text editor. Always-visible icon (0.25 opacity). Stored in IDB.
 - **Settings panel** — Multi-tab (General, Display, Audio, Export). General tab: artwork cache clear, keyboard shortcuts editor.
-- **Guitar panel (Live Input)** — Live audio input via WASAPI or ASIO. Input device picker, input source (mono/stereo channel selection), input/output gain knobs, mute, buffer size, sample rate. Stream auto-starts on device select; debounced restart on settings change. Input level meter (5px bar, green→amber→red, 100ms poll, 0.80 decay).
-- **VST3 plugin hosting** — Load a single .vst3 plugin (flat file or bundle) through the Guitar panel. Plugin processes the live input signal in the audio output callback. Supports bypass, open/close native plugin GUI (floating Win32 window), latency reporting. Tested with Helix Native (separate-component plugin).
+- **Guitar panel (Live Input)** — Live audio input via WASAPI or ASIO. Input device picker (with refresh button + 5s hot-plug poll when panel visible), input source (mono/stereo channel selection), input/output gain knobs, mic-icon mute toggle, buffer size, sample rate. Stream auto-starts on app open from saved config; debounced restart on settings change. Input level meter (5px bar, green→amber→red, 100ms poll, 0.80 decay). Signal path diagram (In → Gain → Plugin → Out) shows live state. Last plugin auto-reloads on init.
+- **VST3 plugin chain** — Load multiple .vst3 plugins (flat file or bundle) through the Guitar panel, drag-to-reorder, per-plugin + global bypass, presets. Plugins process the live input signal in series in the audio output callback. Each plugin runs on its own persistent UI worker thread (load + editor on one STA thread) so native editor GUIs open without deadlock — tested with Helix Native (separate-component) and Lindell 80 Channel (Plugin Alliance, graphics-singleton). Supports open/close native plugin GUI (floating Win32 window) and latency reporting.
 - **GitHub Actions release** — `.github/workflows/release.yml` builds and publishes Windows installer on `v*` tag push.
 - **Test suite** — Vitest unit tests in `tests/` covering library-manager, metronome, track-player, artwork-manager, ui-utils. 192 tests total.
 
@@ -138,7 +138,8 @@ Key patterns:
 - `LiveInputEngine` shares `vst_slot: Arc<Mutex<Option<VstHost>>>` with `AudioEngine` — same VST instance used by both.
 - cpal callbacks are zero-allocation: uses pre-allocated `Vec<f32>` scratch buffers (`in_scratch`, `pull_scratch`, `process_scratch`).
 - ASIO: `BufferSize::Default` and device-reported SR must be used — ASIO drivers reject Fixed buffer size or non-native SR.
-- WASAPI: `BufferSize::Fixed(cfg.buffer_size)` and user-specified `SampleRate(cfg.sample_rate)` work.
+- WASAPI: `BufferSize::Fixed(cfg.buffer_size)` for output; input always uses `BufferSize::Default` and device native SR (many USB devices reject non-native SR).
+- **ASIO + COM threading**: `live_input_get_input_devices`, `live_input_start`, and `live_input_stop` all use `tokio::task::spawn_blocking` because ASIO COM requires an STA thread. Tokio pool threads are MTA and return 0 ASIO devices. `LiveInputState` wraps `Arc<Mutex<LiveInputEngine>>` so the Arc can be cloned and moved into `spawn_blocking`.
 - ASIO uses same `Device` for both input and output streams (single ASIO device represents both directions).
 - WASAPI: separate input/output device lookup; first checks `input_devices()`, then `output_devices()`.
 - Ring buffer: `HeapRb::<f32>::new(RING_FRAMES * 2)` — stereo interleaved, RING_FRAMES=8192.
@@ -150,13 +151,17 @@ Key patterns:
 All `unsafe` code in the codebase lives here. Every unsafe block carries a one-line safety comment.
 
 Key patterns:
-- `VstHost::load()`: LoadLibraryW → GetPluginFactory → find "Audio Module Class" → createInstance IComponent → queryInterface IAudioProcessor → initialize/setupProcessing/setActive/setProcessing.
+- **Per-plugin UI worker thread (critical)**: each `VstHost` owns a persistent STA worker thread (`vst_worker_main`) created by `VstHost::spawn_and_load()`. The worker runs `VstHost::load()` on itself, then stays alive handling editor open/close on that SAME thread with a message pump. Reason: Plugin Alliance plugins (Lindell 80 Channel) bind their process-global graphics engine to the thread that first loads them; if `load()` and `IPlugView::attached()` run on different threads, attached() deadlocks on a graphics condition variable. Proven via minidump 2026-06-04. The command layer NEVER calls bare `VstHost::load()` — always `spawn_and_load()`.
+- `VstHost::load()` (runs ON the worker thread): LoadLibraryW → GetPluginFactory → find "Audio Module Class" → createInstance IComponent → queryInterface IAudioProcessor → initialize/setupProcessing/setActive/setProcessing.
 - `setup_controller()`: resolves `IEditController` eagerly during `load()` — NOT lazily on GUI open. Required for Helix Native (separate-component plugin) to avoid crash on first paint.
-- Two paths for controller: (A) single-component: cast `IComponent → IEditController`; (B) separate-component (Helix Native): `getControllerClassId` + factory `createInstance`.
-- `IConnectionPoint` bidirectional connect between component and controller — required for separate-component plugins.
-- `process_block()`: deinterleave stereo input → VST3 planar format → process → reinterleave → output. Passes through on bypass or error.
-- `open_gui()`: creates a floating Win32 `WS_OVERLAPPEDWINDOW` using `CreateWindowExW`, then calls `IPlugView::attached(hwnd, kPlatformTypeHWND)`. Must be called from main UI thread.
-- `close_gui()`: calls `IPlugView::removed()` before `DestroyWindow` per VST3 spec.
+- Two paths for controller: (A) single-component: cast `IComponent → IEditController` (same COM object — already `initialize()`'d in `load()`, must NOT call `initialize()`/`connect`/`setComponentState` again); (B) separate-component (Helix Native): `getControllerClassId` + factory `createInstance` (a distinct object — DOES need its own `initialize()`/connect/state-sync). Calling `initialize()` twice on the single-component path was a real bug: it left some plugins' GUI subsystem half-built (`getSize()` → width 0, blank window). Bug found + fix applied 2026-06-04 for bx_bluechorus2/bx_blackdist2/SPL Free Ranger/Shadow Hills Mastering Compressor (all single-component) — **not yet confirmed working**, verify before trusting.
+- `IConnectionPoint` bidirectional connect between component and controller — required for separate-component plugins only (see above).
+- `StagehandCompHandler` implements both `IComponentHandler` and `IComponentHandler2` (`setDirty`/`requestOpenEditor`/`startGroupEdit`/`finishGroupEdit`, all stub `kResultOk`). Some single-component plugin editors query the host for `IComponentHandler2` while building their GUI.
+- `process_block()`: deinterleave stereo input → VST3 planar format → process → reinterleave → output. Passes through on bypass or error. Still called from the **audio thread** via the chain Mutex — the worker thread only touches the GUI side (controller/view/window), via clones it extracts at load time.
+- GUI open/close: `request_open_gui()` / `request_close_gui()` send `VstUiCmd::{OpenGui,CloseGui}` to the worker and return a reply `Receiver`; the command layer recv()s OUTSIDE the chain lock so the audio thread is never blocked. `open_view_on_worker()` (on the worker thread) creates a floating Win32 window (`WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN | WS_CLIPSIBLINGS`, no owner), calls `IPlugViewContentScaleSupport::setContentScaleFactor` if supported, shows + drains messages, calls `IPlugView::attached()`, then re-queries `getSize()` and resizes the container to match (some plugins report a bogus size before attach). Window creation is wrapped in `SetThreadDpiAwarenessContext(PMv2)` (restored via a drop-guard) — matches what JUCE-based hosts do. Editor window has NO owner (avoids cross-thread input-queue coupling). `is_gui_open()` reads a shared `gui_open: Arc<AtomicBool>` the worker flips (incl. on user-initiated title-bar close).
+- `close_view_on_worker()`: posts WM_CLOSE → `vst_wnd_proc` calls `IPlugView::removed()` before `DestroyWindow` per VST3 spec → WM_DESTROY frees the boxed view + ctx.
+- `Drop`: sends `VstUiCmd::Exit` + joins the worker (closing GUI on its own thread, releasing controller/view clones) BEFORE releasing this host's COM objects + FreeLibrary.
+- **Never fully unload a plugin mid-session.** `AudioEngine.vst_parked: Arc<Mutex<Vec<VstHost>>>` holds unloaded-but-alive instances (worker thread + DLL still loaded). `vst_unload`/`vst_unload_all` close the GUI and PARK the host instead of dropping it; `vst_load` checks `vst_parked` for a matching path and revives it before loading fresh. Reason: some plugins' graphics engine is a process-global singleton bound to the load thread; fully dropping (killing the worker + `FreeLibrary`) orphans that engine, and reloading on a new thread deadlocks in `attached()`. Parked hosts only drop for real on app exit.
 - `StagehandHostApp` implements `IHostApplication` — required; without it Helix Native crashes on `createInstance(IMessage)`.
 - `StagehandAttributeList` / `StagehandMessage` implement `IAttributeList` / `IMessage` — required for IConnectionPoint::notify.
 - `MemoryStream` implements `IBStream` — used for component→controller state sync via `getState`/`setComponentState`.
@@ -212,7 +217,7 @@ All commands are in `src-tauri/src/commands.rs` and registered in `lib.rs`.
 | `vst_process_test` | Push one block of silence through plugin (Stage 1 test) |
 | `vst_get_latency` | Return plugin latency in samples |
 | `vst_bypass` | Toggle bypass mode on the loaded plugin |
-| `vst_open_gui` | Open plugin editor as floating Win32 window (main thread only) |
+| `vst_open_gui` | Open plugin editor (routed to the plugin's UI worker thread; recv off the chain lock) |
 | `vst_close_gui` | Close plugin editor window (main thread only) |
 
 ### Live Input (PATH B)
@@ -271,10 +276,13 @@ Config structure (stored in `localStorage` key `stagehand_guitar_config`):
 ```
 
 Key behaviors:
+- Stream auto-starts on app open (`refreshDevices().then(() => startInput())` if `cfg.deviceName` set).
 - Stream auto-starts on device select; restarts (debounced 500ms) on any setting change while running.
-- Clicking the status line toggles stop/start.
-- `live` CSS class on status dot + hidden guitar badge show running state.
-- `refreshDevices()` called on panel init and on guitar nav click.
+- Status line removed — signal path diagram (`#gp-signal-path`) is sole connection indicator. Guitar nav badge (`#guitar-badge`) also shows running state.
+- `refreshDevices()` on panel init, on Guitar nav click, and every 5s while panel is active AND stream is stopped (hot-plug detection). Polling stops when navigating away.
+- Mute button: icon-only (`ICONS.mic` / `ICONS.micOff`), red `.active` state.
+- Refresh button (`#gp-refresh-btn`) next to device select; spins during enumeration, restores prior selection.
+- Last plugin auto-reloads on init (fire-and-forget; silent fail if path gone).
 - Plugin latency: `listen('vst_latency', ...)` updates `#gp-plugin-latency` element.
 
 ### Virtual Scroll
@@ -472,8 +480,9 @@ Keyed by `"artist::album"` when both present; falls back to `"track::id"`. Use `
 ### VST3 safety invariants
 - All unsafe code lives in `vst_host.rs`. Every unsafe block has a one-line safety comment.
 - `VstHost` is `Send + Sync` (wrapped in `parking_lot::Mutex`) — the audio thread only calls `process_block()` via `try_lock()`.
-- Drop order matters: GUI → edit_controller → setProcessing(0) → setActive(0) → terminate() → ManuallyDrop COM releases → FreeLibrary.
-- `vst_open_gui` / `vst_close_gui` must be called from the Tauri main UI thread (use `app.run_on_main_thread()`).
+- Drop order matters: worker Exit+join (closes GUI on its thread) → edit_controller → setProcessing(0) → setActive(0) → terminate() → ManuallyDrop COM releases → FreeLibrary.
+- All plugin GUI work (createView/attached/window/pump) happens on the plugin's own UI worker thread — NOT the Tauri main thread. The worker is the SAME thread that ran `load()` (graphics-singleton affinity). Each plugin on its own thread also isolates Helix Native's process-wide CBT hook from other plugins' window creation.
+- Drop/unload a `VstHost` OUTSIDE the chain Mutex (worker join must not block the audio callback).
 - Do not add `unsafe` outside `vst_host.rs` without strong justification.
 
 ### Live input constraints

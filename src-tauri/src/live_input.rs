@@ -64,7 +64,7 @@ pub struct LiveInputEngine {
     input_stream: Option<SendStream>,
     output_stream: Option<SendStream>,
     config: Option<LiveInputConfig>,
-    vst_slot: Arc<Mutex<Option<VstHost>>>,
+    vst_chain: Arc<Mutex<Vec<VstHost>>>,
 
     // Atomic knobs read by callbacks.
     input_gain: Arc<AtomicU32>,    // f32 bits
@@ -75,12 +75,12 @@ pub struct LiveInputEngine {
 }
 
 impl LiveInputEngine {
-    pub fn new(vst_slot: Arc<Mutex<Option<VstHost>>>) -> Self {
+    pub fn new(vst_chain: Arc<Mutex<Vec<VstHost>>>) -> Self {
         Self {
             input_stream: None,
             output_stream: None,
             config: None,
-            vst_slot,
+            vst_chain,
             input_gain: Arc::new(AtomicU32::new(pack_gain(1.0))),
             output_gain: Arc::new(AtomicU32::new(pack_gain(1.0))),
             muted: Arc::new(AtomicBool::new(false)),
@@ -181,7 +181,13 @@ impl LiveInputEngine {
         } else {
             BufferSize::Fixed(cfg.buffer_size)
         };
-        let sample_rate = if cfg.is_asio {
+        // WASAPI input: always use the device's native SR. Many USB/webcam devices only
+        // support non-standard rates (16000, 32000 Hz) and reject cfg.sample_rate with
+        // "stream type not supported". The ring buffer is rate-agnostic, so samples pass
+        // through regardless. If in/out rates differ, user hears pitch/speed drift — they
+        // should set Advanced → Sample Rate to match the device's native rate to avoid it.
+        let in_sample_rate = SampleRate(device_sample_rate);
+        let out_sample_rate = if cfg.is_asio {
             SampleRate(device_sample_rate)
         } else {
             SampleRate(cfg.sample_rate)
@@ -189,12 +195,12 @@ impl LiveInputEngine {
 
         let stream_in_cfg = StreamConfig {
             channels: device_in_channels,
-            sample_rate,
+            sample_rate: in_sample_rate,
             buffer_size: in_buffer_size,
         };
         let stream_out_cfg = StreamConfig {
             channels: device_out_channels,
-            sample_rate,
+            sample_rate: out_sample_rate,
             buffer_size: out_buffer_size,
         };
 
@@ -207,7 +213,7 @@ impl LiveInputEngine {
         let out_gain = self.output_gain.clone();
         let muted = self.muted.clone();
         let underruns = self.underruns.clone();
-        let vst_slot = self.vst_slot.clone();
+        let vst_chain = self.vst_chain.clone();
         let peak_level_cb = self.peak_level.clone();
 
         // Resolve input channel mapping outside the hot path.
@@ -288,22 +294,35 @@ impl LiveInputEngine {
             }
 
             const VST_MAX_FRAMES: usize = 512;
+            // Ping-pong chain: plugin[i%2==0] reads pull_scratch → writes process_scratch;
+            // plugin[i%2==1] reads process_scratch → writes pull_scratch. After N plugins:
+            // odd N → output in process_scratch; even N → output in pull_scratch (then copied).
             let mut handled = false;
-            if let Some(mut slot) = vst_slot.try_lock() {
-                if let Some(host) = slot.as_mut() {
-                    let mut off_frames = 0;
-                    while off_frames < frames {
-                        let chunk_frames = (frames - off_frames).min(VST_MAX_FRAMES);
-                        let s = off_frames * 2;
-                        let e = s + chunk_frames * 2;
-                        host.process_block(
-                            &pull_scratch[s..e],
-                            &mut process_scratch[s..e],
-                        );
-                        off_frames += chunk_frames;
+            if let Some(mut chain_guard) = vst_chain.try_lock() {
+                let chain = &mut *chain_guard;
+                if chain.is_empty() {
+                    process_scratch[..needed].copy_from_slice(&pull_scratch[..needed]);
+                } else {
+                    for (i, plugin) in chain.iter_mut().enumerate() {
+                        let mut off_frames = 0;
+                        while off_frames < frames {
+                            let chunk = (frames - off_frames).min(VST_MAX_FRAMES);
+                            let s = off_frames * 2;
+                            let e = s + chunk * 2;
+                            if i % 2 == 0 {
+                                plugin.process_block(&pull_scratch[s..e], &mut process_scratch[s..e]);
+                            } else {
+                                plugin.process_block(&process_scratch[s..e], &mut pull_scratch[s..e]);
+                            }
+                            off_frames += chunk;
+                        }
                     }
-                    handled = true;
+                    // Even chain length → final output landed in pull_scratch; copy to process_scratch.
+                    if chain.len() % 2 == 0 {
+                        process_scratch[..needed].copy_from_slice(&pull_scratch[..needed]);
+                    }
                 }
+                handled = true;
             }
             if !handled {
                 process_scratch[..needed].copy_from_slice(&pull_scratch[..needed]);
@@ -385,12 +404,13 @@ impl LiveInputEngine {
         self.config = Some(cfg);
         self.underruns.store(0, Ordering::Relaxed);
 
-        log::info!("[live_input] started: device={} in_ch={:?} out_ch={:?} buf={} sr={}",
+        log::info!("[live_input] started: device={} in_ch={:?} out_ch={:?} buf={} in_sr={} out_sr={}",
             self.config.as_ref().unwrap().device_name,
             self.config.as_ref().unwrap().input_channels,
             self.config.as_ref().unwrap().output_channels,
             self.config.as_ref().unwrap().buffer_size,
-            self.config.as_ref().unwrap().sample_rate);
+            in_sample_rate.0,
+            out_sample_rate.0);
         let _ = SampleFormat::F32; // silence unused-import warning under cfg variants
         Ok(())
     }

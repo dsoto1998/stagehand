@@ -1,14 +1,9 @@
-// Guitar Panel — live input device picker, gain knobs, plugin loader.
+// Guitar Panel — live input device picker, gain knobs, multi-plugin chain.
 // Talks to Rust via live_input_* and vst_* Tauri commands.
-//
-// UX notes:
-//   - Stream auto-starts on device select; restarts (debounced 500ms) on any
-//     setting change while running. Helix Native re-init can take 1-3s; the
-//     resulting audio glitch is the documented cost of changing source/buffer
-//     while live and is accepted in lieu of a manual Start/Stop control.
-//   - Click the status line to toggle stop/start.
 
 import { invoke, listen } from './tauri-api.js';
+import { ICONS } from './icons.js';
+import * as LibraryManager from './library-manager.js';
 
 const LS_KEY = 'stagehand_guitar_config';
 const RESTART_DEBOUNCE_MS = 500;
@@ -18,30 +13,42 @@ const DEFAULT_CFG = {
   isAsio: false,
   bufferSize: 256,
   sampleRate: 44100,
-  // inputSource encodes mono vs stereo + channel offsets, e.g. 'mono:0', 'stereo:0,1'
   inputSource: 'mono:0',
   outputChannels: [0, 1],
   inputGain: 1.0,
   outputGain: 1.0,
   muted: false,
-  pluginPath: '',
-  bypassed: false,
+  // Plugin chain — each entry: { path, name, bypassed }
+  plugins: [],
+  globalBypassed: false,
   advancedOpen: false,
 };
 
 let cfg = { ...DEFAULT_CFG };
 let devices = [];
 let running = false;
-let pluginLoaded = false;
 let restartTimer = null;
 let pollTimer = null;
+let devicePollTimer = null;
 let displayLevel = 0;
+let isReloading = false;
 
 // ── Persistence ──────────────────────────────────────────────
 function loadCfg() {
   try {
     const raw = localStorage.getItem(LS_KEY);
-    if (raw) cfg = { ...DEFAULT_CFG, ...JSON.parse(raw) };
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      // Migrate single-plugin format (v1) → chain format (v2)
+      if (parsed.pluginPath !== undefined && !parsed.plugins) {
+        parsed.plugins = parsed.pluginPath
+          ? [{ path: parsed.pluginPath, name: parsed.pluginPath.split(/[\\/]/).pop().replace(/\.vst3$/i, ''), bypassed: parsed.bypassed ?? false }]
+          : [];
+        delete parsed.pluginPath;
+        delete parsed.bypassed;
+      }
+      cfg = { ...DEFAULT_CFG, ...parsed };
+    }
   } catch (e) {
     console.warn('[guitar] load cfg failed', e);
   }
@@ -148,12 +155,8 @@ function renderInputSourceSelect() {
     optEl.textContent = o.label;
     sel.appendChild(optEl);
   }
-  // Validate persisted choice fits current device; fall back to mono:0.
   const valid = opts.some(o => o.value === cfg.inputSource);
-  if (!valid) {
-    cfg.inputSource = 'mono:0';
-    saveCfg();
-  }
+  if (!valid) { cfg.inputSource = 'mono:0'; saveCfg(); }
   sel.value = cfg.inputSource;
 }
 
@@ -199,7 +202,6 @@ function startPoll() {
     if (!running) { stopPoll(); return; }
     try {
       const status = await invoke('live_input_status');
-      // Decay toward zero each tick; snap up instantly to new peak.
       displayLevel = Math.max(status.peak_level, displayLevel * 0.80);
       updateMeter(displayLevel);
     } catch (_) {}
@@ -212,18 +214,45 @@ function stopPoll() {
   updateMeter(0);
 }
 
-// ── Status line ────────────────────────────────────────────
-function updateStatusLine() {
-  const dot = document.getElementById('gp-status-dot');
-  const text = document.getElementById('gp-status-text');
-  dot.classList.toggle('live', running);
-  if (running) {
-    text.textContent = `Live — ${cfg.deviceName} — ${cfg.bufferSize} samples`;
-  } else {
-    text.textContent = 'Stopped';
-  }
+// ── Signal path ────────────────────────────────────────────
+function updateSignalPath() {
   const badge = document.getElementById('guitar-badge');
   if (badge) badge.classList.toggle('hidden', !running);
+
+  const container = document.getElementById('gp-signal-path');
+  if (!container) return;
+
+  const shortName = cfg.deviceName
+    ? cfg.deviceName.replace(/\s*\(.*?\)\s*/g, '').trim().split(' ').slice(0, 2).join(' ')
+    : 'In';
+
+  const nodes = [];
+
+  // In node
+  nodes.push({ label: shortName || 'In', title: cfg.deviceName || '', state: running ? 'active' : '' });
+  // Gain node
+  nodes.push({ label: 'Gain', title: '', state: running ? 'active' : '' });
+
+  // Plugin nodes
+  for (const p of cfg.plugins) {
+    const name = p.name || p.path.split(/[\\/]/).pop().replace(/\.vst3$/i, '');
+    const state = cfg.globalBypassed || p.bypassed ? 'plugin-bypass' : (running ? 'active' : '');
+    nodes.push({ label: name, title: name, state });
+  }
+
+  // Out node
+  nodes.push({ label: 'Out', title: '', state: running ? 'active' : '' });
+
+  let html = '';
+  for (let i = 0; i < nodes.length; i++) {
+    const n = nodes[i];
+    html += `<span class="gp-sp-node${n.state ? ' ' + n.state : ''}">` +
+      `<span class="gp-sp-dot"></span>` +
+      `<span class="gp-sp-label" title="${n.title}">${n.label}</span>` +
+      `</span>`;
+    if (i < nodes.length - 1) html += `<span class="gp-sp-arrow">→</span>`;
+  }
+  container.innerHTML = html;
 }
 
 // ── Start / Stop / Restart ──────────────────────────────────
@@ -246,26 +275,21 @@ async function startInput() {
       },
     });
     running = true;
-    updateStatusLine();
+    updateSignalPath();
     startPoll();
   } catch (e) {
     running = false;
-    updateStatusLine();
+    updateSignalPath();
     notify('Failed to start: ' + e, 'error');
   }
 }
 async function stopInput() {
-  try {
-    await invoke('live_input_stop');
-  } catch (e) {
-    console.warn('[guitar] stop failed', e);
-  }
+  try { await invoke('live_input_stop'); } catch (e) { console.warn('[guitar] stop failed', e); }
   running = false;
   stopPoll();
-  updateStatusLine();
+  updateSignalPath();
 }
 function scheduleRestart() {
-  // Debounce: many rapid setting changes coalesce into one restart.
   if (!running) return;
   if (restartTimer) clearTimeout(restartTimer);
   restartTimer = setTimeout(async () => {
@@ -275,87 +299,243 @@ function scheduleRestart() {
   }, RESTART_DEBOUNCE_MS);
 }
 
-// ── Plugin ──────────────────────────────────────────────────
-function updatePluginDisplay() {
-  const nameEl = document.getElementById('gp-plugin-name');
-  const pathEl = document.getElementById('gp-plugin-path');
-  const guiBtn = document.getElementById('gp-gui-btn');
-  const bypassBtn = document.getElementById('gp-bypass-btn');
-  const unloadBtn = document.getElementById('gp-unload-btn');
+// ── Plugin chain ────────────────────────────────────────────
 
-  if (pluginLoaded && cfg.pluginPath) {
-    const fileName = cfg.pluginPath.split(/[\\/]/).pop().replace(/\.vst3$/i, '');
-    nameEl.textContent = fileName;
-    nameEl.classList.add('loaded');
-    pathEl.textContent = cfg.pluginPath;
-    guiBtn.disabled = false;
-    bypassBtn.disabled = false;
-    unloadBtn.disabled = false;
-    bypassBtn.classList.toggle('active', cfg.bypassed);
-    bypassBtn.textContent = cfg.bypassed ? 'Bypassed' : 'Bypass';
-  } else {
-    nameEl.textContent = 'No plugin loaded';
-    nameEl.classList.remove('loaded');
-    pathEl.textContent = '';
-    guiBtn.disabled = true;
-    bypassBtn.disabled = true;
-    unloadBtn.disabled = true;
-    bypassBtn.classList.remove('active');
-    bypassBtn.textContent = 'Bypass';
-  }
+// Drag-to-reorder state
+let dragSrcIndex = -1;
+
+function buildPluginRow(plugin, index) {
+  const row = document.createElement('div');
+  row.className = 'gp-plugin-row';
+  row.dataset.index = String(index);
+  row.draggable = true;
+
+  const name = plugin.name || plugin.path.split(/[\\/]/).pop().replace(/\.vst3$/i, '');
+  const latencyMs = plugin.latency_ms ?? 0;
+
+  row.innerHTML = `
+    <div class="gp-plugin-drag-handle" title="Drag to reorder">⠿</div>
+    <div class="gp-plugin-row-info">
+      <div class="gp-plugin-row-name" title="${plugin.path}">${name}</div>
+      <div class="gp-plugin-row-latency" data-latency-index="${index}">${latencyMs.toFixed(1)} ms</div>
+    </div>
+    <div class="gp-plugin-row-actions">
+      <button class="gp-icon-btn gp-row-bypass-btn${plugin.bypassed ? ' active' : ''}" title="${plugin.bypassed ? 'Bypassed' : 'Bypass'}" data-idx="${index}">${ICONS.bypass || '⊘'}</button>
+      <button class="gp-icon-btn gp-row-gui-btn" title="Open Editor" data-idx="${index}">${ICONS.window || '⊡'}</button>
+      <button class="gp-icon-btn gp-row-remove-btn" title="Remove plugin" data-idx="${index}">×</button>
+    </div>
+  `;
+
+  // Drag events
+  row.addEventListener('dragstart', e => {
+    dragSrcIndex = index;
+    row.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  });
+  row.addEventListener('dragend', () => {
+    row.classList.remove('dragging');
+    document.querySelectorAll('.gp-plugin-row').forEach(r => r.classList.remove('drag-over'));
+    dragSrcIndex = -1;
+  });
+  row.addEventListener('dragover', e => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    document.querySelectorAll('.gp-plugin-row').forEach(r => r.classList.remove('drag-over'));
+    row.classList.add('drag-over');
+  });
+  row.addEventListener('drop', async e => {
+    e.preventDefault();
+    row.classList.remove('drag-over');
+    const toIndex = index;
+    if (dragSrcIndex < 0 || dragSrcIndex === toIndex) return;
+    // Reorder local cfg
+    const moved = cfg.plugins.splice(dragSrcIndex, 1)[0];
+    cfg.plugins.splice(toIndex, 0, moved);
+    saveCfg();
+    // Sync Rust chain
+    try { await invoke('vst_move', { from: dragSrcIndex, to: toIndex }); } catch (_) {}
+    renderPluginList();
+    updateSignalPath();
+    updateTotalLatency();
+  });
+
+  // Bypass toggle
+  row.querySelector('.gp-row-bypass-btn').addEventListener('click', async () => {
+    plugin.bypassed = !plugin.bypassed;
+    saveCfg();
+    try { await invoke('vst_bypass', { index, bypassed: plugin.bypassed }); } catch (_) {}
+    renderPluginList();
+    updateSignalPath();
+  });
+
+  // Open editor
+  row.querySelector('.gp-row-gui-btn').addEventListener('click', async () => {
+    try { await invoke('vst_open_gui', { index }); } catch (e) { notify('Open GUI failed: ' + e, 'error'); }
+  });
+
+  // Remove
+  row.querySelector('.gp-row-remove-btn').addEventListener('click', async () => {
+    // Close GUI first (safe even if not open)
+    try { await invoke('vst_close_gui', { index }); } catch (_) {}
+    try { await invoke('vst_unload', { index }); } catch (_) {}
+    cfg.plugins.splice(index, 1);
+    saveCfg();
+    renderPluginList();
+    updateSignalPath();
+    updateTotalLatency();
+  });
+
+  return row;
 }
 
-async function loadPlugin() {
-  let path;
-  try {
-    path = await invoke('open_vst_dialog');
-  } catch (e) {
-    notify('File dialog failed: ' + e, 'error');
+function renderPluginList() {
+  const list = document.getElementById('gp-plugin-list');
+  const empty = document.getElementById('gp-plugin-empty');
+
+  // Remove all rows (keep #gp-plugin-empty)
+  list.querySelectorAll('.gp-plugin-row').forEach(r => r.remove());
+
+  if (cfg.plugins.length === 0) {
+    if (empty) empty.style.display = '';
+    updateGlobalBypassBtn();
     return;
   }
+  if (empty) empty.style.display = 'none';
+
+  cfg.plugins.forEach((p, i) => {
+    list.appendChild(buildPluginRow(p, i));
+  });
+  updateGlobalBypassBtn();
+}
+
+function updateGlobalBypassBtn() {
+  const btn = document.getElementById('gp-global-bypass-btn');
+  if (!btn) return;
+  btn.classList.toggle('active', cfg.globalBypassed);
+  btn.textContent = cfg.globalBypassed ? 'Bypassed All' : 'Bypass All';
+}
+
+function updateTotalLatency() {
+  const el = document.getElementById('gp-latency-total');
+  if (!el) return;
+  const total = cfg.plugins.reduce((sum, p) => sum + (p.latency_ms ?? 0), 0);
+  el.textContent = `Total latency: ${total.toFixed(1)} ms`;
+  el.style.display = cfg.plugins.length > 0 ? '' : 'none';
+}
+
+async function addPlugin() {
+  if (isReloading) { notify('Wait for session reload to finish', 'error'); return; }
+  let path;
+  try { path = await invoke('open_vst_dialog'); } catch (e) { notify('File dialog failed: ' + e, 'error'); return; }
   if (!path) return;
+  if (cfg.plugins.some(p => p.path === path)) {
+    notify('Plugin already in chain — remove it first to add another instance', 'error');
+    return;
+  }
   try {
-    await invoke('vst_load', { path, sampleRate: cfg.sampleRate });
-    cfg.pluginPath = path;
-    cfg.bypassed = false;
-    pluginLoaded = true;
+    await invoke('vst_load', { path, sampleRate: cfg.sampleRate, index: null });
+    const name = path.split(/[\\/]/).pop().replace(/\.vst3$/i, '');
+    cfg.plugins.push({ path, name, bypassed: false, latency_ms: 0 });
     saveCfg();
-    updatePluginDisplay();
-    notify('Plugin loaded', 'success');
+    renderPluginList();
+    updateSignalPath();
+    updateTotalLatency();
+    notify(`Loaded: ${name}`, 'success');
   } catch (e) {
     notify('Plugin load failed: ' + e, 'error');
   }
 }
-async function unloadPlugin() {
+
+async function toggleGlobalBypass() {
+  cfg.globalBypassed = !cfg.globalBypassed;
+  saveCfg();
+  try { await invoke('vst_global_bypass', { bypassed: cfg.globalBypassed }); } catch (_) {}
+  updateGlobalBypassBtn();
+  updateSignalPath();
+}
+
+// ── Presets ──────────────────────────────────────────────────
+let presets = [];
+
+async function loadPresets() {
+  try { presets = await LibraryManager.getVstPresets(); } catch (_) { presets = []; }
+  renderPresetSelect();
+}
+
+function renderPresetSelect() {
+  const sel = document.getElementById('gp-preset-select');
+  sel.innerHTML = '<option value="">Select preset…</option>';
+  for (const p of presets) {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name;
+    sel.appendChild(opt);
+  }
+  const loadBtn = document.getElementById('gp-preset-load-btn');
+  const delBtn = document.getElementById('gp-preset-delete-btn');
+  loadBtn.disabled = true;
+  delBtn.disabled = true;
+}
+
+async function savePreset() {
+  const nameEl = document.getElementById('gp-preset-name');
+  const name = nameEl.value.trim();
+  if (!name) { notify('Enter a preset name', 'error'); return; }
+  const preset = {
+    id: LibraryManager.genVstPresetId(),
+    name,
+    plugins: cfg.plugins.map(p => ({ path: p.path, name: p.name, bypassed: p.bypassed })),
+    createdAt: Date.now(),
+  };
   try {
-    await invoke('vst_close_gui').catch(() => {});
-    await invoke('vst_unload');
-    cfg.pluginPath = '';
-    cfg.bypassed = false;
-    pluginLoaded = false;
-    document.getElementById('gp-plugin-latency').textContent = '0.0 ms';
-    saveCfg();
-    updatePluginDisplay();
+    await LibraryManager.saveVstPreset(preset);
+    nameEl.value = '';
+    await loadPresets();
+    notify(`Preset "${name}" saved`, 'success');
   } catch (e) {
-    notify('Unload failed: ' + e, 'error');
+    notify('Save failed: ' + e, 'error');
   }
 }
-async function toggleBypass() {
-  cfg.bypassed = !cfg.bypassed;
-  try {
-    await invoke('vst_bypass', { bypassed: cfg.bypassed });
-    saveCfg();
-    updatePluginDisplay();
-  } catch (e) {
-    cfg.bypassed = !cfg.bypassed;
-    notify('Bypass toggle failed: ' + e, 'error');
+
+async function loadPreset() {
+  const sel = document.getElementById('gp-preset-select');
+  const preset = presets.find(p => p.id === sel.value);
+  if (!preset) return;
+
+  // Close + unload all current plugins
+  try { await invoke('vst_close_all_guis'); } catch (_) {}
+  try { await invoke('vst_unload_all'); } catch (_) {}
+  cfg.plugins = [];
+
+  // Load preset plugins in order
+  for (const p of preset.plugins) {
+    try {
+      await invoke('vst_load', { path: p.path, sampleRate: cfg.sampleRate, index: null });
+      cfg.plugins.push({ path: p.path, name: p.name, bypassed: p.bypassed ?? false, latency_ms: 0 });
+      if (p.bypassed) {
+        await invoke('vst_bypass', { index: cfg.plugins.length - 1, bypassed: true }).catch(() => {});
+      }
+    } catch (e) {
+      console.warn('[guitar] preset: failed to load', p.path, e);
+    }
   }
+  saveCfg();
+  renderPluginList();
+  updateSignalPath();
+  updateTotalLatency();
+  notify(`Loaded preset: ${preset.name}`, 'success');
 }
-async function openGui() {
+
+async function deletePreset() {
+  const sel = document.getElementById('gp-preset-select');
+  const preset = presets.find(p => p.id === sel.value);
+  if (!preset) return;
   try {
-    await invoke('vst_open_gui');
+    await LibraryManager.deleteVstPreset(preset.id);
+    await loadPresets();
+    notify(`Preset "${preset.name}" deleted`, 'success');
   } catch (e) {
-    notify('Open GUI failed: ' + e, 'error');
+    notify('Delete failed: ' + e, 'error');
   }
 }
 
@@ -382,7 +562,7 @@ function applyAdvancedState() {
 export function initGuitarPanel() {
   loadCfg();
 
-  // Device select — auto-start on change
+  // Device select
   document.getElementById('gp-device-select').addEventListener('change', async e => {
     const wasRunning = running;
     if (wasRunning) await stopInput();
@@ -397,14 +577,12 @@ export function initGuitarPanel() {
     if (cfg.deviceName) await startInput();
   });
 
-  // Input source dropdown
   document.getElementById('gp-input-source-select').addEventListener('change', e => {
     cfg.inputSource = e.target.value;
     saveCfg();
     scheduleRestart();
   });
 
-  // Buffer/rate selects
   const bufSel = document.getElementById('gp-buffer-select');
   bufSel.value = String(cfg.bufferSize);
   bufSel.addEventListener('change', e => {
@@ -420,19 +598,12 @@ export function initGuitarPanel() {
     scheduleRestart();
   });
 
-  // Advanced disclosure
   document.getElementById('gp-advanced-hdr').addEventListener('click', () => {
     cfg.advancedOpen = !cfg.advancedOpen;
     applyAdvancedState();
     saveCfg();
   });
   applyAdvancedState();
-
-  // Status line click → toggle
-  document.getElementById('gp-status-line').addEventListener('click', () => {
-    if (running) stopInput();
-    else startInput();
-  });
 
   // Gain sliders
   const inGain = document.getElementById('gp-input-gain');
@@ -459,38 +630,126 @@ export function initGuitarPanel() {
 
   // Mute
   const muteBtn = document.getElementById('gp-mute-btn');
-  muteBtn.classList.toggle('active', cfg.muted);
-  muteBtn.textContent = cfg.muted ? 'Unmute Input' : 'Mute Input';
+  function applyMuteState() {
+    muteBtn.innerHTML = cfg.muted ? ICONS.micOff : ICONS.mic;
+    muteBtn.title = cfg.muted ? 'Unmute input' : 'Mute input';
+    muteBtn.classList.toggle('active', cfg.muted);
+  }
+  applyMuteState();
   muteBtn.addEventListener('click', () => {
     cfg.muted = !cfg.muted;
-    muteBtn.classList.toggle('active', cfg.muted);
-    muteBtn.textContent = cfg.muted ? 'Unmute Input' : 'Mute Input';
+    applyMuteState();
     saveCfg();
     invoke('live_input_set_mute', { muted: cfg.muted }).catch(() => {});
   });
 
-  // Plugin buttons
-  document.getElementById('gp-load-btn').addEventListener('click', loadPlugin);
-  document.getElementById('gp-unload-btn').addEventListener('click', unloadPlugin);
-  document.getElementById('gp-bypass-btn').addEventListener('click', toggleBypass);
-  document.getElementById('gp-gui-btn').addEventListener('click', openGui);
+  // Add plugin
+  document.getElementById('gp-add-plugin-btn').addEventListener('click', addPlugin);
 
-  // Latency event from Rust
+  // Global bypass
+  document.getElementById('gp-global-bypass-btn').addEventListener('click', toggleGlobalBypass);
+
+  // Preset controls
+  document.getElementById('gp-preset-save-btn').addEventListener('click', savePreset);
+  document.getElementById('gp-preset-load-btn').addEventListener('click', loadPreset);
+  document.getElementById('gp-preset-delete-btn').addEventListener('click', deletePreset);
+  document.getElementById('gp-preset-select').addEventListener('change', e => {
+    const hasVal = !!e.target.value;
+    document.getElementById('gp-preset-load-btn').disabled = !hasVal;
+    document.getElementById('gp-preset-delete-btn').disabled = !hasVal;
+  });
+
+  // Latency event from Rust — update per-plugin display
   listen('vst_latency', evt => {
-    const latEl = document.getElementById('gp-plugin-latency');
-    const ms = evt.payload?.latency_ms;
-    if (typeof ms === 'number') {
-      latEl.textContent = `${ms.toFixed(1)} ms`;
+    const { index, latency_ms } = evt.payload ?? {};
+    if (typeof index === 'number' && typeof latency_ms === 'number') {
+      if (cfg.plugins[index]) {
+        cfg.plugins[index].latency_ms = latency_ms;
+        saveCfg();
+      }
+      const el = document.querySelector(`[data-latency-index="${index}"]`);
+      if (el) el.textContent = `${latency_ms.toFixed(1)} ms`;
+      updateTotalLatency();
     }
   }).catch(() => {});
 
-  // Initial render
-  updatePluginDisplay();
-  updateStatusLine();
-  refreshDevices();
+  // Refresh button
+  const refreshBtn = document.getElementById('gp-refresh-btn');
+  refreshBtn.innerHTML = ICONS.refresh;
+  refreshBtn.addEventListener('click', async () => {
+    const prev = cfg.deviceName;
+    refreshBtn.classList.add('spinning');
+    refreshBtn.disabled = true;
+    await refreshDevices();
+    const sel = document.getElementById('gp-device-select');
+    if (prev && [...sel.options].some(o => o.value === prev)) {
+      sel.value = prev;
+      cfg.deviceName = prev;
+    }
+    refreshBtn.classList.remove('spinning');
+    refreshBtn.disabled = false;
+  });
 
-  // Refresh devices when user clicks the Guitar nav
+  // Initial render
+  renderPluginList();
+  updateSignalPath();
+  updateTotalLatency();
+  loadPresets();
+
+  // Auto-start stream after device list is ready
+  refreshDevices().then(async () => {
+    if (cfg.deviceName && !running) await startInput();
+  });
+
+  // Auto-reload last session's plugin chain — incremental so user sees each plugin as it loads.
+  if (cfg.plugins.length > 0) {
+    const savedPlugins = cfg.plugins.slice();
+    cfg.plugins = [];
+    isReloading = true;
+    const addBtn = document.getElementById('gp-add-plugin-btn');
+    if (addBtn) addBtn.disabled = true;
+    renderPluginList();
+    (async () => {
+      for (const p of savedPlugins) {
+        try {
+          await invoke('vst_load', { path: p.path, sampleRate: cfg.sampleRate, index: null });
+          const entry = { ...p, latency_ms: p.latency_ms ?? 0 };
+          cfg.plugins.push(entry);
+          if (p.bypassed) {
+            await invoke('vst_bypass', { index: cfg.plugins.length - 1, bypassed: true }).catch(() => {});
+          }
+          saveCfg();
+          renderPluginList();
+          updateSignalPath();
+          updateTotalLatency();
+        } catch (_) {
+          console.warn('[guitar] auto-reload failed for', p.path);
+        }
+      }
+      isReloading = false;
+      if (addBtn) addBtn.disabled = false;
+      if (cfg.plugins.length > 0) notify(`${cfg.plugins.length} plugin(s) reloaded`, 'success');
+    })();
+  }
+
+  if (cfg.globalBypassed) {
+    invoke('vst_global_bypass', { bypassed: true }).catch(() => {});
+  }
+
+  // Hot-plug device poll while Guitar panel is active and stream is stopped
+  function startDevicePoll() {
+    if (devicePollTimer) return;
+    devicePollTimer = setInterval(() => { if (!running) refreshDevices(); }, 5000);
+  }
+  function stopDevicePoll() {
+    if (devicePollTimer) { clearInterval(devicePollTimer); devicePollTimer = null; }
+  }
+
   document.querySelector('.nav-item[data-panel="guitar"]')?.addEventListener('click', () => {
     refreshDevices();
+    startDevicePoll();
+  });
+  document.querySelectorAll('.nav-item:not([data-panel="guitar"])').forEach(item => {
+    item.addEventListener('click', stopDevicePoll);
   });
 }
