@@ -47,9 +47,9 @@ pub fn run() {
             }
             let engine = AudioEngine::new(app.handle().clone())
                 .expect("Failed to init audio engine");
-            let vst_slot = engine.vst_slot.clone();
+            let vst_chain = engine.vst_chain.clone();
             app.manage(EngineState(Mutex::new(engine)));
-            app.manage(LiveInputState(Arc::new(Mutex::new(LiveInputEngine::new(vst_slot)))));
+            app.manage(LiveInputState(Arc::new(Mutex::new(LiveInputEngine::new(vst_chain)))));
 
             for code in [
                 Code::MediaPlayPause,
@@ -87,13 +87,18 @@ pub fn run() {
             commands::open_audio_files_dialog,
             commands::open_vst_dialog,
             commands::vst_scan,
+            commands::vst_get_chain,
             commands::vst_load,
             commands::vst_unload,
+            commands::vst_unload_all,
+            commands::vst_move,
             commands::vst_process_test,
             commands::vst_get_latency,
             commands::vst_bypass,
+            commands::vst_global_bypass,
             commands::vst_open_gui,
             commands::vst_close_gui,
+            commands::vst_close_all_guis,
             commands::live_input_get_input_devices,
             commands::live_input_start,
             commands::live_input_stop,

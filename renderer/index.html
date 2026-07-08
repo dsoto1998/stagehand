@@ -325,20 +325,8 @@
               </div>
             </div>
 
-            <div class="gp-status-line" id="gp-status-line">
-              <span class="gp-status-dot" id="gp-status-dot"></span>
-              <span class="gp-status-text" id="gp-status-text">Stopped</span>
-              <span class="gp-underrun-badge hidden" id="gp-underrun-badge" title="Buffer underruns"></span>
-            </div>
-
             <div class="gp-signal-path" id="gp-signal-path">
-              <span class="gp-sp-node" id="gp-sp-in"><span class="gp-sp-dot"></span><span class="gp-sp-label" id="gp-sp-in-label">In</span></span>
-              <span class="gp-sp-arrow">→</span>
-              <span class="gp-sp-node" id="gp-sp-gain"><span class="gp-sp-dot"></span><span class="gp-sp-label">Gain</span></span>
-              <span class="gp-sp-arrow">→</span>
-              <span class="gp-sp-node" id="gp-sp-plugin"><span class="gp-sp-dot"></span><span class="gp-sp-label" id="gp-sp-plugin-label">—</span></span>
-              <span class="gp-sp-arrow">→</span>
-              <span class="gp-sp-node" id="gp-sp-out"><span class="gp-sp-dot"></span><span class="gp-sp-label">Out</span></span>
+              <!-- Dynamically rendered by guitar-panel.js updateSignalPath() -->
             </div>
 
             <div class="gp-field">
@@ -410,21 +398,39 @@
 
           <!-- PLUGIN CARD -->
           <div class="gp-card">
-            <div class="gp-card-hdr">Plugin</div>
-
-            <div class="gp-plugin-display">
-              <div class="gp-plugin-name" id="gp-plugin-name">No plugin loaded</div>
-              <div class="gp-plugin-meta">
-                <span id="gp-plugin-path" class="gp-plugin-path"></span>
-                <span id="gp-plugin-latency" class="gp-plugin-latency">0.0 ms</span>
+            <div class="gp-card-hdr">
+              <span>Plugin Chain</span>
+              <div class="gp-chain-hdr-actions">
+                <button class="btn btn-xs" id="gp-global-bypass-btn" title="Bypass all plugins">Bypass All</button>
               </div>
             </div>
 
+            <!-- Ordered plugin list — rows injected by JS -->
+            <div class="gp-plugin-list" id="gp-plugin-list">
+              <div class="gp-plugin-empty" id="gp-plugin-empty">No plugins loaded</div>
+            </div>
+
+            <!-- Total latency -->
+            <div class="gp-latency-total" id="gp-latency-total">Total latency: 0.0 ms</div>
+
             <div class="gp-btn-row">
-              <button class="btn" id="gp-load-btn">Load Plugin…</button>
-              <button class="btn" id="gp-gui-btn" disabled>Show Plugin GUI</button>
-              <button class="btn" id="gp-bypass-btn" disabled>Bypass</button>
-              <button class="btn btn-ghost" id="gp-unload-btn" disabled>Unload</button>
+              <button class="btn" id="gp-add-plugin-btn">+ Add Plugin…</button>
+            </div>
+
+            <!-- Preset section -->
+            <div class="gp-preset-section">
+              <div class="gp-preset-hdr">Presets</div>
+              <div class="gp-preset-save-row">
+                <input type="text" id="gp-preset-name" class="gp-preset-input" placeholder="Preset name…" maxlength="64">
+                <button class="btn btn-xs" id="gp-preset-save-btn">Save</button>
+              </div>
+              <div class="gp-preset-load-row">
+                <select id="gp-preset-select" class="gp-select gp-preset-select-el">
+                  <option value="">Select preset…</option>
+                </select>
+                <button class="btn btn-xs" id="gp-preset-load-btn" disabled>Load</button>
+                <button class="btn btn-xs btn-ghost" id="gp-preset-delete-btn" disabled>Delete</button>
+              </div>
             </div>
           </div>
 

@@ -1,6 +1,6 @@
 // ─── INDEXEDDB LIBRARY ───────────────────────────────────────
 const DB_NAME = 'stagehand_db';
-const DB_VER  = 6;
+const DB_VER  = 7;
 const STORE   = 'tracks';
 let db = null;
 
@@ -27,6 +27,9 @@ function open() {
       }
       if (!d.objectStoreNames.contains('artwork')) {
         d.createObjectStore('artwork', { keyPath: 'key' });
+      }
+      if (!d.objectStoreNames.contains('vst_presets')) {
+        d.createObjectStore('vst_presets', { keyPath: 'id' });
       }
     };
     req.onsuccess = e => { db = e.target.result; res(db); };
@@ -197,6 +200,39 @@ export function clearAllArtwork() {
   return open().then(d => new Promise((res, rej) => {
     const tx = d.transaction('artwork', 'readwrite');
     const req = tx.objectStore('artwork').clear();
+    req.onsuccess = () => res();
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+// ── VST Presets ───────────────────────────────────────────────
+
+export function genVstPresetId() {
+  return 'vst_preset_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+}
+
+export function getVstPresets() {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('vst_presets', 'readonly');
+    const req = tx.objectStore('vst_presets').getAll();
+    req.onsuccess = () => res((req.result || []).sort((a, b) => a.name.localeCompare(b.name)));
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function saveVstPreset(preset) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('vst_presets', 'readwrite');
+    const req = tx.objectStore('vst_presets').put(preset);
+    req.onsuccess = () => res();
+    req.onerror   = e => rej(e.target.error);
+  }));
+}
+
+export function deleteVstPreset(id) {
+  return open().then(d => new Promise((res, rej) => {
+    const tx = d.transaction('vst_presets', 'readwrite');
+    const req = tx.objectStore('vst_presets').delete(id);
     req.onsuccess = () => res();
     req.onerror   = e => rej(e.target.error);
   }));

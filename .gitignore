@@ -6,3 +6,7 @@ src-tauri/gen/
 # Local dev artifacts (not needed in repo)
 asio/
 todo/
+
+# Debug dumps (large, local only)
+.debug/
+tauri-dev.log

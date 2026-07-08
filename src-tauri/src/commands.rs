@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use serde::Serialize;
 use cpal::traits::{DeviceTrait, HostTrait};
 use crate::audio::{AudioEngine, LoadResult, PrefetchEntry, decode_to_samples, compute_peaks};
-use crate::vst_host::{VstHost, VstPluginInfo};
+use crate::vst_host::{VstHost, VstPluginInfo, VstChainEntry};
 use crate::live_input::{LiveInputEngine, LiveInputConfig, LiveInputStatus, InputDeviceInfo, enumerate_input_devices};
 
 pub struct EngineState(pub Mutex<AudioEngine>);
@@ -437,12 +437,28 @@ pub async fn open_vst_dialog() -> Result<Option<String>, String> {
 
 // ─── VST3 commands ───────────────────────────────────────────────────────────
 //
-// Single-slot model: AudioEngine holds one Arc<Mutex<Option<VstHost>>>.
-// Loading replaces any existing slot contents; unloading clears it.
+// Chain model: AudioEngine holds Arc<Mutex<Vec<VstHost>>>.
+// vst_load appends (index=None) or replaces (index=Some(i)).
+// All per-plugin commands take an index into the chain.
 
 #[tauri::command]
 pub async fn vst_scan(path: String) -> Result<Vec<VstPluginInfo>, String> {
     Ok(VstHost::scan(&path))
+}
+
+#[tauri::command]
+pub async fn vst_get_chain(state: State<'_, EngineState>) -> Result<Vec<VstChainEntry>, String> {
+    let chain = state.0.lock().vst_chain.clone();
+    let guard = chain.lock();
+    let entries = guard.iter().enumerate().map(|(i, h)| VstChainEntry {
+        index: i,
+        name: h.name().to_string(),
+        path: h.path().to_string(),
+        bypassed: h.bypassed,
+        gui_open: h.is_gui_open(),
+        latency_samples: h.latency_samples,
+    }).collect();
+    Ok(entries)
 }
 
 #[tauri::command]
@@ -451,105 +467,207 @@ pub async fn vst_load(
     state: State<'_, EngineState>,
     path: String,
     sample_rate: Option<f64>,
-) -> Result<(), String> {
+    index: Option<usize>,
+) -> Result<usize, String> {
     let sr = sample_rate.unwrap_or(44100.0);
-    let host = VstHost::load(&path, sr)?;
-    let latency = host.latency_samples;
+    let (chain, parked) = { let g = state.0.lock(); (g.vst_chain.clone(), g.vst_parked.clone()) };
 
-    // Grab the slot Arc, then drop the engine lock before swapping the slot.
-    let slot = state.0.lock().vst_slot.clone();
-    *slot.lock() = Some(host);
+    // Revive a parked instance for this path if one exists (keeps the plugin's
+    // graphics engine bound to a live worker thread — required for Plugin Alliance
+    // plugins like Lindell 80 that deadlock on a fresh reload). Otherwise load anew.
+    let revived = {
+        let mut p = parked.lock();
+        p.iter().position(|h| h.path() == path).map(|pos| p.remove(pos))
+    };
+    let mut host = match revived {
+        Some(mut h) => { h.set_bypass(false); h }
+        None => {
+            let path2 = path.clone();
+            tokio::task::spawn_blocking(move || VstHost::spawn_and_load(&path2, sr))
+                .await
+                .map_err(|e| e.to_string())??
+        }
+    };
+    let latency = host.latency_samples;
+    let _ = &mut host;
+
+    // Replacing an existing slot parks the old host (never drop a host mid-session —
+    // its engine may be a process-global singleton). Capture any displaced host first.
+    let mut displaced: Option<VstHost> = None;
+    let actual_index = {
+        let mut guard = chain.lock();
+        match index {
+            None => { guard.push(host); guard.len() - 1 }
+            Some(i) if i < guard.len() => { displaced = Some(std::mem::replace(&mut guard[i], host)); i }
+            Some(_) => { guard.push(host); guard.len() - 1 }
+        }
+    };
+    if let Some(d) = displaced { parked.lock().push(d); }
 
     let latency_ms = (latency as f64 / sr) * 1000.0;
     let _ = app.emit("vst_latency", serde_json::json!({
+        "index": actual_index,
         "latency_samples": latency,
         "latency_ms": latency_ms,
     }));
+    Ok(actual_index)
+}
+
+/// Remove plugin at chain index. JS must call vst_close_gui first if GUI is open.
+#[tauri::command]
+pub async fn vst_unload(
+    state: State<'_, EngineState>,
+    index: usize,
+) -> Result<(), String> {
+    let (chain, parked) = { let g = state.0.lock(); (g.vst_chain.clone(), g.vst_parked.clone()) };
+    // Remove under the lock; close its GUI and PARK it (keep worker + DLL alive) so a
+    // later reload of the same path reuses it instead of deadlocking on a fresh load.
+    let removed = {
+        let mut guard = chain.lock();
+        if index >= guard.len() {
+            return Err(format!("No plugin at index {index}"));
+        }
+        guard.remove(index)
+    };
+    if let Some(rx) = removed.request_close_gui() {
+        tokio::task::spawn_blocking(move || { let _ = rx.recv(); }).await.ok();
+    }
+    parked.lock().push(removed);
+    Ok(())
+}
+
+/// Move plugin from one position to another (drag-to-reorder).
+#[tauri::command]
+pub async fn vst_move(
+    state: State<'_, EngineState>,
+    from: usize,
+    to: usize,
+) -> Result<(), String> {
+    let chain = state.0.lock().vst_chain.clone();
+    let mut guard = chain.lock();
+    if from >= guard.len() || to >= guard.len() {
+        return Err("Plugin index out of range".into());
+    }
+    if from != to {
+        let plugin = guard.remove(from);
+        guard.insert(to, plugin);
+    }
     Ok(())
 }
 
 #[tauri::command]
-pub async fn vst_unload(state: State<'_, EngineState>) -> Result<(), String> {
-    let slot = state.0.lock().vst_slot.clone();
-    *slot.lock() = None;
-    Ok(())
+pub async fn vst_process_test(
+    state: State<'_, EngineState>,
+    index: Option<usize>,
+) -> Result<(), String> {
+    let chain = state.0.lock().vst_chain.clone();
+    let mut guard = chain.lock();
+    if let Some(i) = index {
+        guard.get_mut(i).ok_or(format!("No plugin at index {i}"))?.process_test()
+    } else {
+        for host in guard.iter_mut() { host.process_test()?; }
+        Ok(())
+    }
 }
 
 #[tauri::command]
-pub async fn vst_process_test(state: State<'_, EngineState>) -> Result<(), String> {
-    let slot = state.0.lock().vst_slot.clone();
-    let mut guard = slot.lock();
-    let host = guard.as_mut().ok_or("No VST plugin loaded")?;
-    host.process_test()
-}
-
-#[tauri::command]
-pub async fn vst_get_latency(state: State<'_, EngineState>) -> Result<u32, String> {
-    let slot = state.0.lock().vst_slot.clone();
-    let guard = slot.lock();
-    let host = guard.as_ref().ok_or("No VST plugin loaded")?;
-    Ok(host.get_latency())
+pub async fn vst_get_latency(
+    state: State<'_, EngineState>,
+    index: usize,
+) -> Result<u32, String> {
+    let chain = state.0.lock().vst_chain.clone();
+    let guard = chain.lock();
+    Ok(guard.get(index).ok_or(format!("No plugin at index {index}"))?.get_latency())
 }
 
 #[tauri::command]
 pub async fn vst_bypass(
     state: State<'_, EngineState>,
+    index: usize,
     bypassed: bool,
 ) -> Result<(), String> {
-    let slot = state.0.lock().vst_slot.clone();
-    let mut guard = slot.lock();
-    let host = guard.as_mut().ok_or("No VST plugin loaded")?;
-    host.set_bypass(bypassed);
+    let chain = state.0.lock().vst_chain.clone();
+    let mut guard = chain.lock();
+    guard.get_mut(index).ok_or(format!("No plugin at index {index}"))?.set_bypass(bypassed);
     Ok(())
 }
 
 #[tauri::command]
-pub async fn vst_open_gui(
-    app: tauri::AppHandle,
+pub async fn vst_global_bypass(
     state: State<'_, EngineState>,
+    bypassed: bool,
 ) -> Result<(), String> {
-    use tauri::Manager;
-    let window = app
-        .get_webview_window("main")
-        .ok_or("Main window not found")?;
-    // Tauri 2.10 exposes hwnd() on Windows. HWND is a transparent newtype around *mut c_void.
-    #[cfg(target_os = "windows")]
-    let hwnd_usize = {
-        let hwnd = window.hwnd().map_err(|e| e.to_string())?;
-        hwnd.0 as usize
-    };
-    #[cfg(not(target_os = "windows"))]
-    let hwnd_usize: usize = 0;
-
-    let slot = state.0.lock().vst_slot.clone();
-    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
-    app.run_on_main_thread(move || {
-        let mut guard = slot.lock();
-        let result = match guard.as_mut() {
-            Some(host) => host.open_gui(hwnd_usize as *mut std::ffi::c_void),
-            None => Err("No VST plugin loaded".into()),
-        };
-        let _ = tx.send(result);
-    })
-    .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())?
+    let chain = state.0.lock().vst_chain.clone();
+    for host in chain.lock().iter_mut() { host.set_bypass(bypassed); }
+    Ok(())
 }
 
+/// Open the plugin editor on its persistent UI worker thread (the thread that
+/// loaded it). Sends OpenGui to the worker, then waits for the attach result
+/// WITHOUT holding the chain lock (so the audio thread is never blocked).
+#[tauri::command]
+pub async fn vst_open_gui(
+    state: State<'_, EngineState>,
+    index: usize,
+) -> Result<(), String> {
+    let chain = state.0.lock().vst_chain.clone();
+    // Brief lock: ask the worker to open; get a reply receiver.
+    let rx = {
+        let guard = chain.lock();
+        let host = guard.get(index).ok_or(format!("No plugin at index {index}"))?;
+        host.request_open_gui()?
+    };
+    // Wait for the worker's attach result off the lock.
+    tokio::task::spawn_blocking(move || {
+        rx.recv().map_err(|_| "UI worker exited unexpectedly".to_string()).and_then(|r| r)
+    }).await.map_err(|e| e.to_string())?
+}
+
+/// Ask the plugin's UI worker to close its editor window; wait for teardown.
 #[tauri::command]
 pub async fn vst_close_gui(
-    app: tauri::AppHandle,
+    state: State<'_, EngineState>,
+    index: usize,
+) -> Result<(), String> {
+    let chain = state.0.lock().vst_chain.clone();
+    let rx = {
+        let guard = chain.lock();
+        guard.get(index).and_then(|h| h.request_close_gui())
+    };
+    if let Some(rx) = rx {
+        tokio::task::spawn_blocking(move || { let _ = rx.recv(); })
+            .await.map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
+/// Close all open plugin GUIs (e.g. before unloading the whole chain).
+#[tauri::command]
+pub async fn vst_close_all_guis(
     state: State<'_, EngineState>,
 ) -> Result<(), String> {
-    let slot = state.0.lock().vst_slot.clone();
-    let (tx, rx) = std::sync::mpsc::channel::<()>();
-    app.run_on_main_thread(move || {
-        if let Some(host) = slot.lock().as_mut() {
-            host.close_gui();
-        }
-        let _ = tx.send(());
-    })
-    .map_err(|e| e.to_string())?;
-    rx.recv().map_err(|e| e.to_string())
+    let chain = state.0.lock().vst_chain.clone();
+    // Collect close receivers under a brief lock, then wait off the lock.
+    let receivers: Vec<_> = {
+        let guard = chain.lock();
+        guard.iter().filter_map(|h| h.request_close_gui()).collect()
+    };
+    tokio::task::spawn_blocking(move || {
+        for rx in receivers { let _ = rx.recv(); }
+    }).await.map_err(|e| e.to_string())
+}
+
+/// Unload all plugins in the chain at once. JS must close all GUIs first.
+#[tauri::command]
+pub async fn vst_unload_all(state: State<'_, EngineState>) -> Result<(), String> {
+    let (chain, parked) = { let g = state.0.lock(); (g.vst_chain.clone(), g.vst_parked.clone()) };
+    // Drain under the lock; close GUIs and PARK the hosts (keep workers + DLLs alive).
+    let drained: Vec<VstHost> = { let mut guard = chain.lock(); guard.drain(..).collect() };
+    let receivers: Vec<_> = drained.iter().filter_map(|h| h.request_close_gui()).collect();
+    tokio::task::spawn_blocking(move || { for rx in receivers { let _ = rx.recv(); } })
+        .await.map_err(|e| e.to_string())?;
+    parked.lock().extend(drained);
+    Ok(())
 }
 
 // ─── Live input commands ─────────────────────────────────────────────────────

@@ -2625,34 +2625,6 @@
   }
 
   /* Status line — dim text under device select; click toggles stream */
-  .gp-status-line {
-    margin: -4px 0 0;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    color: var(--text-dim);
-  }
-  .gp-status-dot {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--text-dim);
-    flex-shrink: 0;
-    transition: background 0.15s;
-  }
-  .gp-status-dot.live { background: var(--cyan); box-shadow: 0 0 6px var(--cyan); }
-  .gp-underrun-badge {
-    margin-left: auto;
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 10px;
-    color: #ffa502;
-    background: rgba(255,165,2,0.12);
-    border: 1px solid rgba(255,165,2,0.35);
-    border-radius: 3px;
-    padding: 1px 5px;
-  }
 
   /* Advanced disclosure */
   .gp-signal-path {
@@ -2728,6 +2700,8 @@
     color: var(--text-primary);
     padding-bottom: 8px;
     border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
   }
   .gp-field {
     display: flex;
@@ -2897,6 +2871,128 @@
     background: var(--red);
     border-color: var(--red);
     color: #fff;
+  }
+
+  /* ── Plugin chain ─── */
+  .gp-chain-hdr-actions { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+  .gp-plugin-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-height: 24px;
+  }
+
+  .gp-plugin-empty {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    color: var(--text-dim);
+    padding: 8px 0 4px;
+  }
+
+  .gp-plugin-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 6px;
+    cursor: default;
+    transition: border-color 0.1s, background 0.1s;
+  }
+  .gp-plugin-row.dragging { opacity: 0.45; border-style: dashed; }
+  .gp-plugin-row.drag-over { border-color: var(--accent); background: var(--accent-glow); }
+
+  .gp-plugin-drag-handle {
+    cursor: grab;
+    color: var(--text-dim);
+    font-size: 14px;
+    padding: 0 2px;
+    flex-shrink: 0;
+    user-select: none;
+  }
+  .gp-plugin-drag-handle:active { cursor: grabbing; }
+
+  .gp-plugin-row-info {
+    flex: 1;
+    min-width: 0;
+  }
+  .gp-plugin-row-name {
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .gp-plugin-row-latency {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+
+  .gp-plugin-row-actions {
+    display: flex;
+    gap: 3px;
+    flex-shrink: 0;
+  }
+  .gp-row-bypass-btn.active { background: #ffa502; border-color: #ffa502; color: #000; }
+  .gp-row-remove-btn { font-size: 16px; font-weight: 700; line-height: 1; }
+
+  .gp-latency-total {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    padding: 2px 0 4px;
+  }
+
+  /* Preset section */
+  .gp-preset-section {
+    border-top: 1px solid var(--border);
+    margin-top: 8px;
+    padding-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .gp-preset-hdr {
+    font-family: 'Rajdhani', sans-serif;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-dim);
+  }
+  .gp-preset-save-row, .gp-preset-load-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+  .gp-preset-input {
+    flex: 1;
+    background: var(--bg-active);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-family: 'Barlow Condensed', sans-serif;
+    font-size: 13px;
+    padding: 4px 8px;
+    outline: none;
+  }
+  .gp-preset-input:focus { border-color: var(--accent); }
+  .gp-preset-select-el { flex: 1; }
+  .btn.btn-xs {
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .gp-card-hdr .btn.btn-xs.active {
+    background: #ffa502;
+    border-color: #ffa502;
+    color: #000;
   }
 
   .gp-plugin-display {
