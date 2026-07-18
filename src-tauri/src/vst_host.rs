@@ -36,7 +36,6 @@ use vst3::{
         },
     },
 };
-use vst3::com_scrape_types::ComRef;
 use vst3::Steinberg::{IPluginBaseTrait, IPluginFactoryTrait};
 use vst3::Steinberg::{int32, int64, TBool};
 
@@ -220,7 +219,6 @@ extern "system" {
     fn LoadCursorW(instance: *mut c_void, name: *const u16) -> *mut c_void;
     fn GetDpiForWindow(hwnd: *mut c_void) -> u32;
     fn SetThreadDpiAwarenessContext(ctx: isize) -> isize;
-    fn GetThreadDpiAwarenessContext() -> isize;
     fn PeekMessageW(msg: *mut MSG, hwnd: *mut c_void, filter_min: u32, filter_max: u32, remove: u32) -> i32;
     fn UpdateWindow(hwnd: *mut c_void) -> i32;
     fn TranslateMessage(msg: *const MSG) -> i32;
@@ -228,7 +226,6 @@ extern "system" {
     fn PostMessageW(hwnd: *mut c_void, msg: u32, wparam: usize, lparam: isize) -> i32;
     fn SetWindowLongPtrW(hwnd: *mut c_void, n_index: i32, dw_new_long: isize) -> isize;
     fn GetWindowLongPtrW(hwnd: *mut c_void, n_index: i32) -> isize;
-    fn PostQuitMessage(exit_code: i32);
     fn CoInitializeEx(reserved: *mut c_void, co_init: u32) -> i32;
     fn CoUninitialize();
 }
@@ -346,10 +343,11 @@ unsafe extern "system" fn vst_wnd_proc(
             *ctx.container_hwnd.lock() = None;
             // Safety: view_ptr is the result of Box::<ComPtr<IPlugView>>::into_raw().
             drop(Box::from_raw(ctx.view_ptr as *mut ComPtr<IPlugView>));
-            // Drop ctx (plugin_name, container_hwnd Arc, result_tx if attach failed).
+            // Drop ctx (container_hwnd Arc clone).
             drop(ctx);
         }
-        PostQuitMessage(0);
+        // No PostQuitMessage: the worker's PeekMessage pump watches container_hwnd,
+        // not WM_QUIT. Posting one would just leave a stray WM_QUIT in the queue.
         return 0;
     }
 
@@ -941,24 +939,6 @@ unsafe fn open_view_on_worker(
     container_hwnd: &Arc<Mutex<Option<usize>>>,
     name: &str,
 ) -> Result<usize, String> {
-    // DPI awareness: Brainworx / JUCE-based editors (bx_bluechorus2) mis-size and render
-    // blank if the thread's DPI-awareness context differs from what they expect. Real
-    // hosts (JUCE's ScopedThreadDPIAwarenessSetter) set the thread to Per-Monitor-V2
-    // around plugin window creation. Apply it for the whole open, restore on exit.
-    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 == (HANDLE)-4.
-    struct DpiGuard(isize);
-    impl Drop for DpiGuard {
-        fn drop(&mut self) {
-            // Safety: restoring a previously-saved thread DPI context handle.
-            #[cfg(target_os = "windows")]
-            unsafe { SetThreadDpiAwarenessContext(self.0); }
-        }
-    }
-    let prev_dpi_ctx = GetThreadDpiAwarenessContext();
-    let _ = SetThreadDpiAwarenessContext(-4);
-    let _dpi_guard = DpiGuard(prev_dpi_ctx);
-    log::info!("[vst-ui] {name}: thread DPI ctx {prev_dpi_ctx} → PMv2(-4)");
-
     log::info!("[vst-ui] {name}: createView(kEditor)");
     let view_raw = ec.createView(ViewType::kEditor);
     if view_raw.is_null() { return Err("createView returned null".into()); }
@@ -1056,6 +1036,19 @@ unsafe fn close_view_on_worker(hwnd: usize, container_hwnd: &Arc<Mutex<Option<us
         }
         if start.elapsed().as_secs() > 3 { break; } // safety cap
     }
+    // Timeout fallback: if the graceful WM_CLOSE path didn't finish, force the
+    // window down. Leaving it alive would orphan it — the worker returns to a
+    // blocking recv() and never pumps this window again (frozen zombie), and a
+    // later OpenGui would overwrite container_hwnd with a second window.
+    if container_hwnd.lock().is_some() {
+        log::warn!("[vst-ui] editor teardown timed out — forcing DestroyWindow");
+        // Safety: hwnd was created on this thread and is still alive (container_hwnd set).
+        DestroyWindow(hwnd as *mut c_void);
+        // Drain so WM_DESTROY runs (frees GuiWindowCtx + view, clears container_hwnd).
+        while PeekMessageW(&mut msg, std::ptr::null_mut(), 0, 0, PM_REMOVE) != 0 {
+            TranslateMessage(&msg); DispatchMessageW(&msg);
+        }
+    }
 }
 
 /// Body of a plugin's UI worker thread. Runs `load()` on this thread, sends the
@@ -1068,8 +1061,18 @@ fn vst_worker_main(
     cmd_rx: std::sync::mpsc::Receiver<VstUiCmd>,
 ) {
     #[cfg(target_os = "windows")]
-    // Safety: STA init for this dedicated UI thread.
-    unsafe { CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED); }
+    unsafe {
+        // Safety: STA init for this dedicated UI thread.
+        CoInitializeEx(std::ptr::null_mut(), COINIT_APARTMENTTHREADED);
+        // Per-Monitor-V2 DPI awareness for the thread's entire life. Brainworx /
+        // JUCE-based editors mis-size or render blank when the DPI context differs
+        // from what they expect, and the SAME thread later pumps the editor's
+        // messages (WM_DPICHANGED etc.) — so the context must be consistent from
+        // load through pump, not just around window creation.
+        // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 == (HANDLE)-4.
+        // Safety: sets a thread-local mode; no restore needed — thread exits with it.
+        SetThreadDpiAwarenessContext(-4);
+    }
 
     let host = match VstHost::load(&path, sample_rate) {
         Ok(h) => h,
@@ -1498,6 +1501,41 @@ impl VstHost {
 
     pub fn set_bypass(&mut self, bypassed: bool) {
         self.bypassed = bypassed;
+    }
+
+    /// Reconfigure the plugin for a new sample rate if it differs from the one it
+    /// was set up with. Used when reviving a parked instance: the pool may hold a
+    /// host configured at a different SR than the current live-input stream, and
+    /// processing at the wrong rate skews all time-based DSP (chorus rates, delays)
+    /// and invalidates the reported latency.
+    ///
+    /// Caller must ensure the host is NOT in the active chain (no concurrent
+    /// process_block) — in practice this runs on a freshly-revived host before it
+    /// is pushed into the chain.
+    pub fn ensure_sample_rate(&mut self, sr: f64) -> Result<(), String> {
+        if (self.sample_rate - sr).abs() < 0.5 {
+            return Ok(());
+        }
+        log::info!(
+            "[vst] {}: reconfiguring {}Hz → {}Hz on revive",
+            self.plugin_name, self.sample_rate, sr
+        );
+        // VST3 lifecycle: setupProcessing is only legal while inactive.
+        // Safety: standard deactivate → reconfigure → reactivate sequence on a
+        // valid processor/component; host is not processing audio (not in chain).
+        unsafe {
+            let _ = self.processor.setProcessing(0u8);
+            let _ = self.component.setActive(0u8);
+            setup_processing(&self.processor, sr)?;
+            let _ = self.component.setActive(1u8);
+            let res = self.processor.setProcessing(1u8);
+            if res != kResultOk && res != kResultFalse && res != kNotImplemented {
+                return Err(format!("setProcessing after SR change failed: 0x{res:08X}"));
+            }
+            self.latency_samples = self.processor.getLatencySamples();
+        }
+        self.sample_rate = sr;
+        Ok(())
     }
 
     pub fn name(&self) -> &str { &self.plugin_name }
