@@ -479,8 +479,15 @@ pub async fn vst_load(
         let mut p = parked.lock();
         p.iter().position(|h| h.path() == path).map(|pos| p.remove(pos))
     };
-    let mut host = match revived {
-        Some(mut h) => { h.set_bypass(false); h }
+    let host = match revived {
+        Some(mut h) => {
+            h.set_bypass(false);
+            // Pool may hold a host configured at a different SR than the current
+            // stream — reconfigure before it re-enters the chain, or all its
+            // time-based DSP runs at the wrong rate.
+            h.ensure_sample_rate(sr)?;
+            h
+        }
         None => {
             let path2 = path.clone();
             tokio::task::spawn_blocking(move || VstHost::spawn_and_load(&path2, sr))
@@ -489,7 +496,6 @@ pub async fn vst_load(
         }
     };
     let latency = host.latency_samples;
-    let _ = &mut host;
 
     // Replacing an existing slot parks the old host (never drop a host mid-session —
     // its engine may be a process-global singleton). Capture any displaced host first.
@@ -502,7 +508,14 @@ pub async fn vst_load(
             Some(_) => { guard.push(host); guard.len() - 1 }
         }
     };
-    if let Some(d) = displaced { parked.lock().push(d); }
+    if let Some(d) = displaced {
+        // Close its editor before parking — otherwise the window stays open and
+        // interactive for a plugin that's no longer in the chain.
+        if let Some(rx) = d.request_close_gui() {
+            tokio::task::spawn_blocking(move || { let _ = rx.recv(); }).await.ok();
+        }
+        parked.lock().push(d);
+    }
 
     let latency_ms = (latency as f64 / sr) * 1000.0;
     let _ = app.emit("vst_latency", serde_json::json!({
