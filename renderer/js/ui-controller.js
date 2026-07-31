@@ -3523,6 +3523,31 @@ document.getElementById('clear-artwork-btn').addEventListener('click', async () 
   }
 });
 
+// ─── EXPORT LIBRARY JSON ─────────────────────────────────────
+document.getElementById('export-library-json-btn').addEventListener('click', async () => {
+  try {
+    const allTracks = await LibraryManager.all();
+    const exportFields = ['id','name','artist','album','title','format','duration','nativeDuration',
+                          'sampleRate','size','semitones','cents','volume','path','addedAt'];
+    const data = allTracks.map(t => {
+      const rec = {};
+      for (const k of exportFields) if (k in t) rec[k] = t[k];
+      return rec;
+    });
+    const blob = new Blob([JSON.stringify({ version: 1, exportedAt: Date.now(), tracks: data }, null, 2)],
+                          { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `stagehand-library-${new Date().toISOString().slice(0,10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    notify(`Exported ${data.length} track${data.length === 1 ? '' : 's'}`, '');
+  } catch(e) {
+    notify('Export failed', 'error');
+  }
+});
+
 // ─── WINDOW CONTROLS ─────────────────────────────────────────
 (function() {
   const minBtn   = document.getElementById('win-minimize');
