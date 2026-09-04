@@ -580,6 +580,14 @@ impl AudioEngine {
     pub fn new(app: AppHandle) -> Result<Self, String> {
         let (stream, handle) = OutputStream::try_default()
             .map_err(|e| format!("Audio output init failed: {e}"))?;
+        {
+            use cpal::traits::{DeviceTrait, HostTrait};
+            let name = cpal::default_host()
+                .default_output_device()
+                .and_then(|d| d.name().ok())
+                .unwrap_or_else(|| "<unknown>".into());
+            log::info!("[stagehand] audio output device (default at startup): {name}");
+        }
 
         let sink_arc: Arc<Mutex<Option<Sink>>> = Arc::new(Mutex::new(None));
         let duration_us = Arc::new(AtomicU64::new(0));
@@ -793,6 +801,7 @@ impl AudioEngine {
             // sr/ch already validated non-zero above
             // If decoded is already available, use RubberbandSource for instant seek support
             if let Some(decoded) = self.decoded_slot.lock().clone() {
+                log::info!("[stagehand] play source = rubberband(passthrough, decoded slot)");
                 let start_frame = (offset_secs * decoded.sample_rate as f64) as usize;
                 let source = RubberbandSource::new(
                     decoded, start_frame, 0, 0.0, 1.0,
@@ -811,6 +820,7 @@ impl AudioEngine {
                 );
                 match stream_result {
                     Ok(source) => {
+                        log::info!("[stagehand] play source = streaming (symphonia)");
                         let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
                         sink.set_volume(volume);
                         sink.append(source);
@@ -924,6 +934,7 @@ impl AudioEngine {
 
     pub fn set_output_device(&mut self, name: &str, is_asio: bool) -> Result<(), String> {
         use cpal::traits::{DeviceTrait, HostTrait};
+        log::info!("[stagehand] set_output_device: name='{name}' is_asio={is_asio}");
         self.stop_sink();
 
         #[cfg(target_os = "windows")]

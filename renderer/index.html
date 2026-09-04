@@ -200,6 +200,17 @@
           <span>Guitar</span>
           <span class="nav-badge hidden" id="guitar-badge">●</span>
         </div>
+
+        <div class="nav-item" data-panel="perform">
+          <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="5 3 19 12 5 21 5 3"/></svg></span>
+          <span>Perform</span>
+        </div>
+
+        <div class="nav-item" data-panel="queue">
+          <span class="nav-icon"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M3 12h18"/><path d="M3 18h12"/></svg></span>
+          <span>Processing Queue</span>
+          <span class="nav-badge hidden" id="queue-badge">0</span>
+        </div>
       </div>
 
       <div id="sidebar-bottom">
@@ -435,6 +446,38 @@
           </div>
 
         </div>
+      </div>
+
+      <!-- PERFORM PANEL -->
+      <div class="panel" id="panel-perform">
+        <div class="panel-header">
+          <div class="panel-title">Perform</div>
+          <span class="library-count" id="perform-count-label"></span>
+        </div>
+        <p class="perform-intro">Songs with a click track. Playback starts with a 2-bar count-off in the song's opening time signature.</p>
+        <div id="perform-list" class="perform-list"></div>
+        <div id="perform-transport" class="perform-transport hidden">
+          <div class="perform-transport-top">
+            <span id="perform-current-name" class="perform-current-name">—</span>
+            <span id="perform-status" class="perform-status"></span>
+          </div>
+          <div class="perform-transport-row">
+            <button id="perform-play-btn" class="perform-play-btn">▶  Count in</button>
+            <div class="perform-offset-group">
+              <label for="perform-offset">Click offset</label>
+              <input type="range" id="perform-offset" min="-150" max="150" step="5" value="0">
+              <span id="perform-offset-val" class="perform-offset-val">0 ms</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PROCESSING QUEUE PANEL -->
+      <div class="panel" id="panel-queue">
+        <div class="panel-header">
+          <div class="panel-title">Processing Queue</div>
+        </div>
+        <div id="queue-list" class="queue-list"></div>
       </div>
 
     </div><!-- /main -->
@@ -684,6 +727,7 @@
 <div id="ctx-menu">
   <div class="ctx-item" data-action="play">Play</div>
   <div class="ctx-item" data-action="info">Info</div>
+  <div class="ctx-item" data-action="create-click-track">Create Click Track</div>
   <div class="ctx-item" data-action="rename">Rename</div>
   <div class="ctx-item ctx-danger ctx-hidden" data-action="remove-from-playlist">Remove from Playlist</div>
   <div class="ctx-item ctx-warn ctx-hidden" data-action="relocate">⚠ Relocate file…</div>

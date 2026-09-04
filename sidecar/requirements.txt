@@ -1,0 +1,24 @@
+# Stagehand click-track sidecar (Python 3.10 ONLY — madmom/BeatNet do not build on 3.11+)
+#
+# Install (local dev), from repo root:
+#   py -3.10 -m venv sidecar/.venv
+#   sidecar/.venv/Scripts/pip install --index-url https://download.pytorch.org/whl/cpu torch
+#   sidecar/.venv/Scripts/pip install -r sidecar/requirements.txt
+#
+# torch is installed separately from the CPU wheel index (above) to avoid pulling
+# the ~2.5GB CUDA build.
+
+numpy<1.24
+Cython<3
+mido>=1.2,<1.3
+librosa>=0.10,<0.11
+soundfile>=0.12
+# BeatNet imports pyaudio unconditionally at module load (streaming-mode support),
+# even though we only ever use offline mode — required or `import BeatNet` fails.
+pyaudio>=0.2.13
+
+# madmom 0.16.1 (PyPI) breaks on modern numpy (np.float) and Python >=3.10
+# (collections.MutableSequence). The git main branch (0.17.dev) is fixed.
+madmom @ git+https://github.com/CPJKU/madmom@main
+
+BeatNet==1.1.3
