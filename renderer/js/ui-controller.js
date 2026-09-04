@@ -9,6 +9,7 @@ import { renderWaveform, buildWaveformLayers, renderPlayerWaveform } from './wav
 import * as ArtworkManager from './artwork-manager.js';
 import { listen, invoke, writeAudioFile, scanLibraryDir, convertFileSrc } from './tauri-api.js';
 import { initGuitarPanel } from './guitar-panel.js';
+import { initPerformPanel, markQueued, refreshPerformData, isPerforming } from './perform-panel.js';
 
 
 // ─── KEY CONSTANTS ────────────────────────────────────────────
@@ -1524,6 +1525,7 @@ async function loadLibrary() {
     // No background loads — tracks decode on first play only
     libraryLoaded = true;
     renderCurrentTab();
+    refreshPerformData();
     // Startup file-presence scan — mark any tracks whose file no longer exists
     scanMissingFiles().catch(() => {});
     // Warm artwork cache from IDB, repaint, then background-resolve any still-missing art
@@ -1614,6 +1616,7 @@ async function handleRelocate(trackId) {
 async function playTrack(id, fromPlaylistId, slotIdx) {
   const track = tracks.find(t => t.id === id);
   if (!track) return;
+  if (isPerforming()) { notify('Stop the Perform session first', 'error'); return; }
 
   // Track which playlist context launched this playback
   if (fromPlaylistId !== undefined) {
@@ -3632,6 +3635,19 @@ async function loadDeviceList() {
       if (savedOpt) {
         sel.querySelectorAll('option').forEach(o => o.selected = false);
         savedOpt.selected = true;
+        // Actually apply it to the audio engine. Without this the dropdown shows
+        // the saved device while Rust stays on whatever Windows' default was at
+        // startup — silent playback into e.g. a virtual "Steam Streaming Speakers"
+        // device, with no error anywhere.
+        const dev = _deviceList.find(d => d.name === savedDevice);
+        try {
+          await invoke('audio_set_device', { deviceName: savedDevice, isAsio: dev?.is_asio ?? false });
+        } catch (err) {
+          console.error('restoring saved audio device failed:', err);
+          notify(`Saved audio device unavailable: ${savedDevice}`, 'error');
+        }
+      } else {
+        notify(`Saved audio device not found: ${savedDevice}`, 'error');
       }
     }
 
@@ -3976,6 +3992,22 @@ document.querySelectorAll('.nav-item[data-panel]').forEach(item => {
 
 // ─── GUITAR PANEL INIT ───────────────────────────────────────
 initGuitarPanel();
+
+// ─── PERFORM / PROCESSING QUEUE PANELS INIT ──────────────────
+initPerformPanel({
+  getTracks: () => tracks,
+  getMasterVolume: () => masterVolume,
+  notify: (msg, type) => notify(msg, type),
+  onBeforePerform: () => {
+    // Hand the Rust audio engine over to Perform mode: pause whatever the
+    // library transport was playing so the two don't fight over the sink.
+    const p = currentPlayingId && players[currentPlayingId];
+    if (p && p.isPlaying) { p.isPlaying = false; p._paused = false; }
+    currentPlayingId = null;
+    syncMiniplayerPlayBtn(false);
+  },
+  onClickTrackReady: () => { renderCurrentTab(); },
+});
 
 
 // ─── TAB SWITCHING ───────────────────────────────────────────
@@ -4444,9 +4476,13 @@ function showCtxMenu(e, trackId, plContext = null) {
   ctxMenu.querySelector('[data-action="remove-from-playlist"]')
     .classList.toggle('ctx-hidden', !plContext);
   // "Relocate file…" only visible when the track's file is missing
-  const isMissing = !!tracks.find(t => t.id === trackId)?._missing;
+  const _t = tracks.find(t => t.id === trackId);
+  const isMissing = !!_t?._missing;
   ctxMenu.querySelector('[data-action="relocate"]')
     .classList.toggle('ctx-hidden', !isMissing);
+  // "Create Click Track" → "Regenerate" once a track already has one
+  const cct = ctxMenu.querySelector('[data-action="create-click-track"]');
+  if (cct) cct.textContent = _t?.clickTrack?.status === 'ready' ? 'Regenerate Click Track' : 'Create Click Track';
   const x = Math.min(e.clientX, window.innerWidth - 160);
   const y = Math.min(e.clientY, window.innerHeight - 160);
   ctxMenu.style.left = x + 'px';
@@ -4474,6 +4510,22 @@ ctxMenu.addEventListener('click', e => {
   } else if (action === 'info') {
     const ids = selectedIds.size > 0 ? [...selectedIds] : [ctxMenuTrackId];
     showInfoModal(ids);
+  } else if (action === 'create-click-track') {
+    const ids = selectedIds.size > 0 ? [...selectedIds] : [ctxMenuTrackId];
+    const queued = [];
+    for (const id of ids) {
+      const t = tracks.find(x => x.id === id);
+      if (!t || !t.filePath) continue;
+      t.clickTrack = { ...(t.clickTrack || {}), status: 'queued' };
+      invoke('clicktrack_enqueue', { trackId: id, path: t.filePath }).catch(err => {
+        notify('Could not queue click track: ' + (err?.message || err), 'error');
+      });
+      queued.push(id);
+    }
+    if (queued.length) {
+      markQueued(queued);
+      notify(`Queued ${queued.length} click track${queued.length > 1 ? 's' : ''} for analysis`, 'ok');
+    }
   } else if (action === 'rename') {
     startRenameById(ctxMenuTrackId);
   } else if (action === 'delete') {

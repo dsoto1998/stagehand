@@ -34,11 +34,13 @@
 - **Settings panel** — Multi-tab (General, Display, Audio, Export). General tab: artwork cache clear, keyboard shortcuts editor.
 - **Guitar panel (Live Input)** — Live audio input via WASAPI or ASIO. Input device picker (with refresh button + 5s hot-plug poll when panel visible), input source (mono/stereo channel selection), input/output gain knobs, mic-icon mute toggle, buffer size, sample rate. Stream auto-starts on app open from saved config; debounced restart on settings change. Input level meter (5px bar, green→amber→red, 100ms poll, 0.80 decay). Signal path diagram (In → Gain → Plugin → Out) shows live state. Last plugin auto-reloads on init.
 - **VST3 plugin chain** — Load multiple .vst3 plugins (flat file or bundle) through the Guitar panel, drag-to-reorder, per-plugin + global bypass, presets. Plugins process the live input signal in series in the audio output callback. Each plugin runs on its own persistent UI worker thread (load + editor on one STA thread) so native editor GUIs open without deadlock — tested with Helix Native (separate-component) and Lindell 80 Channel (Plugin Alliance, graphics-singleton). Supports open/close native plugin GUI (floating Win32 window) and latency reporting.
-- **GitHub Actions release** — `.github/workflows/release.yml` builds and publishes Windows installer on `v*` tag push.
-- **Test suite** — Vitest unit tests in `tests/` covering library-manager, metronome, track-player, artwork-manager, ui-utils. 192 tests total.
+- **Click Track + Perform mode** — Right-click a song → "Create Click Track". A frozen Python **sidecar** (`sidecar/beat_detect.py`, [BeatNet](https://github.com/mjhydri/BeatNet) offline/DBN, CC BY 4.0) analyzes the recording for beat times, downbeats and starting meter. Jobs run one-at-a-time on a Rust worker thread (`src-tauri/src/click_track.rs`); the **Processing Queue** sidebar panel shows live progress. Results stored as `$APPDATA/clicktracks/<trackId>.json` + a `clickTrack` field on the track record. The **Perform** sidebar panel lists only songs with a ready click track and plays them with a 2-bar count-off (opening time signature) via the Web Audio metronome, re-anchored to the reported song position on every `playback_progress` event; a "click offset" trim slider (±150 ms, `localStorage`) covers residual drift.
+- **GitHub Actions release** — `.github/workflows/release.yml` builds and publishes Windows installer on `v*` tag push. Also builds the beat-detection sidecar (Python 3.10 + PyInstaller) before the Tauri build.
+- **Test suite** — Vitest unit tests in `tests/` covering library-manager, metronome, track-player, artwork-manager, ui-utils, click-utils. 208 tests total.
 
 ### Known Issues / In Progress
 - Playlists tab: empty state only ("No playlists yet") — CRUD is Phase 5 scope.
+- Click Track sidecar (`src-tauri/binaries/beat_detect/`) is git-ignored (except a tracked `.gitkeep` — Tauri hard-fails on a zero-match resources glob) and ~400 MB when built. For local dev see `sidecar/README.md` (Python 3.10 venv + PyInstaller, or set `STAGEHAND_BEAT_DETECT=python:<path to sidecar/.venv/Scripts/python.exe>` to run unfrozen). CI rebuilds it on release. `cargo build`/`cargo check` confirmed working 2026-09-04 (toolchain: `C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools`, NOT `F:\visual-studio` which is missing `vcvarsall.bat`/`include/`/`lib\x64`). madmom built from git successfully in the 3.10 venv. Not yet verified end-to-end (real BeatNet inference + Perform playback untested).
 
 ---
 
@@ -49,6 +51,11 @@
 stagehand/
 ├── package.json                 ← scripts, deps (rubberband-web, vitest, tauri CLI)
 ├── vitest.config.js             ← test configuration (node environment, fake-indexeddb)
+├── sidecar/                     ← beat-detection sidecar (Python 3.10; frozen w/ PyInstaller)
+│   ├── beat_detect.py           ← BeatNet offline/DBN runner → beat-grid JSON
+│   ├── beat_detect.spec         ← PyInstaller onedir spec (madmom hidden imports)
+│   ├── requirements.txt         ← torch(CPU)/librosa/madmom@git/BeatNet
+│   └── README.md                ← local dev + CI build instructions
 ├── renderer/
 │   ├── index.html               ← active entry point (loaded by Tauri webview)
 │   ├── style.css
@@ -59,6 +66,8 @@ stagehand/
 │       ├── ui-controller.js     ← DOM bindings, virtual scroll, tabs, miniplayer, shortcuts
 │       ├── ui-utils.js          ← pure utility fns (no DOM/state): formatTime, formatSize, matchShortcut, matchesQuery, sortTracks
 │       ├── guitar-panel.js      ← Guitar panel: live input device picker, gain knobs, VST plugin loader
+│       ├── perform-panel.js     ← Processing Queue + Perform panels: click-track jobs, count-off playback
+│       ├── click-utils.js       ← pure: deriveNumerator, buildClickSchedule (count-off + beat grid)
 │       ├── metronome.js         ← Web Audio lookahead scheduler + tap tempo
 │       ├── waveform.js          ← Canvas waveform renderer
 │       ├── artwork-manager.js   ← artwork resolution: embedded → iTunes → IDB cache
@@ -80,7 +89,8 @@ stagehand/
 │   │   ├── audio.rs             ← AudioEngine struct: rodio sink, Rubber Band, prefetch cache, vst_slot Arc
 │   │   ├── commands.rs          ← all #[tauri::command] handlers
 │   │   ├── live_input.rs        ← LiveInputEngine: cpal input→ring buffer→VST→output
-│   │   └── vst_host.rs          ← VstHost: VST3 COM loading, processing, GUI (Windows)
+│   │   ├── vst_host.rs          ← VstHost: VST3 COM loading, processing, GUI (Windows)
+│   │   └── click_track.rs       ← ClickJobQueue: worker thread, decode→mono WAV→sidecar→JSON, emits clicktrack_* events
 │   └── vendor/
 │       └── rubberband/          ← vendored Rubber Band C++ source (compiled at build time)
 ├── tests/
@@ -231,10 +241,21 @@ All commands are in `src-tauri/src/commands.rs` and registered in `lib.rs`.
 | `live_input_set_mute` | Mute/unmute input signal |
 | `live_input_status` | Return `LiveInputStatus` (running, device, channels, SR, underruns, peak_level) |
 
+### Click Track (`src-tauri/src/click_track.rs`)
+| Command | Purpose |
+|---------|---------|
+| `clicktrack_enqueue` | Queue a track for beat analysis (`{trackId, path}`); dedupes in-flight jobs |
+| `clicktrack_status` | `Vec<{track_id, state, message?}>` — rebuild the queue panel after restart |
+| `clicktrack_cancel` | Drop a queued job (best-effort; a running job runs to completion) |
+| `clicktrack_get` | Read `$APPDATA/clicktracks/<trackId>.json` (beat grid) for a Perform session |
+
 ### Rust Events (Tauri emit → JS listen)
 | Event | Payload | Purpose |
 |-------|---------|---------|
 | `vst_latency` | `{ latency_ms: number }` | Plugin reports latency after load; Guitar panel updates display |
+| `clicktrack_progress` | `{ track_id, stage, message? }` | Job moved to queued/decoding/analyzing |
+| `clicktrack_done` | `{ track_id, numerator, tempo_bpm, path }` | Beat grid written; frontend persists `clickTrack` meta |
+| `clicktrack_error` | `{ track_id, message }` | Analysis failed / cancelled |
 
 ---
 
@@ -249,9 +270,11 @@ All commands are in `src-tauri/src/commands.rs` and registered in `lib.rs`.
 | `library-manager.js` | IndexedDB CRUD: all object stores |
 | `track-player.js` | Thin wrapper around Tauri IPC. Holds per-track state (semitones, cents, speed, volume, loopStart/End). Does NOT touch Web Audio. |
 | `guitar-panel.js` | Live input device picker, gain knobs, VST plugin loader/bypass/GUI. Config persisted in `localStorage`. |
+| `perform-panel.js` | Processing Queue + Perform panels. `initPerformPanel({getTracks, getMasterVolume, notify, onBeforePerform, onClickTrackReady})`. Listens for `clicktrack_*` + `playback_progress`; drives `Metronome.startClickSchedule` / `reanchorClickSchedule`. |
+| `click-utils.js` | Pure: `deriveNumerator`, `buildClickSchedule` (count-off + beat grid). Unit-tested. |
 | `tauri-api.js` | `invoke()` / `listen()` / `convertFileSrc()` / `writeAudioFile()` / `scanLibraryDir()` shims over `window.__TAURI__` |
 | `artwork-manager.js` | Resolve artwork: IDB cache → embedded (jsmediatags) → iTunes Search API fallback |
-| `metronome.js` | Lookahead scheduler using `AudioContext.currentTime` |
+| `metronome.js` | Lookahead scheduler using `AudioContext.currentTime`. Also the array-driven `startClickSchedule` / `reanchorClickSchedule` / `setClickOffset` / `stopClickSchedule` used by Perform mode. |
 | `waveform.js` | Canvas renderer using cached peaks array |
 | `icons.js` | Exported `ICONS` object with inline SVG strings |
 
@@ -335,9 +358,15 @@ Key behaviors:
   peaks:           Float32Array | null,  // 600-bin waveform peaks from Rust
   path:            String,   // native filesystem path (Tauri mode)
   arrayBuffer:     ArrayBuffer,  // raw audio bytes (browser fallback only)
-  addedAt:         Number    // Date.now()
+  addedAt:         Number,   // Date.now()
+  bpm:             Number|null,
+  keyRoot:         Number|null,  // 0–11
+  keyMode:         'major'|'minor'|null,
+  timeSig:         String,   // e.g. "4/4" — auto-set from click-track meter if unset
+  clickTrack:      { status: 'queued'|'analyzing'|'ready'|'error', numerator: Number, tempoBpm: Number|null, generatedAt: Number } | undefined
 }
 ```
+Beat times themselves live on disk (`$APPDATA/clicktracks/<id>.json`), not in the track record — fetched via `clicktrack_get` when a Perform session starts.
 
 **Critical:** IndexedDB `put()` transfers ArrayBuffers (structured clone). Always `.slice(0)` before storing:
 ```js
@@ -426,6 +455,14 @@ npm run setup          # npm install + copies rubberband-processor.js from node_
 - Triggered by pushing a `v*` tag (e.g. `v1.1.0`)
 - Runs on `windows-latest`, builds the Tauri app, creates a GitHub release with the installer attached
 - Uses `tauri-apps/tauri-action@v0` for build + upload in a single step
+
+### Beat-detection sidecar build (release only)
+- Before the Tauri build: `actions/setup-python@v5` (3.10) → `pip install` torch(CPU) + `sidecar/requirements.txt` + pyinstaller → `pyinstaller sidecar/beat_detect.spec` → copy `sidecar/dist/beat_detect` → `src-tauri/binaries/beat_detect/`.
+- `tauri.conf.json` `bundle.resources` maps `binaries/beat_detect/**/*` → `beat_detect` in the installer's resource dir. Glob form tolerates zero matches, so `tauri:dev` / `tauri:build` still work without the sidecar present.
+- `madmom` is installed from git `main` (0.17.dev) — the 0.16.1 PyPI release breaks on modern numpy / Python ≥3.10. `numpy<1.24` + `Cython<3` must be installed **before** the `-r requirements.txt` step so madmom's `setup.py` can build.
+- Local dev without building the sidecar: `set STAGEHAND_BEAT_DETECT=python:<path to sidecar/.venv/Scripts/python.exe>` (venv from `sidecar/README.md`; Rust runs `sidecar/beat_detect.py` with that interpreter) or point it at a built `beat_detect.exe`.
+- ASIO SDK for local `cargo build`: `CPAL_ASIO_DIR` must point at the extracted SDK folder (e.g. `F:\Claude\stagehand\asio\ASIOSDK`), `LIBCLANG_PATH` at LLVM's `bin` dir. Must run from an MSVC dev shell (`vcvars64.bat`) — a bare shell without `LIB`/`INCLUDE` set fails with `LNK1104: cannot open file 'msvcrt.lib'`.
+- The Rust side (`click_track.rs`) runs the sidecar with `std::process::Command` (not `tauri-plugin-shell`) — no shell capability needed.
 
 ### tauri-action@v0 gotchas
 - **`tauriScript` is a prefix, not a full command.** The action always appends `build` to it. `tauriScript: npm run tauri:build` becomes `npm run tauri:build build` — wrong. The correct pattern is to have a `"tauri": "tauri"` script in `package.json` and let the action use its default (`npm run tauri build`).

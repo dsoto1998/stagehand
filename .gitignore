@@ -10,3 +10,17 @@ todo/
 # Debug dumps (large, local only)
 .debug/
 tauri-dev.log
+tauri-dev-launch.log
+_dev.bat
+
+# Beat-detection sidecar: frozen binary (~400 MB, rebuilt by CI) + local venv/build
+# (.gitkeep kept so tauri.conf.json's resources glob always matches >=1 file —
+#  Tauri hard-fails the build on a zero-match glob)
+src-tauri/binaries/*
+!src-tauri/binaries/beat_detect/
+src-tauri/binaries/beat_detect/*
+!src-tauri/binaries/beat_detect/.gitkeep
+sidecar/.venv/
+sidecar/build/
+sidecar/dist/
+sidecar/__pycache__/

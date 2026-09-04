@@ -1,9 +1,11 @@
 pub mod audio;
+pub mod click_track;
 pub mod commands;
 pub mod live_input;
 pub mod vst_host;
 
-use commands::{EngineState, LiveInputState};
+use commands::{EngineState, LiveInputState, ClickTrackState};
+use click_track::ClickJobQueue;
 use audio::AudioEngine;
 use live_input::LiveInputEngine;
 use std::sync::Arc;
@@ -41,15 +43,17 @@ pub fn run() {
                         .build(),
                 )?;
             }
-            // Ensure library directory exists for filesystem-backed audio storage
+            // Ensure library + click-track directories exist for filesystem-backed storage
             if let Ok(data_dir) = app.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(data_dir.join("library"));
+                let _ = std::fs::create_dir_all(data_dir.join("clicktracks"));
             }
             let engine = AudioEngine::new(app.handle().clone())
                 .expect("Failed to init audio engine");
             let vst_chain = engine.vst_chain.clone();
             app.manage(EngineState(Mutex::new(engine)));
             app.manage(LiveInputState(Arc::new(Mutex::new(LiveInputEngine::new(vst_chain)))));
+            app.manage(ClickTrackState(ClickJobQueue::new(app.handle().clone())));
 
             for code in [
                 Code::MediaPlayPause,
@@ -106,6 +110,10 @@ pub fn run() {
             commands::live_input_set_output_gain,
             commands::live_input_set_mute,
             commands::live_input_status,
+            commands::clicktrack_enqueue,
+            commands::clicktrack_status,
+            commands::clicktrack_cancel,
+            commands::clicktrack_get,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

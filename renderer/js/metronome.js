@@ -157,7 +157,97 @@ function setAccent(enabled) { accentEnabled = enabled; }
 function getAccent() { return accentEnabled; }
 function isActive() { return isRunning; }
 
-export const Metronome = { start, stop, setBpm, getBpm, setVolume, setSubdivision, setTimeSignature, setBeatAccent, getTimeSignature, getBeatAccents, setCustomBuffer, getCustomBuffer, setAccent, getAccent, isActive, onBeat };
+// ─── CLICK SCHEDULE (Perform mode) ───────────────────────────
+// Array-driven scheduler, independent of the modulo scheduler above. Plays a
+// precomputed list of clicks whose times are given on the *song audio* timeline
+// (seconds from the start of the recording, matching BeatNet's beat times), then
+// mapped onto the Web Audio clock via a movable anchor that Perform re-syncs on
+// every playback_progress event.
+
+let clickSchedule = [];
+let clickScheduled = [];  // parallel bool array — true once a click has actually
+                           // been handed to scheduleNote() (an irrevocable
+                           // oscillator.start() call). Never re-fire an index
+                           // once true, even if reanchoring shifts its mapped time.
+let clickIdx = 0;         // monotonic scan cursor — reanchor must NOT rewind this,
+                           // or an already-scheduled click gets scheduled again
+                           // under the new anchor = an audible doubled/phased click.
+let clickAnchorCtx = 0;    // ctx.currentTime that corresponds to clickAnchorSong
+let clickAnchorSong = 0;   // song-timeline seconds
+let clickOffset = 0;       // user trim, seconds (+ = click later)
+let clickTimer = null;
+let clickRunning = false;
+const CLICK_LOOKAHEAD = 0.12;
+
+function clickCtxTime(ck) {
+  return clickAnchorCtx + (ck.songT - clickAnchorSong) + clickOffset;
+}
+
+function clickScheduler() {
+  if (!clickRunning) return;
+  const c = getCtx();
+  const horizon = c.currentTime + CLICK_LOOKAHEAD;
+  while (clickIdx < clickSchedule.length) {
+    if (clickScheduled[clickIdx]) { clickIdx++; continue; }
+    const ck = clickSchedule[clickIdx];
+    const t = clickCtxTime(ck);
+    if (t >= horizon) break;
+    if (t >= c.currentTime) scheduleNote(t, ck.accent ? 'accent' : 'quarter');
+    clickScheduled[clickIdx] = true;
+    clickIdx++;
+  }
+  if (clickIdx >= clickSchedule.length) stopClickSchedule();
+}
+
+/**
+ * @param clicks  [{songT, accent}] sorted ascending by songT
+ * @param anchorCtxTime   ctx.currentTime value that maps to anchorSongTime
+ * @param anchorSongTime  song-timeline seconds at anchorCtxTime
+ * @param offsetSec       initial user trim
+ */
+function startClickSchedule(clicks, { anchorCtxTime, anchorSongTime, offsetSec = 0 } = {}) {
+  resume();
+  clickSchedule = clicks.slice().sort((a, b) => a.songT - b.songT);
+  clickScheduled = new Array(clickSchedule.length).fill(false);
+  clickIdx = 0;
+  clickOffset = offsetSec;
+  clickRunning = true;
+  clickAnchorCtx = anchorCtxTime;
+  clickAnchorSong = anchorSongTime;
+  clearInterval(clickTimer);
+  clickScheduler();
+  clickTimer = setInterval(clickScheduler, SCHEDULE_INTERVAL);
+}
+
+/**
+ * Move the ctx<->song mapping so anchorSongTime now lands at anchorCtxTime.
+ * Only ever affects clicks the scheduler hasn't committed to the Web Audio
+ * timeline yet (clickScheduled[i] === false) — a click that already got a real
+ * oscillator.start() call is never rescheduled, so this is safe to call as
+ * often as playback_progress fires without ever producing a doubled click.
+ */
+function reanchorClickSchedule(anchorCtxTime, anchorSongTime) {
+  if (!clickRunning) return;
+  clickAnchorCtx = anchorCtxTime;
+  clickAnchorSong = anchorSongTime;
+  // Note: clickIdx is NOT rewound — it only ever advances (in clickScheduler),
+  // so already-scheduled clicks can never be revisited.
+}
+
+function setClickOffset(sec) { clickOffset = sec; }
+
+function stopClickSchedule() {
+  clickRunning = false;
+  clearInterval(clickTimer);
+  clickTimer = null;
+  clickSchedule = [];
+  clickScheduled = [];
+  clickIdx = 0;
+}
+
+function isClickScheduleActive() { return clickRunning; }
+
+export const Metronome = { start, stop, setBpm, getBpm, setVolume, setSubdivision, setTimeSignature, setBeatAccent, getTimeSignature, getBeatAccents, setCustomBuffer, getCustomBuffer, setAccent, getAccent, isActive, onBeat, startClickSchedule, reanchorClickSchedule, setClickOffset, stopClickSchedule, isClickScheduleActive };
 
 
 // ─── TAP TEMPO ───────────────────────────────────────────────

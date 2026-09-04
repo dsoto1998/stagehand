@@ -6,10 +6,13 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use crate::audio::{AudioEngine, LoadResult, PrefetchEntry, decode_to_samples, compute_peaks};
 use crate::vst_host::{VstHost, VstPluginInfo, VstChainEntry};
 use crate::live_input::{LiveInputEngine, LiveInputConfig, LiveInputStatus, InputDeviceInfo, enumerate_input_devices};
+use crate::click_track::{ClickJobQueue, JobStatus};
 
 pub struct EngineState(pub Mutex<AudioEngine>);
 
 pub struct LiveInputState(pub Arc<Mutex<LiveInputEngine>>);
+
+pub struct ClickTrackState(pub ClickJobQueue);
 
 // ─── Library ─────────────────────────────────────────────────────────────────
 
@@ -191,6 +194,7 @@ pub async fn audio_play(
     loop_start: f64,
     loop_end: f64,
 ) -> Result<(), String> {
+    log::info!("[stagehand] audio_play: offset={offset_secs:.2}s semitones={semitones} speed={speed} volume={volume}");
     let mut waited_ms = 0u32;
     loop {
         let result = {
@@ -199,15 +203,22 @@ pub async fn audio_play(
             engine.play_with_params(offset_secs, semitones, cents, speed, volume)
         }; // engine lock released before any sleep
         match result {
-            Ok(()) => return Ok(()),
+            Ok(()) => {
+                log::info!("[stagehand] audio_play: started");
+                return Ok(());
+            }
             Err(ref e) if e == "decode_pending" => {
                 if waited_ms >= 8000 {
+                    log::warn!("[stagehand] audio_play: decode timeout after {waited_ms}ms");
                     return Err("Audio decode timeout (format may not be supported)".into());
                 }
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 waited_ms += 100;
             }
-            Err(e) => return Err(e),
+            Err(e) => {
+                log::warn!("[stagehand] audio_play failed: {e}");
+                return Err(e);
+            }
         }
     }
 }
@@ -748,4 +759,48 @@ pub async fn live_input_status(
     state: State<'_, LiveInputState>,
 ) -> Result<LiveInputStatus, String> {
     Ok(state.0.lock().status())
+}
+
+// ─── Click track ─────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn clicktrack_enqueue(
+    state: State<'_, ClickTrackState>,
+    track_id: String,
+    path: String,
+) -> Result<(), String> {
+    state.0.enqueue(track_id, path)
+}
+
+#[tauri::command]
+pub async fn clicktrack_status(
+    state: State<'_, ClickTrackState>,
+) -> Result<Vec<JobStatus>, String> {
+    Ok(state.0.status())
+}
+
+#[tauri::command]
+pub async fn clicktrack_cancel(
+    state: State<'_, ClickTrackState>,
+    track_id: String,
+) -> Result<(), String> {
+    state.0.cancel(track_id);
+    Ok(())
+}
+
+/// Read the on-disk beat-grid descriptor for a track (written by the sidecar).
+#[tauri::command]
+pub async fn clicktrack_get(
+    app: tauri::AppHandle,
+    track_id: String,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    let path = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("clicktracks")
+        .join(format!("{track_id}.json"));
+    let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
+    serde_json::from_str(&text).map_err(|e| e.to_string())
 }
