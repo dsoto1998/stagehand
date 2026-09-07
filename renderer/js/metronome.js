@@ -192,7 +192,12 @@ function clickScheduler() {
     const ck = clickSchedule[clickIdx];
     const t = clickCtxTime(ck);
     if (t >= horizon) break;
-    if (t >= c.currentTime) scheduleNote(t, ck.accent ? 'accent' : 'quarter');
+    // Honour the Accent toggle here too, not just in the plain metronome path
+    // above — with accents off every click is the same sound, which is what you
+    // want when playing to a click rather than counting bars.
+    if (t >= c.currentTime) {
+      scheduleNote(t, (accentEnabled && ck.accent) ? 'accent' : 'quarter');
+    }
     clickScheduled[clickIdx] = true;
     clickIdx++;
   }

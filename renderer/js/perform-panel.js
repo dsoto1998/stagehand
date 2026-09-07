@@ -37,6 +37,10 @@ let performPlayer = null;
 let performTrackId = null;
 let startWatchRaf = null;
 let offsetMs = parseInt(localStorage.getItem(OFFSET_KEY) || '0', 10) || 0;
+let currentAutoAnchor = null; // sidecar's anchorT for the currently-selected song, for the input's placeholder
+let startAtSec = 0;    // scrub position — where the NEXT "Count in" should start playback from
+let scrubDragging = false; // true while the user is actively dragging the scrub bar
+let performClicks = null;  // full sched.clicks for the active Perform session — reused to rebuild the schedule on a mid-session seek
 
 // ─── init ────────────────────────────────────────────────────
 
@@ -45,12 +49,16 @@ export function initPerformPanel(options = {}) {
 
   wireOffsetSlider();
   wirePerformTransport();
+  wireAnchorControl();
+  wireScrubBar();
 
   listen('clicktrack_progress', e => onJobEvent(e.payload)).catch(() => {});
   listen('clicktrack_done', e => onJobDone(e.payload)).catch(() => {});
   listen('clicktrack_error', e => onJobEvent({ ...e.payload, stage: 'error' })).catch(() => {});
   listen('playback_progress', e => {
-    if (performing) Metronome.reanchorClickSchedule(getCtx().currentTime, e.payload.position);
+    if (!performing) return;
+    Metronome.reanchorClickSchedule(getCtx().currentTime, e.payload.position);
+    if (!scrubDragging) updateScrubPosition(e.payload.position);
   }).catch(() => {});
   listen('playback_ended', () => { if (performing) stopPerform(); }).catch(() => {});
 
@@ -218,6 +226,55 @@ function selectPerform(id) {
   if (bar) bar.classList.toggle('hidden', !t);
   setPerformButton(false);
   setPerformStatus('');
+  refreshAnchorControl(t);
+  resetScrubBar(t);
+}
+
+function resetScrubBar(track) {
+  const bar = document.getElementById('perform-scrub');
+  const durLabel = document.getElementById('perform-scrub-duration');
+  const timeLabel = document.getElementById('perform-scrub-time');
+  if (!bar) return;
+  startAtSec = 0;
+  const duration = track?.duration || 0;
+  bar.max = String(duration);
+  bar.value = '0';
+  if (durLabel) durLabel.textContent = formatTime(duration);
+  if (timeLabel) timeLabel.textContent = formatTime(0);
+}
+
+function updateScrubPosition(sec) {
+  const bar = document.getElementById('perform-scrub');
+  const timeLabel = document.getElementById('perform-scrub-time');
+  if (!bar) return;
+  bar.value = String(sec);
+  if (timeLabel) timeLabel.textContent = formatTime(sec);
+}
+
+async function refreshAnchorControl(track) {
+  const input = document.getElementById('perform-anchor');
+  const resetBtn = document.getElementById('perform-anchor-reset');
+  if (!input) return;
+  currentAutoAnchor = null;
+  input.placeholder = 'auto';
+  input.value = '';
+  if (resetBtn) resetBtn.classList.remove('active');
+  if (!track) return;
+
+  const override = track.clickTrack?.anchorOverrideSec;
+  if (Number.isFinite(override)) {
+    input.value = override.toFixed(2);
+    if (resetBtn) resetBtn.classList.add('active');
+  }
+
+  try {
+    const descriptor = await invoke('clicktrack_get', { trackId: track.id });
+    if (selectedPerformId !== track.id) return; // selection moved on while awaiting
+    if (Number.isFinite(descriptor?.anchorT)) {
+      currentAutoAnchor = descriptor.anchorT;
+      input.placeholder = `auto (${descriptor.anchorT.toFixed(2)})`;
+    }
+  } catch { /* descriptor unavailable — leave generic "auto" placeholder */ }
 }
 
 // ─── transport ───────────────────────────────────────────────
@@ -236,9 +293,68 @@ function wireOffsetSlider() {
   });
 }
 
+function wireScrubBar() {
+  const bar = document.getElementById('perform-scrub');
+  const timeLabel = document.getElementById('perform-scrub-time');
+  if (!bar) return;
+
+  bar.addEventListener('mousedown', () => { scrubDragging = true; });
+
+  bar.addEventListener('input', () => {
+    if (timeLabel) timeLabel.textContent = formatTime(parseFloat(bar.value) || 0);
+  });
+
+  bar.addEventListener('change', () => {
+    scrubDragging = false;
+    const sec = parseFloat(bar.value) || 0;
+    startAtSec = sec;
+    if (performing && performPlayer) {
+      const frac = performPlayer.duration ? sec / performPlayer.duration : 0;
+      performPlayer.seek(frac).catch(() => {});
+      // reanchorClickSchedule alone can't handle this: its scan cursor only
+      // ever advances (a click that already fired is never rescheduled, to
+      // guard against double-firing — see metronome.js). Seeking backward
+      // leaves it pointed at a far-later click than the new position, so it
+      // just waits for real time to catch up to that click's stale projected
+      // time — sometimes minutes away, which reads as "the click stopped".
+      // A full restart re-filters from the new position and gives the
+      // scheduler a fresh cursor, forward or backward.
+      restartClickScheduleFrom(sec);
+    }
+  });
+}
+
 function wirePerformTransport() {
   const btn = document.getElementById('perform-play-btn');
   if (btn) btn.addEventListener('click', () => (performing ? stopPerform() : startPerform()));
+}
+
+function wireAnchorControl() {
+  const input = document.getElementById('perform-anchor');
+  const resetBtn = document.getElementById('perform-anchor-reset');
+  if (!input) return;
+
+  const commit = async (value) => {
+    const track = deps.getTracks().find(t => t.id === selectedPerformId);
+    if (!track) return;
+    const clickTrack = { ...(track.clickTrack || {}) };
+    if (value === null) delete clickTrack.anchorOverrideSec;
+    else clickTrack.anchorOverrideSec = value;
+    track.clickTrack = clickTrack;
+    resetBtn?.classList.toggle('active', value !== null);
+    try { await LibraryManager.saveMeta({ id: track.id, clickTrack }); } catch (e) { console.warn('saveMeta anchorOverrideSec failed', e); }
+  };
+
+  input.addEventListener('change', () => {
+    const v = parseFloat(input.value);
+    if (Number.isFinite(v) && v >= 0) commit(v);
+    else { input.value = ''; commit(null); }
+  });
+
+  resetBtn?.addEventListener('click', () => {
+    input.value = '';
+    commit(null);
+  });
 }
 
 function fmtOffset(ms) { return `${ms > 0 ? '+' : ''}${ms} ms`; }
@@ -279,12 +395,28 @@ async function startPerform() {
     deps.notify('Could not read click track data — try regenerating it', 'error');
     return;
   }
-  const sched = buildClickSchedule(descriptor, { countOffBars: 2 });
+  const sched = buildClickSchedule(descriptor, {
+    countOffBars: 2,
+    anchorOverrideSec: track.clickTrack?.anchorOverrideSec,
+  });
   if (!sched.clicks.length) {
     starting = false;
     deps.notify('Click track has no beats', 'error');
     return;
   }
+
+  // Scrubbed to a test point: skip the count-off entirely, jump straight in.
+  // Only clicks at/after the scrub point are scheduled; audio starts immediately
+  // instead of waiting for the count-off's usual lead-in.
+  const startFrom = startAtSec > 0.05 ? startAtSec : 0;
+  const scheduledClicks = startFrom > 0 ? sched.clicks.filter(c => c.songT >= startFrom) : sched.clicks;
+  const anchorSongTime = startFrom > 0 ? startFrom : sched.firstClickSongTime;
+  if (!scheduledClicks.length) {
+    starting = false;
+    deps.notify('Scrub position is past the last click — move it earlier', 'error');
+    return;
+  }
+  performClicks = sched.clicks; // kept for restartClickScheduleFrom() on a later mid-session seek
 
   deps.onBeforePerform();
 
@@ -312,24 +444,25 @@ async function startPerform() {
     starting = false;
     performTrackId = id;
     setPerformButton(true);
-    setPerformStatus('Counting in…');
+    setPerformStatus(startFrom > 0 ? 'Playing' : 'Counting in…');
     renderPerformList();
 
     const anchorCtx = ctx.currentTime + 0.2;
-    Metronome.startClickSchedule(sched.clicks, {
+    Metronome.startClickSchedule(scheduledClicks, {
       anchorCtxTime: anchorCtx,
-      anchorSongTime: sched.firstClickSongTime,
+      anchorSongTime,
       offsetSec: offsetMs / 1000,
     });
 
-    // ctx time at which song audio position 0 should begin playing.
-    const audioStartCtx = anchorCtx - sched.firstClickSongTime;
+    // ctx time at which song audio should begin playing — immediately when
+    // starting from a scrub point, otherwise after the usual count-off lead-in.
+    const audioStartCtx = startFrom > 0 ? anchorCtx : anchorCtx - sched.firstClickSongTime;
     const effVol = performPlayer.volume * deps.getMasterVolume();
 
     const watch = () => {
       if (!performing) return;
       if (ctx.currentTime >= audioStartCtx) {
-        performPlayer.play(0, effVol)
+        performPlayer.play(startFrom, effVol)
           .then(() => setPerformStatus('Playing'))
           .catch(e => {
             console.error('[stagehand] Perform song playback failed:', e);
@@ -351,6 +484,27 @@ async function startPerform() {
   }
 }
 
+/** Rebuild and restart the click schedule from a new song position — used
+ * whenever the user manually seeks mid-session (forward or backward), since
+ * Metronome's scan cursor only ever advances and can't be pointed backward
+ * by reanchoring alone. */
+function restartClickScheduleFrom(sec) {
+  if (!performing || !performClicks) return;
+  const filtered = performClicks.filter(c => c.songT >= sec);
+  if (!filtered.length) {
+    Metronome.stopClickSchedule();
+    setPerformStatus('Playing (past last click)');
+    return;
+  }
+  Metronome.stopClickSchedule();
+  Metronome.startClickSchedule(filtered, {
+    anchorCtxTime: getCtx().currentTime + 0.05,
+    anchorSongTime: sec,
+    offsetSec: offsetMs / 1000,
+  });
+  setPerformStatus('Playing');
+}
+
 function stopPerform() {
   performing = false;
   starting = false;
@@ -359,6 +513,7 @@ function stopPerform() {
   if (performPlayer) { performPlayer.stop(true).catch(() => {}); }
   performPlayer = null;
   performTrackId = null;
+  performClicks = null;
   setPerformButton(false);
   setPerformStatus('');
   renderPerformList();

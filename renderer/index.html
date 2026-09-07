@@ -462,11 +462,24 @@
             <span id="perform-status" class="perform-status"></span>
           </div>
           <div class="perform-transport-row">
+            <span id="perform-scrub-time" class="perform-scrub-time">0:00</span>
+            <input type="range" id="perform-scrub" class="perform-scrub-bar" min="0" max="0" step="0.1" value="0">
+            <span id="perform-scrub-duration" class="perform-scrub-time">0:00</span>
+          </div>
+          <div class="perform-transport-row">
             <button id="perform-play-btn" class="perform-play-btn">▶  Count in</button>
             <div class="perform-offset-group">
               <label for="perform-offset">Click offset</label>
               <input type="range" id="perform-offset" min="-150" max="150" step="5" value="0">
               <span id="perform-offset-val" class="perform-offset-val">0 ms</span>
+            </div>
+          </div>
+          <div class="perform-transport-row">
+            <div class="perform-anchor-group">
+              <label for="perform-anchor">Click starts at</label>
+              <input type="number" id="perform-anchor" min="0" step="0.1" placeholder="auto">
+              <span class="perform-anchor-unit">s</span>
+              <button id="perform-anchor-reset" class="perform-anchor-reset" title="Use detected start">Auto</button>
             </div>
           </div>
         </div>

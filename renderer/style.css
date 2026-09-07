@@ -3941,6 +3941,40 @@
 .perform-offset-group input[type="range"] { width: 120px; }
 .perform-offset-val { min-width: 46px; color: var(--text-primary); }
 
+.perform-anchor-group {
+  display: flex; align-items: center; gap: 6px;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  color: var(--text-secondary);
+}
+.perform-anchor-group input[type="number"] {
+  width: 56px;
+  background: var(--bg-card);
+  border: 0.5px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  padding: 3px 6px;
+}
+.perform-anchor-group input[type="number"]:focus { outline: none; border-color: var(--accent); }
+.perform-anchor-unit { color: var(--text-dim); }
+.perform-anchor-reset {
+  font-family: 'JetBrains Mono', monospace; font-size: 9px;
+  background: transparent;
+  border: 0.5px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-secondary);
+  padding: 3px 8px;
+  cursor: pointer;
+}
+.perform-anchor-reset:hover { border-color: var(--accent); color: var(--accent); }
+.perform-anchor-reset.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
+
+.perform-scrub-time {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  color: var(--text-dim); min-width: 32px;
+}
+.perform-scrub-bar { flex: 1; }
+
 .queue-row {
   display: grid;
   grid-template-columns: 1fr 120px 90px 20px;

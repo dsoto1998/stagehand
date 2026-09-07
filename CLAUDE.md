@@ -34,7 +34,7 @@
 - **Settings panel** — Multi-tab (General, Display, Audio, Export). General tab: artwork cache clear, keyboard shortcuts editor.
 - **Guitar panel (Live Input)** — Live audio input via WASAPI or ASIO. Input device picker (with refresh button + 5s hot-plug poll when panel visible), input source (mono/stereo channel selection), input/output gain knobs, mic-icon mute toggle, buffer size, sample rate. Stream auto-starts on app open from saved config; debounced restart on settings change. Input level meter (5px bar, green→amber→red, 100ms poll, 0.80 decay). Signal path diagram (In → Gain → Plugin → Out) shows live state. Last plugin auto-reloads on init.
 - **VST3 plugin chain** — Load multiple .vst3 plugins (flat file or bundle) through the Guitar panel, drag-to-reorder, per-plugin + global bypass, presets. Plugins process the live input signal in series in the audio output callback. Each plugin runs on its own persistent UI worker thread (load + editor on one STA thread) so native editor GUIs open without deadlock — tested with Helix Native (separate-component) and Lindell 80 Channel (Plugin Alliance, graphics-singleton). Supports open/close native plugin GUI (floating Win32 window) and latency reporting.
-- **Click Track + Perform mode** — Right-click a song → "Create Click Track". A frozen Python **sidecar** (`sidecar/beat_detect.py`, [BeatNet](https://github.com/mjhydri/BeatNet) offline/DBN, CC BY 4.0) analyzes the recording for beat times, downbeats and starting meter. Jobs run one-at-a-time on a Rust worker thread (`src-tauri/src/click_track.rs`); the **Processing Queue** sidebar panel shows live progress. Results stored as `$APPDATA/clicktracks/<trackId>.json` + a `clickTrack` field on the track record. The **Perform** sidebar panel lists only songs with a ready click track and plays them with a 2-bar count-off (opening time signature) via the Web Audio metronome, re-anchored to the reported song position on every `playback_progress` event; a "click offset" trim slider (±150 ms, `localStorage`) covers residual drift.
+- **Click Track + Perform mode** — Right-click a song → "Create Click Track". A frozen Python **sidecar** (`sidecar/beat_detect.py`, [BeatNet](https://github.com/mjhydri/BeatNet) offline/DBN, CC BY 4.0) analyzes the recording for beat times, downbeats and starting meter. Before analysis, `find_lead_silence()` trims leading silence/near-silence (adaptive, relative to the track's own loud level) — BeatNet will otherwise hallucinate a steady beat grid over dead air; trimmed seconds are added back to all reported times and recorded as `leadInTrimSec`. After analysis, `pick_anchor()` scores each candidate downbeat (BeatNet's own `pos===1` labels are musically arbitrary — just wherever its bar-numbering phase happened to land) by onset-energy contrast between on-beat and between-beat over the next 2 bars, and reports the first one that's confidently rhythmic as `anchorT`; this catches a real BUT non-musical downbeat picked inside a quiet pickup, and (partially) a hallucinated grid over non-rhythmic noise — it can't distinguish a real instrumental pickup from the "true" start a musician would call beat one, since both are equally periodic. Jobs run one-at-a-time on a Rust worker thread (`src-tauri/src/click_track.rs`); the **Processing Queue** sidebar panel shows live progress. Results stored as `$APPDATA/clicktracks/<trackId>.json` + a `clickTrack` field on the track record. The **Perform** sidebar panel lists only songs with a ready click track and plays them with a count-off (opening time signature) via the Web Audio metronome, re-anchored to the reported song position on every `playback_progress` event; a "click offset" trim slider (±150 ms, `localStorage`) covers residual drift, and a "Click starts at" field (`clickTrack.anchorOverrideSec` on the track record) lets the user manually override the anchor when the heuristic can't resolve it — manual override wins over `anchorT`, which wins over BeatNet's own first downbeat. The count-off is normally 2 bars but **grows to reach the anchor exactly** when it sits further into the file than that (a long SFX/noise intro before the real downbeat) — the recording, intro included, always plays in full from its own start; only the synthetic click keeps counting at the anchor's tempo for as long as it takes, landing beat one exactly when the count-off ends. Real per-beat clicks before the anchor are dropped from the schedule (the extended count-off already covers that span — no double-clicking). See `click-utils.js buildClickSchedule()` for the full anchor-priority chain and count-off-extension logic.
 - **GitHub Actions release** — `.github/workflows/release.yml` builds and publishes Windows installer on `v*` tag push. Also builds the beat-detection sidecar (Python 3.10 + PyInstaller) before the Tauri build.
 - **Test suite** — Vitest unit tests in `tests/` covering library-manager, metronome, track-player, artwork-manager, ui-utils, click-utils. 208 tests total.
 
@@ -363,7 +363,10 @@ Key behaviors:
   keyRoot:         Number|null,  // 0–11
   keyMode:         'major'|'minor'|null,
   timeSig:         String,   // e.g. "4/4" — auto-set from click-track meter if unset
-  clickTrack:      { status: 'queued'|'analyzing'|'ready'|'error', numerator: Number, tempoBpm: Number|null, generatedAt: Number } | undefined
+  clickTrack:      { status: 'queued'|'analyzing'|'ready'|'error', numerator: Number, tempoBpm: Number|null, generatedAt: Number, anchorOverrideSec: Number|undefined } | undefined
+                   // anchorOverrideSec: manual "click starts here" marker (seconds, song timeline),
+                   // set via the Perform panel's "Click starts at" field. Wins over the sidecar's
+                   // auto-detected anchor (descriptor.anchorT) and BeatNet's own first downbeat.
 }
 ```
 Beat times themselves live on disk (`$APPDATA/clicktracks/<id>.json`), not in the track record — fetched via `clicktrack_get` when a Perform session starts.
@@ -552,22 +555,3 @@ Keyed by `"artist::album"` when both present; falls back to `"track::id"`. Use `
 - **Live Input** — already partially implemented in Guitar panel
 - **VST Plugin Panel** — single plugin in Guitar panel today; multi-plugin chain awaits Electron bridge
 
----
-
-## GSD Workflow Enforcement
-
-Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
-
-Use these entry points:
-- `/gsd:quick` for small fixes, doc updates, and ad-hoc tasks
-- `/gsd:debug` for investigation and bug fixing
-- `/gsd:execute-phase` for planned phase work
-
-Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
-
-<!-- GSD:profile-start -->
-## Developer Profile
-
-> Profile not yet configured. Run `/gsd:profile-user` to generate your developer profile.
-> This section is managed by `generate-claude-profile` -- do not edit manually.
-<!-- GSD:profile-end -->
