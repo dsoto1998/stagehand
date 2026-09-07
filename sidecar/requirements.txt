@@ -22,3 +22,11 @@ pyaudio>=0.2.13
 madmom @ git+https://github.com/CPJKU/madmom@main
 
 BeatNet==1.1.3
+
+# Beat This! (CPJKU) — the default engine. Measured against calibrated human tap
+# capture on five real tracks: it follows genuine mid-song tempo drift (25.6ms
+# from the tapped beats where BeatNet, holding a flat tempo, was 225.5ms off),
+# and with madmom DBN postprocessing it keeps that accuracy while losing the
+# metrical-level flipping raw Beat This exhibits. BeatNet is retained as the
+# --engine fallback: it is still better on quiet legato intros.
+beat-this @ git+https://github.com/CPJKU/beat_this@main
