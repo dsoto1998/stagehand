@@ -1,8 +1,12 @@
 # Stagehand beat-detection sidecar
 
-`beat_detect.py` wraps [BeatNet](https://github.com/mjhydri/BeatNet) (CC BY 4.0)
-to analyze one audio file and emit a beat-grid JSON descriptor consumed by the
-Stagehand **Create Click Track** feature.
+`beat_detect.py` wraps [Beat This!](https://github.com/CPJKU/beat_this) (CPJKU)
+with madmom DBN post-processing to analyze one audio file and emit a beat-grid
+JSON descriptor consumed by the Stagehand **Create Click Track** feature.
+[BeatNet](https://github.com/mjhydri/BeatNet) (CC BY 4.0) remains selectable via
+`--engine beatnet` for local experiments, but it is not part of the frozen build
+the app ships (it pins `numba==0.54.1`, which has no Python 3.10 wheels) and the
+app never requests it.
 
 ## What the app expects
 
@@ -32,7 +36,7 @@ Descriptor shape:
 ```json
 {
   "version": 1,
-  "engine": "beatnet-dbn",
+  "engine": "beat-this-dbn",
   "beats": [{ "t": 0.51, "pos": 1 }, { "t": 1.0, "pos": 2 }, ...],
   "numerator": 4,
   "tempoBpm": 120.0,
@@ -44,13 +48,16 @@ Descriptor shape:
 
 ## Local development
 
-`madmom` and `BeatNet` only build on **Python 3.10**. From the repo root:
+`madmom` only builds on **Python 3.10**. From the repo root:
 
 ```sh
 py -3.10 -m venv sidecar/.venv
-sidecar/.venv/Scripts/pip install --index-url https://download.pytorch.org/whl/cpu torch
+sidecar/.venv/Scripts/pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
 sidecar/.venv/Scripts/pip install -r sidecar/requirements.txt
 ```
+
+To also exercise the `--engine beatnet` path locally, add `BeatNet==1.1.3` in a
+**Python 3.9** venv (it will not install on 3.10 — see `requirements.txt`).
 
 Run it directly:
 
@@ -84,5 +91,6 @@ since Tauri hard-fails the build on a zero-match glob). `tauri.conf.json` maps
 ## CI
 
 The release workflow installs Python 3.10, `pip install`s this `requirements.txt`,
-runs PyInstaller with `beat_detect.spec`, and stages the output under
-`src-tauri/binaries/` before `tauri-action` builds the installer.
+fetches the Beat This! checkpoint into the torch hub cache (so `beat_detect.spec`
+can bundle it), runs PyInstaller with `beat_detect.spec`, and stages the output
+under `src-tauri/binaries/` before `tauri-action` builds the installer.

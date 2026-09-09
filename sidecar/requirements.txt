@@ -1,32 +1,35 @@
-# Stagehand click-track sidecar (Python 3.10 ONLY — madmom/BeatNet do not build on 3.11+)
+# Stagehand click-track sidecar (Python 3.10 ONLY — madmom does not build on 3.11+)
 #
 # Install (local dev), from repo root:
 #   py -3.10 -m venv sidecar/.venv
-#   sidecar/.venv/Scripts/pip install --index-url https://download.pytorch.org/whl/cpu torch
+#   sidecar/.venv/Scripts/pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
 #   sidecar/.venv/Scripts/pip install -r sidecar/requirements.txt
 #
-# torch is installed separately from the CPU wheel index (above) to avoid pulling
-# the ~2.5GB CUDA build.
+# torch/torchaudio are installed separately from the CPU wheel index (above) to
+# avoid pulling the ~2.5GB CUDA build.
 
 numpy<1.24
 Cython<3
 mido>=1.2,<1.3
 librosa>=0.10,<0.11
 soundfile>=0.12
-# BeatNet imports pyaudio unconditionally at module load (streaming-mode support),
-# even though we only ever use offline mode — required or `import BeatNet` fails.
-pyaudio>=0.2.13
 
 # madmom 0.16.1 (PyPI) breaks on modern numpy (np.float) and Python >=3.10
 # (collections.MutableSequence). The git main branch (0.17.dev) is fixed.
 madmom @ git+https://github.com/CPJKU/madmom@main
 
-BeatNet==1.1.3
-
-# Beat This! (CPJKU) — the default engine. Measured against calibrated human tap
-# capture on five real tracks: it follows genuine mid-song tempo drift (25.6ms
-# from the tapped beats where BeatNet, holding a flat tempo, was 225.5ms off),
-# and with madmom DBN postprocessing it keeps that accuracy while losing the
-# metrical-level flipping raw Beat This exhibits. BeatNet is retained as the
-# --engine fallback: it is still better on quiet legato intros.
+# Beat This! (CPJKU) — the only engine the app invokes. Measured against
+# calibrated human tap capture on five real tracks: it follows genuine mid-song
+# tempo drift (25.6ms from the tapped beats where BeatNet, holding a flat tempo,
+# was 225.5ms off), and with madmom DBN postprocessing it keeps that accuracy
+# while losing the metrical-level flipping raw Beat This exhibits.
 beat-this @ git+https://github.com/CPJKU/beat_this@main
+
+# BeatNet is NOT installed here anymore. It pins numba==0.54.1, whose wheels
+# require Python <3.10, so it cannot be installed into the 3.10 environment the
+# frozen build uses. beat_detect.py still carries the `--engine beatnet` code
+# path (lazy import, guarded) for local experiments in a Python 3.9 venv, but the
+# app only ever runs the default Beat This! engine (src-tauri/src/click_track.rs
+# passes only --input/--output), so nothing user-facing depends on it.
+#   BeatNet==1.1.3
+#   pyaudio>=0.2.13   # only needed because BeatNet imports it unconditionally
