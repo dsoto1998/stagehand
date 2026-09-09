@@ -3591,13 +3591,29 @@ settingsBtn.addEventListener('click', e => {
 });
 
 let _deviceList = [];
+// Output device currently applied to the Rust engine. loadDeviceList() runs on
+// every settings-popup open, and re-applying the same device is not free:
+// audio_set_device rebuilds the rodio sink, which restarts the output stream.
+// Mid-playback that interrupts audio, and during a Perform session it also
+// desyncs the click schedule (anchored to playback_progress). Tracking what is
+// already applied makes the restore idempotent.
+let _appliedDevice = null;
 
 async function loadDeviceList() {
   const sel = document.getElementById('sp-device-select');
   const warn = document.getElementById('sp-asio-warn');
   if (!sel || !window.__TAURI__) return;
   try {
-    const devices = await invoke('audio_get_devices');
+    // An ASIO driver is exclusive: while it is open for playback, enumerating
+    // it returns nothing. Re-scanning on every settings open therefore made a
+    // present interface look missing ("No ASIO drivers detected") purely
+    // because a song was playing. Once a scan has found ASIO devices, trust
+    // that list for the rest of the session rather than asking again at a
+    // moment the driver cannot answer. A scan that found none is not cached —
+    // there may genuinely be none, or the scan may have run at a bad time, and
+    // retrying next open is cheap.
+    const cachedHasAsio = _deviceList.some(d => d.is_asio);
+    const devices = cachedHasAsio ? _deviceList : await invoke('audio_get_devices');
     _deviceList = devices;
     sel.innerHTML = '';
 
@@ -3640,11 +3656,14 @@ async function loadDeviceList() {
         // startup — silent playback into e.g. a virtual "Steam Streaming Speakers"
         // device, with no error anywhere.
         const dev = _deviceList.find(d => d.name === savedDevice);
-        try {
-          await invoke('audio_set_device', { deviceName: savedDevice, isAsio: dev?.is_asio ?? false });
-        } catch (err) {
-          console.error('restoring saved audio device failed:', err);
-          notify(`Saved audio device unavailable: ${savedDevice}`, 'error');
+        if (savedDevice !== _appliedDevice) {
+          try {
+            await invoke('audio_set_device', { deviceName: savedDevice, isAsio: dev?.is_asio ?? false });
+            _appliedDevice = savedDevice;
+          } catch (err) {
+            console.error('restoring saved audio device failed:', err);
+            notify(`Saved audio device unavailable: ${savedDevice}`, 'error');
+          }
         }
       } else {
         notify(`Saved audio device not found: ${savedDevice}`, 'error');
@@ -3662,6 +3681,7 @@ document.getElementById('sp-device-select')?.addEventListener('change', async e 
   try {
     await invoke('audio_set_device', { deviceName: e.target.value, isAsio: device?.is_asio ?? false });
     localStorage.setItem('audioOutputDevice', e.target.value);
+    _appliedDevice = e.target.value;
   } catch (err) {
     console.error('audio_set_device failed:', err);
     notify('Failed to switch audio device', 'error');
@@ -4988,6 +5008,14 @@ document.getElementById('mp-loop-btn').addEventListener('click', () => {
 
   initSectionCollapse();
   syncMetroMini();
+
+  // NOTE: do NOT apply the saved output device here. Tried it (so the device
+  // would take effect without opening Settings first) and it broke playback
+  // entirely — silent output, no error. An ASIO device is exclusive and is the
+  // same device for input and output, so claiming it during init races the
+  // Guitar panel's live-input stream, which auto-starts on app open from its
+  // own saved config. The saved device is applied on the first Settings open
+  // instead, by which point that stream has settled.
   document.getElementById('track-list').innerHTML =
     '<div class="lib-empty-state"><div class="es-icon"><svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="2" x2="12" y2="6"/><line x1="12" y1="18" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.76" y2="7.76"/><line x1="16.24" y1="16.24" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="6" y2="12"/><line x1="18" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.76" y2="16.24"/><line x1="16.24" y1="7.76" x2="19.07" y2="4.93"/></svg></div><div class="es-text">Loading Library…</div></div>';
   await loadLibrary();

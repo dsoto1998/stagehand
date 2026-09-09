@@ -706,7 +706,22 @@ def run_beat_this(path, use_dbn=True):
     import numpy as np
     from beat_this.inference import File2Beats
 
-    beats, downbeats = File2Beats(device="cpu", dbn=use_dbn)(path)
+    # Frozen builds must work offline: PyInstaller bundles the checkpoint (see
+    # beat_detect.spec) because Beat This would otherwise fetch it from the
+    # network on first use and cache it in the user's home directory.
+    checkpoint = "final0"
+    bundle_dir = getattr(sys, "_MEIPASS", None)
+    if bundle_dir:
+        bundled = os.path.join(bundle_dir, "beat_this_checkpoints", "beat_this-final0.ckpt")
+        if os.path.exists(bundled):
+            checkpoint = bundled
+        else:  # pragma: no cover - packaging error, surface it rather than silently downloading
+            sys.stderr.write(
+                f"warning: bundled Beat This checkpoint missing at {bundled}; "
+                "falling back to the network/cache copy\n"
+            )
+
+    beats, downbeats = File2Beats(checkpoint_path=checkpoint, device="cpu", dbn=use_dbn)(path)
     beats = np.asarray(beats, dtype=float)
     downbeats = np.asarray(downbeats, dtype=float)
     if len(beats) == 0:
