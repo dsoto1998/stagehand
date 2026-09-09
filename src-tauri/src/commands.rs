@@ -345,6 +345,19 @@ pub struct AudioDevice {
 
 #[tauri::command]
 pub async fn audio_get_devices() -> Result<Vec<AudioDevice>, String> {
+    // spawn_blocking: ASIO COM init is not safe on tokio async threads (same
+    // reason as live_input_get_input_devices). Enumerating directly here also
+    // froze the whole app when the settings panel was opened during playback:
+    // querying an ASIO driver that is already open for output blocks, and on an
+    // async runtime thread that stalls everything behind it.
+    // `?` unwraps the JoinError layer spawn_blocking adds; the inner Result is
+    // the enumeration's own.
+    tokio::task::spawn_blocking(enumerate_output_devices)
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+fn enumerate_output_devices() -> Result<Vec<AudioDevice>, String> {
     let mut devices = Vec::new();
 
     // WASAPI devices via default host

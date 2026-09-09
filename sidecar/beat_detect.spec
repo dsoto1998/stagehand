@@ -37,6 +37,26 @@ datas += collect_data_files("madmom")
 datas += collect_data_files("BeatNet")
 hiddenimports += collect_submodules("BeatNet")
 
+# Beat This! (the default engine). Its checkpoint is normally fetched from the
+# network on first use and cached under ~/.cache/torch/hub/checkpoints — no good
+# in a frozen build, which must work offline and cannot rely on a user cache.
+# Bundle the weights and resolve them locally at runtime (see run_beat_this).
+hiddenimports += collect_submodules("beat_this")
+datas += collect_data_files("beat_this")
+
+_BT_CKPT = os.path.join(
+    os.path.expanduser("~"), ".cache", "torch", "hub", "checkpoints",
+    "beat_this-final0.ckpt",
+)
+if os.path.exists(_BT_CKPT):
+    datas += [(_BT_CKPT, "beat_this_checkpoints")]
+else:
+    raise SystemExit(
+        f"Beat This checkpoint not found at {_BT_CKPT}.\n"
+        "Fetch it once before freezing, e.g.:\n"
+        "  python -c \"from beat_this.inference import File2Beats; File2Beats(device='cpu')\""
+    )
+
 # librosa / soundfile / sklearn runtime data + libs.
 datas += collect_data_files("librosa")
 datas += collect_data_files("soundfile")
@@ -62,6 +82,17 @@ a = Analysis(
     # NOTE: pyaudio is NOT excluded — BeatNet imports it unconditionally at module
     # load (for its streaming mode) even though beat_detect.py only uses offline
     # mode. Excluding it breaks `import BeatNet` in the frozen build too.
+    # Do NOT try to shrink the bundle by excluding torch subpackages. torch is
+    # ~2.6GB of it and the temptation is obvious, but every attempt measured
+    # here broke the frozen binary at runtime while the BUILD STILL SUCCEEDED:
+    #
+    #   torch.distributed  -> "No module named 'torch.distributed'"
+    #   torch.testing      -> "No module named 'torch.testing'"
+    #
+    # torch pulls these in during `import torch` itself. A successful build
+    # proves nothing; only running the frozen exe against a real track does.
+    # Shrinking this bundle needs a different approach (exporting the model to
+    # ONNX and dropping the torch runtime), not exclusion.
     excludes=["tkinter", "matplotlib", "PyQt5", "PySide2", "IPython"],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
