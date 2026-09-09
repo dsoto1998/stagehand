@@ -33,9 +33,15 @@ hiddenimports += [
 ]
 datas += collect_data_files("madmom")
 
-# BeatNet bundles its pretrained CRNN weights (models/*.pt) as package data.
-datas += collect_data_files("BeatNet")
-hiddenimports += collect_submodules("BeatNet")
+# BeatNet is an optional local-only engine (not installable on Python 3.10 — it
+# pins numba==0.54.1). Bundle its weights + submodules only if it happens to be
+# present; the frozen build the app ships never uses it.
+try:
+    import BeatNet  # noqa: F401
+    datas += collect_data_files("BeatNet")
+    hiddenimports += collect_submodules("BeatNet")
+except Exception:
+    pass
 
 # Beat This! (the default engine). Its checkpoint is normally fetched from the
 # network on first use and cached under ~/.cache/torch/hub/checkpoints — no good

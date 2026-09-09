@@ -40,7 +40,7 @@ jobs:
       - name: Install frontend deps
         run: npm install
 
-      # ─── Beat-detection sidecar (BeatNet, frozen with PyInstaller) ───────────
+      # ─── Beat-detection sidecar (Beat This!, frozen with PyInstaller) ────────
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
@@ -51,14 +51,29 @@ jobs:
       - name: Build beat-detection sidecar
         shell: pwsh
         run: |
-          python -m pip install --upgrade pip
-          # CPU-only torch (the CUDA build is ~2.5GB)
-          pip install --index-url https://download.pytorch.org/whl/cpu torch
+          $ErrorActionPreference = 'Stop'
+          function Invoke-Checked {
+            $exe, $rest = $args
+            & $exe @rest
+            if ($LASTEXITCODE -ne 0) { throw "command failed ($LASTEXITCODE): $exe $rest" }
+          }
+
+          Invoke-Checked python -m pip install --upgrade pip
+          # CPU-only torch + torchaudio (the CUDA build is ~2.5GB). Installed from
+          # the CPU index together so pip resolves a matching torch/torchaudio pair
+          # before beat_this's git dependency can drag in a mismatched one.
+          Invoke-Checked pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
           # numpy + Cython must exist before madmom's setup.py runs
-          pip install "numpy<1.24" "Cython<3"
-          pip install -r sidecar/requirements.txt
-          pip install pyinstaller
-          pyinstaller sidecar/beat_detect.spec --noconfirm --distpath sidecar/dist --workpath sidecar/build
+          Invoke-Checked pip install "numpy<1.24" "Cython<3"
+          Invoke-Checked pip install -r sidecar/requirements.txt
+          Invoke-Checked pip install pyinstaller
+
+          # beat_detect.spec bundles the Beat This! checkpoint into the frozen
+          # build (it must run offline). Fetch it into the torch hub cache first
+          # so the spec finds it instead of raising.
+          Invoke-Checked python -c "from beat_this.inference import File2Beats; File2Beats(device='cpu')"
+
+          Invoke-Checked pyinstaller sidecar/beat_detect.spec --noconfirm --distpath sidecar/dist --workpath sidecar/build
           New-Item -ItemType Directory -Force src-tauri/binaries/beat_detect | Out-Null
           Copy-Item -Recurse -Force sidecar/dist/beat_detect/* src-tauri/binaries/beat_detect/
           if (-not (Test-Path src-tauri/binaries/beat_detect/beat_detect.exe)) {
@@ -75,7 +90,4 @@ jobs:
           releaseDraft: false
           prerelease: false
           releaseBody: |
-            ## What's new in v1.1.0
-
-            ### Cent fine-tune
-            Each track now has a ±50¢ fine-tune control alongside the semitone slider — useful for tracks that are slightly off-pitch without needing a full semitone shift. Click the cent value to open the popover in both the track card and the miniplayer. Hold the ±1¢ buttons for accelerating repeat.
+            See the release notes below.
