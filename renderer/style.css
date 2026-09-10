@@ -2423,6 +2423,11 @@
     padding: 18px 16px; margin: 0;
     font-family: 'Barlow Condensed', sans-serif;
   }
+  .sp-hint {
+    font-size: 11px; color: var(--text-dim);
+    margin: 0; font-family: 'Barlow Condensed', sans-serif;
+    line-height: 1.5;
+  }
 
   /* Shortcuts (always-on in General tab) */
   .sp-shortcuts-hint {
