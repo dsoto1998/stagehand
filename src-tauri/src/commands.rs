@@ -6,7 +6,8 @@ use cpal::traits::{DeviceTrait, HostTrait};
 use crate::audio::{AudioEngine, LoadResult, PrefetchEntry, decode_to_samples, compute_peaks};
 use crate::vst_host::{VstHost, VstPluginInfo, VstChainEntry};
 use crate::live_input::{LiveInputEngine, LiveInputConfig, LiveInputStatus, InputDeviceInfo, enumerate_input_devices};
-use crate::click_track::{ClickJobQueue, JobStatus};
+use crate::click_track::{ClickJobQueue, JobKind, JobStatus};
+use crate::gpu_pack::GpuPackState;
 
 pub struct EngineState(pub Mutex<AudioEngine>);
 
@@ -782,7 +783,7 @@ pub async fn clicktrack_enqueue(
     track_id: String,
     path: String,
 ) -> Result<(), String> {
-    state.0.enqueue(track_id, path)
+    state.0.enqueue(JobKind::ClickTrack, track_id, path)
 }
 
 #[tauri::command]
@@ -797,7 +798,7 @@ pub async fn clicktrack_cancel(
     state: State<'_, ClickTrackState>,
     track_id: String,
 ) -> Result<(), String> {
-    state.0.cancel(track_id);
+    state.0.cancel(JobKind::ClickTrack, track_id);
     Ok(())
 }
 
@@ -816,4 +817,99 @@ pub async fn clicktrack_get(
         .join(format!("{track_id}.json"));
     let text = std::fs::read_to_string(&path).map_err(|e| e.to_string())?;
     serde_json::from_str(&text).map_err(|e| e.to_string())
+}
+
+// ─── Guitar removal (stems) ──────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn stems_enqueue(
+    state: State<'_, ClickTrackState>,
+    track_id: String,
+    path: String,
+) -> Result<(), String> {
+    state.0.enqueue(JobKind::Stems, track_id, path)
+}
+
+#[tauri::command]
+pub async fn stems_cancel(
+    state: State<'_, ClickTrackState>,
+    track_id: String,
+) -> Result<(), String> {
+    state.0.cancel(JobKind::Stems, track_id);
+    Ok(())
+}
+
+/// Delete a track's separated guitar stem from disk.
+#[tauri::command]
+pub async fn stems_delete(app: tauri::AppHandle, track_id: String) -> Result<(), String> {
+    let path = crate::stems::guitar_stem_path(&app, &track_id)?;
+    match std::fs::remove_file(&path) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e.to_string()),
+        _ => Ok(()),
+    }
+}
+
+/// Attach the track's guitar stem to the engine's loaded track (Perform mode),
+/// or detach it with `enabled: false`. Call after `audio_load_file` — every
+/// load clears the stem.
+#[tauri::command]
+pub async fn audio_set_stem(
+    app: tauri::AppHandle,
+    state: State<'_, EngineState>,
+    track_id: String,
+    enabled: bool,
+) -> Result<(), String> {
+    if !enabled {
+        return state.0.lock().set_stem(None);
+    }
+    let path = crate::stems::guitar_stem_path(&app, &track_id)?;
+    let decoded = tokio::task::spawn_blocking(move || {
+        let bytes = std::fs::read(&path).map_err(|e| format!("read stem: {e}"))?;
+        decode_to_samples(bytes)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+    state.0.lock().set_stem(Some(decoded))
+}
+
+#[tauri::command]
+pub async fn audio_set_stem_gain(state: State<'_, EngineState>, gain: f32) -> Result<(), String> {
+    state.0.lock().set_stem_gain(gain);
+    Ok(())
+}
+
+// ─── GPU pack ────────────────────────────────────────────────────────────────
+
+#[tauri::command]
+pub async fn gpu_pack_status(
+    app: tauri::AppHandle,
+    state: State<'_, GpuPackState>,
+) -> Result<serde_json::Value, String> {
+    let progress = state.progress();
+    // nvidia-smi can take a moment — keep it off the async runtime threads.
+    tokio::task::spawn_blocking(move || crate::gpu_pack::status_json(&app, progress))
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn gpu_pack_install(
+    app: tauri::AppHandle,
+    state: State<'_, GpuPackState>,
+) -> Result<(), String> {
+    crate::gpu_pack::start_install(app, &state)
+}
+
+#[tauri::command]
+pub async fn gpu_pack_cancel(state: State<'_, GpuPackState>) -> Result<(), String> {
+    crate::gpu_pack::cancel(&state);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn gpu_pack_remove(
+    app: tauri::AppHandle,
+    state: State<'_, GpuPackState>,
+) -> Result<(), String> {
+    crate::gpu_pack::remove(&app, &state)
 }

@@ -16,6 +16,7 @@ import { getCtx, resume } from './audio-engine.js';
 import { listen, invoke } from './tauri-api.js';
 import { formatTime } from './ui-utils.js';
 import { buildClickSchedule } from './click-utils.js';
+import { jobKey, isActiveJob, queueRowModel, KIND_LABEL } from './queue-utils.js';
 
 const OFFSET_KEY = 'stagehand_perform_offset'; // milliseconds
 
@@ -27,8 +28,10 @@ let deps = {
   onClickTrackReady: () => {},
 };
 
-// jobs: trackId -> { state, message }
+// jobs: jobKey(kind, trackId) -> { kind, trackId, state, message, progress?, device? }
 const jobs = new Map();
+const GUITAR_SAVE_MS = 400;
+let guitarSaveTimer = null;
 
 let selectedPerformId = null;
 let performing = false;
@@ -51,10 +54,14 @@ export function initPerformPanel(options = {}) {
   wirePerformTransport();
   wireAnchorControl();
   wireScrubBar();
+  wireGuitarControl();
 
-  listen('clicktrack_progress', e => onJobEvent(e.payload)).catch(() => {});
+  listen('clicktrack_progress', e => onJobEvent('clicktrack', e.payload)).catch(() => {});
   listen('clicktrack_done', e => onJobDone(e.payload)).catch(() => {});
-  listen('clicktrack_error', e => onJobEvent({ ...e.payload, stage: 'error' })).catch(() => {});
+  listen('clicktrack_error', e => onJobEvent('clicktrack', { ...e.payload, stage: 'error' })).catch(() => {});
+  listen('stems_progress', e => onJobEvent('stems', e.payload)).catch(() => {});
+  listen('stems_done', e => onStemsDone(e.payload)).catch(() => {});
+  listen('stems_error', e => onJobEvent('stems', { ...e.payload, stage: 'error' })).catch(() => {});
   listen('playback_progress', e => {
     if (!performing) return;
     Metronome.reanchorClickSchedule(getCtx().currentTime, e.payload.position);
@@ -64,8 +71,12 @@ export function initPerformPanel(options = {}) {
 
   // Rebuild the queue after an app restart.
   invoke('clicktrack_status').then(list => {
-    for (const j of list || []) jobs.set(j.track_id, { state: j.state, message: j.message });
+    for (const j of list || []) {
+      const kind = j.kind || 'clicktrack';
+      jobs.set(jobKey(kind, j.track_id), { kind, trackId: j.track_id, state: j.state, message: j.message });
+    }
     renderQueue();
+    updateBadge();
   }).catch(() => {});
 
   renderQueue();
@@ -73,10 +84,31 @@ export function initPerformPanel(options = {}) {
 }
 
 /** Called by ui-controller when a "Create Click Track" action is dispatched. */
-export function markQueued(trackIds) {
-  for (const id of trackIds) jobs.set(id, { state: 'queued' });
+export function markQueued(trackIds, kind = 'clicktrack') {
+  for (const id of trackIds) jobs.set(jobKey(kind, id), { kind, trackId: id, state: 'queued' });
   renderQueue();
   updateBadge();
+  if (kind === 'stems') refreshGuitarControl();
+}
+
+/** Queue guitar removal for the given tracks (library context menu + Perform). */
+export function requestGuitarRemoval(trackIds) {
+  const queued = [];
+  for (const id of trackIds) {
+    const t = deps.getTracks().find(x => x.id === id);
+    if (!t || !t.filePath) continue;
+    invoke('stems_enqueue', { trackId: id, path: t.filePath }).catch(err => {
+      jobs.set(jobKey('stems', id), { kind: 'stems', trackId: id, state: 'error', message: String(err?.message || err) });
+      renderQueue();
+      deps.notify('Could not queue guitar removal: ' + (err?.message || err), 'error');
+    });
+    queued.push(id);
+  }
+  if (queued.length) {
+    markQueued(queued, 'stems');
+    deps.notify(`Queued guitar removal for ${queued.length} song${queued.length > 1 ? 's' : ''}`, 'ok');
+  }
+  return queued.length;
 }
 
 /** Called by ui-controller after the library `tracks` array changes. */
@@ -87,20 +119,50 @@ export function refreshPerformData() {
 
 // ─── job events ──────────────────────────────────────────────
 
-function onJobEvent(payload) {
+function onJobEvent(kind, payload) {
   if (!payload || !payload.track_id) return;
-  jobs.set(payload.track_id, { state: payload.stage, message: payload.message || null });
+  jobs.set(jobKey(kind, payload.track_id), {
+    kind,
+    trackId: payload.track_id,
+    state: payload.stage,
+    message: payload.message || null,
+    progress: typeof payload.progress === 'number' ? payload.progress : undefined,
+    device: payload.device || undefined,
+  });
   renderQueue();
   updateBadge();
+  if (kind === 'stems' && payload.track_id === selectedPerformId) refreshGuitarControl();
   if (payload.stage === 'error' && payload.message && payload.message !== 'cancelled') {
     const t = deps.getTracks().find(x => x.id === payload.track_id);
-    deps.notify(`Click track failed for "${t?.name || payload.track_id}": ${payload.message}`, 'error');
+    deps.notify(`${KIND_LABEL[kind]} failed for "${t?.name || payload.track_id}": ${payload.message}`, 'error');
   }
+}
+
+async function onStemsDone(payload) {
+  const { track_id, device, seconds } = payload;
+  jobs.set(jobKey('stems', track_id), { kind: 'stems', trackId: track_id, state: 'done', device });
+  updateBadge();
+
+  const track = deps.getTracks().find(t => t.id === track_id);
+  const stems = {
+    status: 'ready',
+    device: device || null,
+    generatedAt: Date.now(),
+    // Keep the user's level on a regenerate; a fresh separation starts with the guitar gone.
+    guitarGain: Number.isFinite(track?.stems?.guitarGain) ? track.stems.guitarGain : 0,
+  };
+  if (track) track.stems = stems;
+  try { await LibraryManager.saveMeta({ id: track_id, stems }); } catch (e) { console.warn('saveMeta stems failed', e); }
+
+  const took = Number.isFinite(seconds) ? ` in ${Math.round(seconds)}s${device === 'cuda' ? ' (GPU)' : ''}` : '';
+  deps.notify(`Guitar removed: "${track?.name || track_id}"${took}`, 'success');
+  renderQueue();
+  if (track_id === selectedPerformId) refreshGuitarControl();
 }
 
 async function onJobDone(payload) {
   const { track_id, numerator, tempo_bpm } = payload;
-  jobs.set(track_id, { state: 'done' });
+  jobs.set(jobKey('clicktrack', track_id), { kind: 'clicktrack', trackId: track_id, state: 'done' });
   updateBadge();
 
   const track = deps.getTracks().find(t => t.id === track_id);
@@ -127,10 +189,6 @@ async function onJobDone(payload) {
 
 // ─── Processing Queue panel ──────────────────────────────────
 
-const STAGE_LABEL = {
-  queued: 'Queued', decoding: 'Decoding…', analyzing: 'Analyzing…', done: 'Done', error: 'Failed',
-};
-
 function renderQueue() {
   const list = document.getElementById('queue-list');
   if (!list) return;
@@ -138,34 +196,34 @@ function renderQueue() {
   const entries = [...jobs.entries()];
 
   if (!entries.length) {
-    list.innerHTML = '<div class="perform-empty">No click tracks have been requested yet.<br>Right-click a song in the Library and choose <b>Create Click Track</b>.</div>';
+    list.innerHTML = '<div class="perform-empty">Nothing has been queued yet.<br>Right-click a song in the Library and choose <b>Create Click Track</b> or <b>Remove Guitar</b>.</div>';
     return;
   }
 
-  list.innerHTML = entries.map(([id, j]) => {
-    const t = tracksById.get(id);
-    const name = t?.name || id;
-    const active = j.state === 'decoding' || j.state === 'analyzing';
-    const pct = j.state === 'done' ? 100 : j.state === 'analyzing' ? 66 : j.state === 'decoding' ? 25 : j.state === 'queued' ? 8 : 0;
-    const label = j.state === 'error' ? (j.message || 'Failed') : STAGE_LABEL[j.state] || j.state;
+  list.innerHTML = entries.map(([key, j]) => {
+    const t = tracksById.get(j.trackId);
+    const name = t?.name || j.trackId;
+    const { pct, label, animate } = queueRowModel(j);
     return `
       <div class="queue-row ${j.state}">
-        <div class="queue-row-name" title="${escAttr(name)}">${escHtml(name)}</div>
-        <div class="queue-row-bar"><div class="queue-row-fill ${active ? 'anim' : ''}" style="width:${pct}%"></div></div>
+        <div class="queue-row-name" title="${escAttr(name)}">${escHtml(name)}<span class="queue-row-kind">${escHtml(KIND_LABEL[j.kind] || j.kind)}</span></div>
+        <div class="queue-row-bar"><div class="queue-row-fill ${animate ? 'anim' : ''}" style="width:${pct}%"></div></div>
         <div class="queue-row-state">${escHtml(label)}</div>
         ${j.state === 'queued' || j.state === 'error'
-          ? `<button class="queue-row-x" data-cancel="${escAttr(id)}" title="Remove">&times;</button>`
+          ? `<button class="queue-row-x" data-cancel="${escAttr(key)}" title="Remove">&times;</button>`
           : '<span class="queue-row-x-spacer"></span>'}
       </div>`;
   }).join('');
 
   list.querySelectorAll('[data-cancel]').forEach(btn => {
     btn.addEventListener('click', () => {
-      const id = btn.dataset.cancel;
-      invoke('clicktrack_cancel', { trackId: id }).catch(() => {});
-      jobs.delete(id);
+      const j = jobs.get(btn.dataset.cancel);
+      if (!j) return;
+      invoke(j.kind === 'stems' ? 'stems_cancel' : 'clicktrack_cancel', { trackId: j.trackId }).catch(() => {});
+      jobs.delete(btn.dataset.cancel);
       renderQueue();
       updateBadge();
+      if (j.kind === 'stems') refreshGuitarControl();
     });
   });
 }
@@ -173,7 +231,7 @@ function renderQueue() {
 function updateBadge() {
   const badge = document.getElementById('queue-badge');
   if (!badge) return;
-  const active = [...jobs.values()].filter(j => j.state === 'queued' || j.state === 'decoding' || j.state === 'analyzing').length;
+  const active = [...jobs.values()].filter(isActiveJob).length;
   badge.textContent = String(active);
   badge.classList.toggle('hidden', active === 0);
 }
@@ -227,7 +285,62 @@ function selectPerform(id) {
   setPerformButton(false);
   setPerformStatus('');
   refreshAnchorControl(t);
+  refreshGuitarControl();
   resetScrubBar(t);
+}
+
+// ─── guitar removal control ──────────────────────────────────
+
+/** Show the guitar slider when the selected song has stems, otherwise a
+ * "Remove guitar" button (or the job's live status while it runs). */
+function refreshGuitarControl() {
+  const slider = document.getElementById('perform-guitar');
+  const val = document.getElementById('perform-guitar-val');
+  const btn = document.getElementById('perform-guitar-btn');
+  const status = document.getElementById('perform-guitar-status');
+  if (!slider || !btn || !status) return;
+  const t = deps.getTracks().find(x => x.id === selectedPerformId);
+  const ready = t?.stems?.status === 'ready';
+  const job = t ? jobs.get(jobKey('stems', t.id)) : null;
+  const running = isActiveJob(job);
+
+  slider.classList.toggle('hidden', !ready);
+  val?.classList.toggle('hidden', !ready);
+  if (ready) {
+    const pct = Math.round((Number.isFinite(t.stems.guitarGain) ? t.stems.guitarGain : 0) * 100);
+    slider.value = String(pct);
+    if (val) val.textContent = fmtGuitar(pct);
+  }
+  btn.classList.toggle('hidden', running);
+  btn.textContent = ready ? 'Redo' : 'Remove guitar';
+  btn.title = ready ? 'Run guitar separation again' : 'Separate the guitar out of this recording (AI)';
+  status.classList.toggle('hidden', !running);
+  if (running) status.textContent = queueRowModel(job).label;
+}
+
+function fmtGuitar(pct) { return pct === 0 ? 'Off' : `${pct}%`; }
+
+function wireGuitarControl() {
+  const slider = document.getElementById('perform-guitar');
+  const val = document.getElementById('perform-guitar-val');
+  const btn = document.getElementById('perform-guitar-btn');
+  btn?.addEventListener('click', () => {
+    if (selectedPerformId) requestGuitarRemoval([selectedPerformId]);
+  });
+  slider?.addEventListener('input', () => {
+    const t = deps.getTracks().find(x => x.id === selectedPerformId);
+    if (!t?.stems) return;
+    const pct = parseInt(slider.value, 10) || 0;
+    if (val) val.textContent = fmtGuitar(pct);
+    const gain = pct / 100;
+    t.stems = { ...t.stems, guitarGain: gain };
+    if (performing && performTrackId === t.id) invoke('audio_set_stem_gain', { gain }).catch(() => {});
+    clearTimeout(guitarSaveTimer);
+    const stems = t.stems;
+    guitarSaveTimer = setTimeout(() => {
+      LibraryManager.saveMeta({ id: t.id, stems }).catch(e => console.warn('saveMeta guitarGain failed', e));
+    }, GUITAR_SAVE_MS);
+  });
 }
 
 function resetScrubBar(track) {
@@ -437,6 +550,18 @@ async function startPerform() {
     starting = false;
     deps.notify('Could not decode audio for Perform', 'error');
     return;
+  }
+
+  // Guitar removal: every load clears the engine's stem, so attach it now.
+  // A missing/mismatched stem file just means the original recording plays.
+  if (track.stems?.status === 'ready') {
+    try {
+      await invoke('audio_set_stem', { trackId: id, enabled: true });
+      await invoke('audio_set_stem_gain', { gain: Number.isFinite(track.stems.guitarGain) ? track.stems.guitarGain : 0 });
+    } catch (e) {
+      console.warn('[stagehand] guitar stem unavailable:', e);
+      deps.notify('Guitar-removed version unavailable — playing the original. Try "Redo".', 'error');
+    }
   }
 
   try {

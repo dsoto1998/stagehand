@@ -1,7 +1,9 @@
 pub mod audio;
 pub mod click_track;
 pub mod commands;
+pub mod gpu_pack;
 pub mod live_input;
+pub mod stems;
 pub mod vst_host;
 
 use commands::{EngineState, LiveInputState, ClickTrackState};
@@ -47,6 +49,7 @@ pub fn run() {
             if let Ok(data_dir) = app.path().app_data_dir() {
                 let _ = std::fs::create_dir_all(data_dir.join("library"));
                 let _ = std::fs::create_dir_all(data_dir.join("clicktracks"));
+                let _ = std::fs::create_dir_all(data_dir.join("stems"));
             }
             let engine = AudioEngine::new(app.handle().clone())
                 .expect("Failed to init audio engine");
@@ -54,6 +57,7 @@ pub fn run() {
             app.manage(EngineState(Mutex::new(engine)));
             app.manage(LiveInputState(Arc::new(Mutex::new(LiveInputEngine::new(vst_chain)))));
             app.manage(ClickTrackState(ClickJobQueue::new(app.handle().clone())));
+            app.manage(gpu_pack::GpuPackState::default());
 
             for code in [
                 Code::MediaPlayPause,
@@ -114,6 +118,15 @@ pub fn run() {
             commands::clicktrack_status,
             commands::clicktrack_cancel,
             commands::clicktrack_get,
+            commands::stems_enqueue,
+            commands::stems_cancel,
+            commands::stems_delete,
+            commands::audio_set_stem,
+            commands::audio_set_stem_gain,
+            commands::gpu_pack_status,
+            commands::gpu_pack_install,
+            commands::gpu_pack_cancel,
+            commands::gpu_pack_remove,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

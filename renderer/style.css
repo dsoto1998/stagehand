@@ -3969,6 +3969,14 @@
 .perform-anchor-reset:hover { border-color: var(--accent); color: var(--accent); }
 .perform-anchor-reset.active { border-color: var(--accent); color: var(--accent); background: var(--accent-glow); }
 
+.perform-guitar-group {
+  display: flex; align-items: center; gap: 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 10px;
+  color: var(--text-secondary);
+}
+.perform-guitar-group input[type="range"] { width: 120px; }
+.perform-guitar-status { color: var(--cyan); }
+
 .perform-scrub-time {
   font-family: 'JetBrains Mono', monospace; font-size: 10px;
   color: var(--text-dim); min-width: 32px;
@@ -3977,7 +3985,7 @@
 
 .queue-row {
   display: grid;
-  grid-template-columns: 1fr 120px 90px 20px;
+  grid-template-columns: 1fr 120px 130px 20px;
   align-items: center;
   gap: 10px;
   padding: 8px 12px;
@@ -3990,6 +3998,11 @@
   font-family: 'Barlow Condensed', sans-serif; font-size: 13px;
   color: var(--text-primary);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.queue-row-kind {
+  margin-left: 8px;
+  font-family: 'JetBrains Mono', monospace; font-size: 9px;
+  color: var(--text-dim);
 }
 .queue-row-bar {
   height: 5px; border-radius: 3px; background: var(--bg-active); overflow: hidden;
@@ -4009,3 +4022,15 @@
   font-size: 15px; cursor: pointer; line-height: 1;
 }
 .queue-row-x:hover { color: var(--red); }
+
+/* ─── Settings → Guitar Removal GPU pack ───────────────────── */
+.gpu-pack { padding: 0 16px 10px; display: flex; flex-direction: column; gap: 8px; }
+.gpu-pack-status {
+  margin: 0;
+  font-family: 'Barlow Condensed', sans-serif; font-size: 13px;
+  color: var(--text-secondary); line-height: 1.35;
+}
+.gpu-pack-status[data-tone="ok"] { color: var(--accent-dim); }
+.gpu-pack-status[data-tone="warn"] { color: var(--cyan); }
+.gpu-pack-status[data-tone="error"] { color: var(--red); }
+.gpu-pack-actions { display: flex; gap: 6px; }

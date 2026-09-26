@@ -36,6 +36,10 @@ rfd  = { version = "0.14", default-features = false, features = ["tokio"] }
 vst3     = "0.3.0"
 base64   = "0.22"
 ringbuf  = "0.5"
+# GPU pack download (guitar removal): fetch + verify + unpack the CUDA torch wheel
+ureq     = "2"
+sha2     = "0.10"
+zip      = { version = "2", default-features = false, features = ["deflate"] }
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.52"

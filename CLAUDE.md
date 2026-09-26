@@ -35,8 +35,9 @@
 - **Guitar panel (Live Input)** — Live audio input via WASAPI or ASIO. Input device picker (with refresh button + 5s hot-plug poll when panel visible), input source (mono/stereo channel selection), input/output gain knobs, mic-icon mute toggle, buffer size, sample rate. Stream auto-starts on app open from saved config; debounced restart on settings change. Input level meter (5px bar, green→amber→red, 100ms poll, 0.80 decay). Signal path diagram (In → Gain → Plugin → Out) shows live state. Last plugin auto-reloads on init.
 - **VST3 plugin chain** — Load multiple .vst3 plugins (flat file or bundle) through the Guitar panel, drag-to-reorder, per-plugin + global bypass, presets. Plugins process the live input signal in series in the audio output callback. Each plugin runs on its own persistent UI worker thread (load + editor on one STA thread) so native editor GUIs open without deadlock — tested with Helix Native (separate-component) and Lindell 80 Channel (Plugin Alliance, graphics-singleton). Supports open/close native plugin GUI (floating Win32 window) and latency reporting.
 - **Click Track + Perform mode** — Right-click a song → "Create Click Track". A frozen Python **sidecar** (`sidecar/beat_detect.py`, [Beat This!](https://github.com/CPJKU/beat_this) + madmom DBN; BeatNet retained as a local-only `--engine` option, not in the frozen build) analyzes the recording for beat times, downbeats and starting meter. Before analysis, `find_lead_silence()` trims leading silence/near-silence (adaptive, relative to the track's own loud level) — BeatNet will otherwise hallucinate a steady beat grid over dead air; trimmed seconds are added back to all reported times and recorded as `leadInTrimSec`. After analysis, `pick_anchor()` scores each candidate downbeat (BeatNet's own `pos===1` labels are musically arbitrary — just wherever its bar-numbering phase happened to land) by onset-energy contrast between on-beat and between-beat over the next 2 bars, and reports the first one that's confidently rhythmic as `anchorT`; this catches a real BUT non-musical downbeat picked inside a quiet pickup, and (partially) a hallucinated grid over non-rhythmic noise — it can't distinguish a real instrumental pickup from the "true" start a musician would call beat one, since both are equally periodic. Jobs run one-at-a-time on a Rust worker thread (`src-tauri/src/click_track.rs`); the **Processing Queue** sidebar panel shows live progress. Results stored as `$APPDATA/clicktracks/<trackId>.json` + a `clickTrack` field on the track record. The **Perform** sidebar panel lists only songs with a ready click track and plays them with a count-off (opening time signature) via the Web Audio metronome, re-anchored to the reported song position on every `playback_progress` event; a "click offset" trim slider (±150 ms, `localStorage`) covers residual drift, and a "Click starts at" field (`clickTrack.anchorOverrideSec` on the track record) lets the user manually override the anchor when the heuristic can't resolve it — manual override wins over `anchorT`, which wins over BeatNet's own first downbeat. The count-off is normally 2 bars but **grows to reach the anchor exactly** when it sits further into the file than that (a long SFX/noise intro before the real downbeat) — the recording, intro included, always plays in full from its own start; only the synthetic click keeps counting at the anchor's tempo for as long as it takes, landing beat one exactly when the count-off ends. Real per-beat clicks before the anchor are dropped from the schedule (the extended count-off already covers that span — no double-clicking). See `click-utils.js buildClickSchedule()` for the full anchor-priority chain and count-off-extension logic.
+- **Guitar removal (AI stem separation)** — Right-click a song → "Remove Guitar" (or the Perform panel's *Remove guitar* button). `sidecar/stem_separate.py` runs Demucs v4 **htdemucs_6s** (the model UVR uses for guitar) and writes ONLY the guitar stem, sample-aligned, to `$APPDATA/stems/<trackId>.guitar.flac`. Jobs share the click-track worker/queue (`JobKind::Stems`, `src-tauri/src/stems.rs`). Playback: `AudioEngine` mixes `original − (1−g)·guitar` inside `RubberbandSource` (`StemMix`, live atomic gain) — g=1 is bit-identical to the recording; the Perform panel's **Guitar** slider (0 = Off) sets g, persisted as `track.stems.guitarGain`. Every load clears the stem; Perform re-attaches it via `audio_set_stem` after `loadFile`. **GPU pack**: CPU is ~4–5 min/song; Settings → Audio → *Guitar Removal — GPU Acceleration* downloads the pinned `torch==2.11.0+cu130` wheel (1.9 GB, SHA-256 checked, resumable) into `$APPDATA/gpu/torch-2.11.0-cu130/` (`src-tauri/src/gpu_pack.rs`); `stem_separate --torch-dir` imports it via a `sys.meta_path` finder ahead of PyInstaller's FrozenImporter → ~12–15 s/song on an RTX 4070. Needs NVIDIA driver ≥580; a failed GPU run auto-retries on CPU. **The CPU torch pin (requirements.txt, release.yml) and the wheel in gpu_pack.rs must match.**
 - **GitHub Actions release** — `.github/workflows/release.yml` builds and publishes Windows installer on `v*` tag push. Also builds the beat-detection sidecar (Python 3.10 + PyInstaller) before the Tauri build.
-- **Test suite** — Vitest unit tests in `tests/` covering library-manager, metronome, track-player, artwork-manager, ui-utils, click-utils. 208 tests total.
+- **Test suite** — Vitest unit tests in `tests/` covering library-manager, metronome, track-player, artwork-manager, ui-utils, click-utils, queue-utils/gpu-pack. 234 tests total.
 
 ### Known Issues / In Progress
 - Playlists tab: empty state only ("No playlists yet") — CRUD is Phase 5 scope.
@@ -53,7 +54,8 @@ stagehand/
 ├── vitest.config.js             ← test configuration (node environment, fake-indexeddb)
 ├── sidecar/                     ← beat-detection sidecar (Python 3.10; frozen w/ PyInstaller)
 │   ├── beat_detect.py           ← Beat This! + madmom-DBN runner → beat-grid JSON
-│   ├── beat_detect.spec         ← PyInstaller onedir spec (madmom hidden imports + Beat This! ckpt)
+│   ├── stem_separate.py         ← Demucs htdemucs_6s → guitar stem FLAC; --torch-dir = GPU pack
+│   ├── beat_detect.spec         ← PyInstaller onedir spec: BOTH exes, one shared _internal/ (+ Beat This! ckpt, htdemucs_6s weights)
 │   ├── requirements.txt         ← torch+torchaudio(CPU)/librosa/madmom@git/beat-this@git
 │   └── README.md                ← local dev + CI build instructions
 ├── renderer/
@@ -68,6 +70,8 @@ stagehand/
 │       ├── guitar-panel.js      ← Guitar panel: live input device picker, gain knobs, VST plugin loader
 │       ├── perform-panel.js     ← Processing Queue + Perform panels: click-track jobs, count-off playback
 │       ├── click-utils.js       ← pure: deriveNumerator, buildClickSchedule (count-off + beat grid)
+│       ├── queue-utils.js       ← pure: Processing Queue job keys/labels/progress (click track + stems)
+│       ├── gpu-pack.js          ← Settings → GPU pack section (gpuPackView is pure/tested)
 │       ├── metronome.js         ← Web Audio lookahead scheduler + tap tempo
 │       ├── waveform.js          ← Canvas waveform renderer
 │       ├── artwork-manager.js   ← artwork resolution: embedded → iTunes → IDB cache
@@ -90,7 +94,9 @@ stagehand/
 │   │   ├── commands.rs          ← all #[tauri::command] handlers
 │   │   ├── live_input.rs        ← LiveInputEngine: cpal input→ring buffer→VST→output
 │   │   ├── vst_host.rs          ← VstHost: VST3 COM loading, processing, GUI (Windows)
-│   │   └── click_track.rs       ← ClickJobQueue: worker thread, decode→mono WAV→sidecar→JSON, emits clicktrack_* events
+│   │   ├── click_track.rs       ← ClickJobQueue: ONE worker for all analysis jobs (JobKind ClickTrack|Stems), emits <kind>_* events
+│   │   ├── stems.rs             ← guitar-removal job: decode→float WAV→stem_separate→<id>.guitar.flac (GPU→CPU fallback)
+│   │   └── gpu_pack.rs          ← optional CUDA torch download/verify/extract/probe
 │   └── vendor/
 │       └── rubberband/          ← vendored Rubber Band C++ source (compiled at build time)
 ├── tests/
@@ -249,6 +255,15 @@ All commands are in `src-tauri/src/commands.rs` and registered in `lib.rs`.
 | `clicktrack_cancel` | Drop a queued job (best-effort; a running job runs to completion) |
 | `clicktrack_get` | Read `$APPDATA/clicktracks/<trackId>.json` (beat grid) for a Perform session |
 
+### Guitar removal (`stems.rs`, `gpu_pack.rs`)
+| Command | Purpose |
+|---------|---------|
+| `stems_enqueue` / `stems_cancel` | Queue / drop a guitar-removal job (`{trackId, path}`) |
+| `stems_delete` | Delete `$APPDATA/stems/<trackId>.guitar.flac` (called on track delete) |
+| `audio_set_stem` | `{trackId, enabled}` — attach/detach the stem to the loaded track (call after load) |
+| `audio_set_stem_gain` | `{gain}` 0..1 guitar level, live |
+| `gpu_pack_status` / `gpu_pack_install` / `gpu_pack_cancel` / `gpu_pack_remove` | GPU pack lifecycle (status runs nvidia-smi) |
+
 ### Rust Events (Tauri emit → JS listen)
 | Event | Payload | Purpose |
 |-------|---------|---------|
@@ -256,6 +271,10 @@ All commands are in `src-tauri/src/commands.rs` and registered in `lib.rs`.
 | `clicktrack_progress` | `{ track_id, stage, message? }` | Job moved to queued/decoding/analyzing |
 | `clicktrack_done` | `{ track_id, numerator, tempo_bpm, path }` | Beat grid written; frontend persists `clickTrack` meta |
 | `clicktrack_error` | `{ track_id, message }` | Analysis failed / cancelled |
+| `stems_progress` | `{ track_id, stage, progress?, device? }` | Guitar-removal job progress (0..1 while separating) |
+| `stems_done` | `{ track_id, path, device, seconds }` | Stem written; frontend persists `stems` meta |
+| `stems_error` | `{ track_id, message }` | Separation failed / cancelled |
+| `gpu_pack_progress` | `{ installing, stage, done, total, error }` | GPU pack download/extract/probe progress |
 
 ---
 
@@ -364,6 +383,7 @@ Key behaviors:
   keyMode:         'major'|'minor'|null,
   timeSig:         String,   // e.g. "4/4" — auto-set from click-track meter if unset
   clickTrack:      { status: 'queued'|'analyzing'|'ready'|'error', numerator: Number, tempoBpm: Number|null, generatedAt: Number, anchorOverrideSec: Number|undefined } | undefined
+  stems:           { status: 'ready', device: 'cuda'|'cpu'|null, generatedAt: Number, guitarGain: Number /* 0..1, 0 = removed */ } | undefined
                    // anchorOverrideSec: manual "click starts here" marker (seconds, song timeline),
                    // set via the Perform panel's "Click starts at" field. Wins over the sidecar's
                    // auto-detected anchor (descriptor.anchorT) and BeatNet's own first downbeat.

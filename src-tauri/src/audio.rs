@@ -75,6 +75,33 @@ pub(crate) struct DecodedAudio {
     pub sample_rate: u32,
 }
 
+// ── Guitar-removal stem mix ──────────────────────────────────────────────────
+/// A separated guitar stem, sample-aligned with the loaded track (same layout
+/// as `DecodedAudio::samples`). Playback outputs `original - (1 - g) * guitar`:
+/// g = 1 is the untouched recording, g = 0 removes the guitar. `gain` is read
+/// live by the source, so the slider needs no restart.
+#[derive(Clone)]
+pub(crate) struct StemMix {
+    pub guitar: Arc<Vec<f32>>,
+    pub gain: Arc<AtomicU32>, // f32 bits
+}
+
+impl StemMix {
+    #[inline]
+    fn cut(&self) -> f32 {
+        1.0 - f32::from_bits(self.gain.load(Ordering::Relaxed))
+    }
+}
+
+#[inline]
+fn mixed_sample(samples: &[f32], stem: Option<&StemMix>, cut: f32, i: usize) -> f32 {
+    let s = samples[i];
+    match stem {
+        Some(m) if cut != 0.0 => s - cut * m.guitar.get(i).copied().unwrap_or(0.0),
+        _ => s,
+    }
+}
+
 // ── Prefetch cache entry ──────────────────────────────────────────────────────
 pub struct PrefetchEntry {
     pub track_id: String,
@@ -325,6 +352,7 @@ impl Source for StreamingSource {
 // ── RubberbandSource — used when pitch/speed ≠ default, or after background decode ──
 pub struct RubberbandSource {
     audio: Arc<DecodedAudio>,
+    stem: Option<StemMix>,
     read_pos: usize,
 
     rb: Option<RbHandle>,
@@ -343,6 +371,7 @@ unsafe impl Send for RubberbandSource {}
 impl RubberbandSource {
     fn new(
         audio: Arc<DecodedAudio>,
+        stem: Option<StemMix>,
         start_frame: usize,
         semitones: i32,
         cents: f64,
@@ -371,6 +400,7 @@ impl RubberbandSource {
 
         Self {
             audio,
+            stem,
             read_pos,
             rb,
             input_done: false,
@@ -452,10 +482,12 @@ impl RubberbandSource {
                 let is_final = avail_frames <= required;
 
                 if feed_frames > 0 {
+                    let stem = self.stem.as_ref();
+                    let cut = stem.map_or(0.0, StemMix::cut);
                     let ch_bufs: Vec<Vec<f32>> = (0..ch)
                         .map(|c| {
                             (0..feed_frames)
-                                .map(|f| self.audio.samples[self.read_pos + f * ch + c])
+                                .map(|f| mixed_sample(&self.audio.samples, stem, cut, self.read_pos + f * ch + c))
                                 .collect()
                         })
                         .collect();
@@ -527,7 +559,9 @@ impl Iterator for RubberbandSource {
                 self.handle_end();
                 if self.ended.load(Ordering::SeqCst) { return None; }
             }
-            let sample = self.audio.samples[self.read_pos];
+            let stem = self.stem.as_ref();
+            let cut = stem.map_or(0.0, StemMix::cut);
+            let sample = mixed_sample(&self.audio.samples, stem, cut, self.read_pos);
             self.read_pos += 1;
             if self.read_pos % ch == 0 {
                 self.frame_counter.fetch_add(1, Ordering::Relaxed);
@@ -562,6 +596,10 @@ pub struct AudioEngine {
     audio_sr: Arc<AtomicU32>,
     audio_ch: Arc<AtomicU32>,
     ended: Arc<AtomicBool>,
+    /// Guitar stem for the currently loaded track (Perform mode). Cleared on
+    /// every load so it can never bleed into a different track.
+    stem: Mutex<Option<Arc<Vec<f32>>>>,
+    stem_gain: Arc<AtomicU32>,
     pub prefetch: Arc<Mutex<Option<PrefetchEntry>>>,
     /// Ordered VST3 plugin chain. Live input passes through each plugin in sequence.
     pub vst_chain: Arc<Mutex<Vec<VstHost>>>,
@@ -650,6 +688,8 @@ impl AudioEngine {
             audio_sr,
             audio_ch,
             ended,
+            stem: Mutex::new(None),
+            stem_gain: Arc::new(AtomicU32::new(1.0f32.to_bits())),
             prefetch: Arc::new(Mutex::new(None)),
             vst_chain: Arc::new(Mutex::new(Vec::new())),
             vst_parked: Arc::new(Mutex::new(Vec::new())),
@@ -674,6 +714,7 @@ impl AudioEngine {
 
     pub fn apply_prefetch_entry(&self, entry: PrefetchEntry) -> LoadResult {
         // Prefetch has both raw bytes and decoded audio — seek works instantly
+        *self.stem.lock() = None;
         *self.raw_bytes.lock() = Some(Arc::clone(&entry.raw_bytes));
         *self.decoded_slot.lock() = Some(Arc::clone(&entry.audio));
         self.decode_generation.fetch_add(1, Ordering::SeqCst);
@@ -709,7 +750,8 @@ impl AudioEngine {
         let peaks = cached_peaks.clone().unwrap_or_default();
         let emit_peaks = cached_peaks.is_none();
 
-        // Store raw bytes; clear stale decoded audio
+        // Store raw bytes; clear stale decoded audio + stem
+        *self.stem.lock() = None;
         *self.raw_bytes.lock() = Some(Arc::clone(&raw));
         *self.decoded_slot.lock() = None;
         let gen = self.decode_generation.fetch_add(1, Ordering::SeqCst) + 1;
@@ -763,7 +805,10 @@ impl AudioEngine {
             return Err("Audio format not ready (sample_rate or channels unknown)".into());
         }
 
-        let use_rb = semitones != 0 || cents.abs() > 1e-4 || (speed - 1.0).abs() > 1e-4;
+        let stem = self.stem_mix();
+        // A stem mix needs the decoded buffer (StreamingSource can't mix), so it
+        // takes the same wait-for-decode path as pitch/speed changes.
+        let use_rb = semitones != 0 || cents.abs() > 1e-4 || (speed - 1.0).abs() > 1e-4 || stem.is_some();
 
         if use_rb {
             // Need fully decoded audio — wait for background decode if in progress
@@ -788,7 +833,7 @@ impl AudioEngine {
             let sr = decoded.sample_rate;
             let start_frame = (offset_secs * sr as f64) as usize;
             let source = RubberbandSource::new(
-                decoded, start_frame, semitones, cents, speed,
+                decoded, stem.clone(), start_frame, semitones, cents, speed,
                 self.loop_state.clone(), self.frame_counter.clone(), self.ended.clone(),
             );
             let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
@@ -804,7 +849,7 @@ impl AudioEngine {
                 log::info!("[stagehand] play source = rubberband(passthrough, decoded slot)");
                 let start_frame = (offset_secs * decoded.sample_rate as f64) as usize;
                 let source = RubberbandSource::new(
-                    decoded, start_frame, 0, 0.0, 1.0,
+                    decoded, stem.clone(), start_frame, 0, 0.0, 1.0,
                     self.loop_state.clone(), self.frame_counter.clone(), self.ended.clone(),
                 );
                 let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
@@ -831,7 +876,7 @@ impl AudioEngine {
                         if let Some(decoded) = self.decoded_slot.lock().clone() {
                             let start_frame = (offset_secs * decoded.sample_rate as f64) as usize;
                             let source = RubberbandSource::new(
-                                decoded, start_frame, 0, 0.0, 1.0,
+                                decoded, stem.clone(), start_frame, 0, 0.0, 1.0,
                                 self.loop_state.clone(), self.frame_counter.clone(), self.ended.clone(),
                             );
                             let sink = Sink::try_new(&self.handle).map_err(|e| e.to_string())?;
@@ -918,6 +963,31 @@ impl AudioEngine {
         self.ended.store(false, Ordering::SeqCst);
         self.stop_sink();
         self.is_playing.store(false, Ordering::SeqCst);
+    }
+
+    fn stem_mix(&self) -> Option<StemMix> {
+        self.stem.lock().clone().map(|guitar| StemMix { guitar, gain: self.stem_gain.clone() })
+    }
+
+    /// Attach (or detach, with `None`) a guitar stem to the loaded track. Takes
+    /// effect on the next play/seek. The stem must match the loaded track's
+    /// sample rate and channel count — it was separated from the same decode.
+    pub fn set_stem(&self, stem: Option<(Vec<f32>, u16, u32)>) -> Result<(), String> {
+        let Some((samples, ch, sr)) = stem else {
+            *self.stem.lock() = None;
+            return Ok(());
+        };
+        let (cur_sr, cur_ch) = (self.audio_sr.load(Ordering::SeqCst), self.audio_ch.load(Ordering::SeqCst));
+        if sr != cur_sr || ch as u32 != cur_ch {
+            return Err(format!("stem format {sr} Hz/{ch} ch does not match track {cur_sr} Hz/{cur_ch} ch"));
+        }
+        *self.stem.lock() = Some(Arc::new(samples));
+        Ok(())
+    }
+
+    /// Guitar level for the stem mix, 0.0 (removed) ..= 1.0 (original). Live.
+    pub fn set_stem_gain(&self, gain: f32) {
+        self.stem_gain.store(gain.clamp(0.0, 1.0).to_bits(), Ordering::Relaxed);
     }
 
     pub fn set_volume(&self, volume: f32) {
@@ -1103,6 +1173,41 @@ pub fn semitones_to_pitch_scale(semitones: i32, cents: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // ── guitar stem mix ───────────────────────────────────────────────────────
+
+    fn stem(guitar: Vec<f32>, gain: f32) -> StemMix {
+        StemMix { guitar: Arc::new(guitar), gain: Arc::new(AtomicU32::new(gain.to_bits())) }
+    }
+
+    #[test]
+    fn stem_mix_full_gain_is_the_untouched_original() {
+        let m = stem(vec![0.3, -0.2], 1.0);
+        let src = [0.5, 0.1];
+        for i in 0..2 {
+            assert_eq!(mixed_sample(&src, Some(&m), m.cut(), i), src[i]);
+        }
+    }
+
+    #[test]
+    fn stem_mix_zero_gain_subtracts_the_guitar() {
+        let m = stem(vec![0.3, -0.2], 0.0);
+        let src = [0.5, 0.1];
+        assert!((mixed_sample(&src, Some(&m), m.cut(), 0) - 0.2).abs() < 1e-6);
+        assert!((mixed_sample(&src, Some(&m), m.cut(), 1) - 0.3).abs() < 1e-6);
+    }
+
+    #[test]
+    fn stem_mix_partial_gain_and_short_stem() {
+        let m = stem(vec![0.4], 0.25);
+        let src = [0.5, 0.1];
+        // 0.5 - 0.75 * 0.4
+        assert!((mixed_sample(&src, Some(&m), m.cut(), 0) - 0.2).abs() < 1e-6);
+        // past the end of the stem: original passes through
+        assert_eq!(mixed_sample(&src, Some(&m), m.cut(), 1), 0.1);
+        // no stem attached
+        assert_eq!(mixed_sample(&src, None, 0.0, 0), 0.5);
+    }
 
     // ── semitones_to_pitch_scale ──────────────────────────────────────────────
 

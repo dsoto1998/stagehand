@@ -2,11 +2,14 @@
 #
 # Install (local dev), from repo root:
 #   py -3.10 -m venv sidecar/.venv
-#   sidecar/.venv/Scripts/pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+#   sidecar/.venv/Scripts/pip install --index-url https://download.pytorch.org/whl/cpu torch==2.11.0 torchaudio==2.11.0
 #   sidecar/.venv/Scripts/pip install -r sidecar/requirements.txt
 #
 # torch/torchaudio are installed separately from the CPU wheel index (above) to
-# avoid pulling the ~2.5GB CUDA build.
+# avoid pulling the ~2.5GB CUDA build. The version is PINNED: the in-app GPU pack
+# (src-tauri/src/gpu_pack.rs) downloads the matching torch==2.11.0+cu130 wheel and
+# stem_separate.py imports it in place of the bundled CPU torch, so the frozen
+# build's numpy/typing_extensions/sympy etc. must satisfy that exact version.
 
 numpy<1.24
 Cython<3
@@ -33,3 +36,8 @@ beat-this @ git+https://github.com/CPJKU/beat_this@main
 # passes only --input/--output), so nothing user-facing depends on it.
 #   BeatNet==1.1.3
 #   pyaudio>=0.2.13   # only needed because BeatNet imports it unconditionally
+
+# Demucs v4 - guitar removal (stem_separate.py, htdemucs_6s). Pulls dora-search /
+# omegaconf / openunmix / julius; demucs.demucs imports demucs.states which needs
+# them even though we load weights ourselves.
+demucs==4.0.1

@@ -40,7 +40,7 @@ jobs:
       - name: Install frontend deps
         run: npm install
 
-      # ─── Beat-detection sidecar (Beat This!, frozen with PyInstaller) ────────
+      # ─── Analysis sidecar: beat detection + guitar removal (PyInstaller) ─────
       - name: Setup Python 3.10
         uses: actions/setup-python@v5
         with:
@@ -48,7 +48,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: sidecar/requirements.txt
 
-      - name: Build beat-detection sidecar
+      - name: Build analysis sidecar (beat detection + guitar removal)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -62,7 +62,9 @@ jobs:
           # CPU-only torch + torchaudio (the CUDA build is ~2.5GB). Installed from
           # the CPU index together so pip resolves a matching torch/torchaudio pair
           # before beat_this's git dependency can drag in a mismatched one.
-          Invoke-Checked pip install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+          # PINNED: the in-app GPU pack (src-tauri/src/gpu_pack.rs) swaps in the
+          # torch==2.11.0+cu130 wheel at runtime — keep these versions in lockstep.
+          Invoke-Checked pip install --index-url https://download.pytorch.org/whl/cpu torch==2.11.0 torchaudio==2.11.0
           # numpy + Cython must exist before madmom's setup.py runs
           Invoke-Checked pip install "numpy<1.24" "Cython<3"
           Invoke-Checked pip install -r sidecar/requirements.txt
@@ -72,13 +74,20 @@ jobs:
           # build (it must run offline). Fetch it into the torch hub cache first
           # so the spec finds it instead of raising.
           Invoke-Checked python -c "from beat_this.inference import File2Beats; File2Beats(device='cpu')"
+          # Same for the guitar-removal model (htdemucs_6s, bundled by the spec).
+          Invoke-Checked python -c "from demucs.pretrained import get_model; get_model('htdemucs_6s')"
 
           Invoke-Checked pyinstaller sidecar/beat_detect.spec --noconfirm --distpath sidecar/dist --workpath sidecar/build
           New-Item -ItemType Directory -Force src-tauri/binaries/beat_detect | Out-Null
           Copy-Item -Recurse -Force sidecar/dist/beat_detect/* src-tauri/binaries/beat_detect/
-          if (-not (Test-Path src-tauri/binaries/beat_detect/beat_detect.exe)) {
-            throw "sidecar build did not produce beat_detect.exe"
+          foreach ($exe in 'beat_detect.exe', 'stem_separate.exe') {
+            if (-not (Test-Path "src-tauri/binaries/beat_detect/$exe")) {
+              throw "sidecar build did not produce $exe"
+            }
           }
+          # A successful freeze proves nothing (see beat_detect.spec) — make sure
+          # the stem separator actually imports torch + demucs.
+          Invoke-Checked src-tauri/binaries/beat_detect/stem_separate.exe --probe
 
       - name: Build and release
         uses: tauri-apps/tauri-action@v0

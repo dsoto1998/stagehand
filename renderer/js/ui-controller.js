@@ -9,7 +9,8 @@ import { renderWaveform, buildWaveformLayers, renderPlayerWaveform } from './wav
 import * as ArtworkManager from './artwork-manager.js';
 import { listen, invoke, writeAudioFile, scanLibraryDir, convertFileSrc } from './tauri-api.js';
 import { initGuitarPanel } from './guitar-panel.js';
-import { initPerformPanel, markQueued, refreshPerformData, isPerforming } from './perform-panel.js';
+import { initPerformPanel, markQueued, requestGuitarRemoval, refreshPerformData, isPerforming } from './perform-panel.js';
+import { initGpuPack } from './gpu-pack.js';
 
 
 // ─── KEY CONSTANTS ────────────────────────────────────────────
@@ -4029,6 +4030,11 @@ initPerformPanel({
   onClickTrackReady: () => { renderCurrentTab(); },
 });
 
+initGpuPack({
+  notify: (msg, type) => notify(msg, type),
+  confirm: (title, msg) => confirm(title, msg, 'Remove'),
+});
+
 
 // ─── TAB SWITCHING ───────────────────────────────────────────
 document.querySelectorAll('.lib-tab').forEach(btn => {
@@ -4503,6 +4509,8 @@ function showCtxMenu(e, trackId, plContext = null) {
   // "Create Click Track" → "Regenerate" once a track already has one
   const cct = ctxMenu.querySelector('[data-action="create-click-track"]');
   if (cct) cct.textContent = _t?.clickTrack?.status === 'ready' ? 'Regenerate Click Track' : 'Create Click Track';
+  const rg = ctxMenu.querySelector('[data-action="remove-guitar"]');
+  if (rg) rg.textContent = _t?.stems?.status === 'ready' ? 'Redo Guitar Removal' : 'Remove Guitar';
   const x = Math.min(e.clientX, window.innerWidth - 160);
   const y = Math.min(e.clientY, window.innerHeight - 160);
   ctxMenu.style.left = x + 'px';
@@ -4546,6 +4554,8 @@ ctxMenu.addEventListener('click', e => {
       markQueued(queued);
       notify(`Queued ${queued.length} click track${queued.length > 1 ? 's' : ''} for analysis`, 'ok');
     }
+  } else if (action === 'remove-guitar') {
+    requestGuitarRemoval(selectedIds.size > 0 ? [...selectedIds] : [ctxMenuTrackId]);
   } else if (action === 'rename') {
     startRenameById(ctxMenuTrackId);
   } else if (action === 'delete') {
@@ -4620,6 +4630,7 @@ async function deleteSelectedTracks(ids) {
     if (player) player.stop();
     if (currentPlayingId === id) hideMiniplayer();
     delete players[id];
+    if (tracks.find(t => t.id === id)?.stems) invoke('stems_delete', { trackId: id }).catch(() => {});
     await LibraryManager.remove(id);
     tracks = tracks.filter(t => t.id !== id);
     selectedIds.delete(id);

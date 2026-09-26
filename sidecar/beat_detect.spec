@@ -3,7 +3,8 @@
 # Build (from repo root, inside the Python 3.10 venv):
 #   pyinstaller sidecar/beat_detect.spec --noconfirm --distpath sidecar/dist --workpath sidecar/build
 #
-# Produces sidecar/dist/beat_detect/beat_detect.exe  (+ _internal/).
+# Produces sidecar/dist/beat_detect/beat_detect.exe + stem_separate.exe, sharing
+# one _internal/ (torch is ~2.6GB — two separate bundles would ship it twice).
 # The release workflow renames the folder to the Tauri sidecar triple and copies
 # it under src-tauri/binaries/.
 
@@ -74,6 +75,30 @@ hiddenimports += ["sklearn.utils._typedefs", "sklearn.neighbors._partition_nodes
 binaries += collect_dynamic_libs("torch")
 hiddenimports += ["torch"]
 
+# ── stem_separate (guitar removal, Demucs htdemucs_6s) ──────────────────────
+# Same story as Beat This!: the weights are normally downloaded on first use.
+# Fetch once before freezing:
+#   python -c "from demucs.pretrained import get_model; get_model('htdemucs_6s')"
+STEM_SCRIPT = os.path.join(SPECPATH, "stem_separate.py")
+stem_datas = []
+stem_hiddenimports = [
+    "demucs.apply", "demucs.htdemucs", "demucs.hdemucs", "demucs.demucs",
+    "demucs.transformer", "demucs.spec", "demucs.states", "demucs.utils",
+    "openunmix.filtering", "julius",
+]
+_DEMUCS_TH = os.path.join(
+    os.path.expanduser("~"), ".cache", "torch", "hub", "checkpoints",
+    "5c90dfd2-34c22ccb.th",
+)
+if os.path.exists(_DEMUCS_TH):
+    stem_datas += [(_DEMUCS_TH, "demucs_models")]
+else:
+    raise SystemExit(
+        f"htdemucs_6s weights not found at {_DEMUCS_TH}.\n"
+        "Fetch them once before freezing, e.g.:\n"
+        "  python -c \"from demucs.pretrained import get_model; get_model('htdemucs_6s')\""
+    )
+
 block_cipher = None
 
 a = Analysis(
@@ -124,11 +149,51 @@ exe = EXE(
     codesign_identity=None,
     entitlements_file=None,
 )
+stem_a = Analysis(
+    [STEM_SCRIPT],
+    pathex=[SPECPATH],
+    binaries=collect_dynamic_libs("torch") + collect_dynamic_libs("soundfile"),
+    datas=stem_datas + collect_data_files("soundfile"),
+    hiddenimports=stem_hiddenimports + ["torch"],
+    hookspath=[],
+    hooksconfig={},
+    runtime_hooks=[],
+    excludes=["tkinter", "matplotlib", "PyQt5", "PySide2", "IPython"],
+    win_no_prefer_redirects=False,
+    win_private_assemblies=False,
+    cipher=block_cipher,
+    noarchive=False,
+)
+stem_pyz = PYZ(stem_a.pure, stem_a.zipped_data, cipher=block_cipher)
+stem_exe = EXE(
+    stem_pyz,
+    stem_a.scripts,
+    [],
+    exclude_binaries=True,
+    name="stem_separate",
+    debug=False,
+    bootloader_ignore_signals=False,
+    strip=False,
+    upx=False,
+    console=True,
+    disable_windowed_traceback=False,
+    argv_emulation=False,
+    target_arch=None,
+    codesign_identity=None,
+    entitlements_file=None,
+)
+
+# One output folder for both executables; COLLECT de-duplicates the shared
+# torch/numpy/soundfile files by destination path.
 coll = COLLECT(
     exe,
     a.binaries,
     a.zipfiles,
     a.datas,
+    stem_exe,
+    stem_a.binaries,
+    stem_a.zipfiles,
+    stem_a.datas,
     strip=False,
     upx=False,
     upx_exclude=[],

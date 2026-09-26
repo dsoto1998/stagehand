@@ -171,6 +171,24 @@
               </div>
             </div>
           </div>
+          <div class="sp-divider"></div>
+          <div class="sp-sec-hdr open" data-sec="aud-gpu">
+            <span class="sp-section-label">Guitar Removal — GPU Acceleration</span>
+            <svg class="sp-sec-chevron" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+          </div>
+          <div class="sp-sec-body open" id="sp-sec-aud-gpu">
+            <div class="sp-sec-body-inner">
+              <div class="gpu-pack">
+                <p id="gpu-pack-status" class="gpu-pack-status">Checking…</p>
+                <div id="gpu-pack-bar" class="queue-row-bar hidden"><div id="gpu-pack-fill" class="queue-row-fill" style="width:0%"></div></div>
+                <div class="gpu-pack-actions">
+                  <button class="sp-btn-small hidden" id="gpu-pack-install">Download GPU pack</button>
+                  <button class="sp-btn-small hidden" id="gpu-pack-cancel">Cancel</button>
+                  <button class="sp-btn-small hidden" id="gpu-pack-remove">Remove</button>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -482,6 +500,15 @@
               <button id="perform-anchor-reset" class="perform-anchor-reset" title="Use detected start">Auto</button>
             </div>
           </div>
+          <div class="perform-transport-row">
+            <div class="perform-guitar-group">
+              <label for="perform-guitar">Guitar</label>
+              <input type="range" id="perform-guitar" class="hidden" min="0" max="100" step="5" value="0">
+              <span id="perform-guitar-val" class="perform-offset-val hidden">Off</span>
+              <span id="perform-guitar-status" class="perform-guitar-status hidden"></span>
+              <button id="perform-guitar-btn" class="perform-anchor-reset">Remove guitar</button>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -741,6 +768,7 @@
   <div class="ctx-item" data-action="play">Play</div>
   <div class="ctx-item" data-action="info">Info</div>
   <div class="ctx-item" data-action="create-click-track">Create Click Track</div>
+  <div class="ctx-item" data-action="remove-guitar">Remove Guitar</div>
   <div class="ctx-item" data-action="rename">Rename</div>
   <div class="ctx-item ctx-danger ctx-hidden" data-action="remove-from-playlist">Remove from Playlist</div>
   <div class="ctx-item ctx-warn ctx-hidden" data-action="relocate">⚠ Relocate file…</div>
