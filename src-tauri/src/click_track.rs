@@ -271,10 +271,17 @@ fn sidecar_command(app: &AppHandle) -> Result<std::process::Command, String> {
         // via that interpreter (e.g. the sidecar/.venv Python). Otherwise `spec`
         // is taken as a path to a built beat_detect(.exe).
         if let Some(py) = spec.strip_prefix("python:") {
-            let script = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-                .join("..")
-                .join("sidecar")
-                .join("beat_detect.py");
+            // Script path: `STAGEHAND_BEAT_DETECT_SCRIPT` if set (needed when the
+            // running binary was built from a different checkout than the sidecar
+            // you want to test), else `<CARGO_MANIFEST_DIR>/../sidecar/beat_detect.py`.
+            let script = std::env::var("STAGEHAND_BEAT_DETECT_SCRIPT")
+                .map(PathBuf::from)
+                .unwrap_or_else(|_| {
+                    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                        .join("..")
+                        .join("sidecar")
+                        .join("beat_detect.py")
+                });
             let mut c = std::process::Command::new(py);
             c.arg(script);
             return Ok(c);

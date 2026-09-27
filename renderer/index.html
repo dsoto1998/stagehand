@@ -463,7 +463,10 @@
           </div>
           <div class="perform-transport-row">
             <span id="perform-scrub-time" class="perform-scrub-time">0:00</span>
-            <input type="range" id="perform-scrub" class="perform-scrub-bar" min="0" max="0" step="0.1" value="0">
+            <div id="perform-scrub-wrap" class="perform-scrub-wrap">
+              <input type="range" id="perform-scrub" class="perform-scrub-bar" min="0" max="0" step="0.1" value="0">
+              <div id="perform-scrub-markers" class="perform-scrub-markers" aria-hidden="true"></div>
+            </div>
             <span id="perform-scrub-duration" class="perform-scrub-time">0:00</span>
           </div>
           <div class="perform-transport-row">

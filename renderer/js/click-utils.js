@@ -224,6 +224,130 @@ export function buildClickSchedule(descriptor, opts = {}) {
     countOffCount,
     firstClickSongTime,
     songStartDelay: countOffCount * interval0,
-    clicks: withCountOffs,
+    clicks: dedupeClicks(withCountOffs),
+  };
+}
+
+/**
+ * Drop near-coincident clicks — an audible "flam"/double-click. These appear
+ * where a count-off (start-of-song or a mid-song tempo change) is spliced in
+ * next to a real beat that sits just outside the replaced span: e.g. the last
+ * old-tempo beat landing a few ms before the new-tempo count-off's first click.
+ * Any two clicks closer than `ratio` of the smaller neighbouring gap collapse
+ * to one; the count-off / accented click wins so bar phase is preserved.
+ */
+export function dedupeClicks(clicks, ratio = 0.55) {
+  if (clicks.length < 3) return clicks;
+  const sorted = [...clicks].sort((a, b) => a.songT - b.songT);
+  const out = [sorted[0]];
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = out[out.length - 1];
+    const cur = sorted[i];
+    const gap = cur.songT - prev.songT;
+    // reference = a real beat spacing nearby: the gap before `prev` or after `cur`
+    const beforeGap = out.length > 1 ? prev.songT - out[out.length - 2].songT : Infinity;
+    const afterGap = i + 1 < sorted.length ? sorted[i + 1].songT - cur.songT : Infinity;
+    const ref = Math.min(beforeGap, afterGap);
+    if (gap > 1e-6 && Number.isFinite(ref) && gap < ratio * ref) {
+      const keep = ((cur.countOff && !prev.countOff) || (cur.accent && !prev.accent)) ? cur : prev;
+      out[out.length - 1] = { ...keep };
+    } else {
+      out.push(cur);
+    }
+  }
+  return out;
+}
+
+/**
+ * Steady ctx<->song clock mapping from noisy playback_progress samples.
+ *
+ * Perform used to re-anchor the click schedule to every raw sample (~60/s).
+ * Each sample is noisy in ways that have nothing to do with the music:
+ *  - `position` is the Rust frame counter, which advances in bursts as the
+ *    output device (or Rubber Band, when transposed) pulls a chunk — so it
+ *    sawtooths by up to a buffer period (10-45ms);
+ *  - the event reaches JS after a variable IPC / main-thread delay;
+ *  - ctx.currentTime itself advances in audio-callback-sized steps.
+ * Snapping to each raw sample handed that noise straight to whichever click
+ * was scheduled next, so a click over a dead-steady beat grid still wandered
+ * by several ms from beat to beat.
+ *
+ * The true offset (ctx time minus song time) is constant for a playing song,
+ * apart from slow drift between the two audio devices' clocks. So estimate it
+ * as the mean of the lowest `lowFraction` of the samples over the last
+ * `windowSec`: the noise is mostly one-sided (delays only ever make a sample
+ * late), so the low end is the consistent reference, and averaging it rather
+ * than taking a single order statistic (min / 10th percentile) keeps the
+ * estimate from stepping every time one extreme sample enters or leaves the
+ * window. Simulated with 20-45ms burst sawtooth + 0-30ms IPC delay, the
+ * mapping moves < 2ms per half second vs 20-65ms of raw sample spread. Any
+ * constant bias this leaves is exactly what the user's click-offset trim
+ * absorbs.
+ *
+ * A real discontinuity (audio underrun/stall, a resync) shows up as every
+ * sample for `jumpHoldSec` disagreeing with the estimate by more than
+ * `jumpSec` in the same direction; the window then restarts from those
+ * samples. Seeks are handled by the caller via reset(). For the first
+ * `settleSec` after a reset the hold is only `settleHoldSec`: a stale
+ * pre-seek event arriving first must not steer the clicks for long.
+ */
+export function createClockSync({
+  windowSec = 4.0,
+  lowFraction = 0.3,
+  jumpSec = 0.03,
+  jumpHoldSec = 0.25,
+  settleSec = 1.0,
+  settleHoldSec = 0.05,
+} = {}) {
+  let samples = []; // { ctx, off } in arrival order
+  let est = null;
+  let startedAt = null;
+  let disagreeSince = null;
+  let disagreeSign = 0;
+
+  function lowMean() {
+    const offs = samples.map(s => s.off).sort((a, b) => a - b);
+    const k = Math.max(1, Math.floor(lowFraction * offs.length));
+    let sum = 0;
+    for (let i = 0; i < k; i++) sum += offs[i];
+    return sum / k;
+  }
+
+  return {
+    reset() {
+      samples = [];
+      est = null;
+      startedAt = null;
+      disagreeSince = null;
+      disagreeSign = 0;
+    },
+    /** Feed one sample; returns the filtered offset (ctx time - song time). */
+    update(ctxNow, songPos) {
+      const off = ctxNow - songPos;
+      if (startedAt === null) startedAt = ctxNow;
+      const hold = ctxNow - startedAt < settleSec ? settleHoldSec : jumpHoldSec;
+      if (est !== null) {
+        const d = off - est;
+        const sign = Math.abs(d) > jumpSec ? Math.sign(d) : 0;
+        if (sign !== 0 && sign === disagreeSign) {
+          if (ctxNow - disagreeSince >= hold) {
+            const since = disagreeSince;
+            samples = samples.filter(s => s.ctx >= since);
+            disagreeSince = null;
+            disagreeSign = 0;
+          }
+        } else if (sign !== 0) {
+          disagreeSince = ctxNow;
+          disagreeSign = sign;
+        } else {
+          disagreeSince = null;
+          disagreeSign = 0;
+        }
+      }
+      samples.push({ ctx: ctxNow, off });
+      while (samples.length > 1 && samples[0].ctx < ctxNow - windowSec) samples.shift();
+      est = lowMean();
+      return est;
+    },
   };
 }

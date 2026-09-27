@@ -15,7 +15,11 @@ import { Metronome } from './metronome.js';
 import { getCtx, resume } from './audio-engine.js';
 import { listen, invoke } from './tauri-api.js';
 import { formatTime } from './ui-utils.js';
-import { buildClickSchedule } from './click-utils.js';
+import { buildClickSchedule, createClockSync } from './click-utils.js';
+
+// Filters the raw playback_progress samples into a steady ctx<->song mapping —
+// see createClockSync. Reset whenever the song position jumps (start, seek).
+const clockSync = createClockSync();
 
 const OFFSET_KEY = 'stagehand_perform_offset'; // milliseconds
 
@@ -38,6 +42,7 @@ let performTrackId = null;
 let startWatchRaf = null;
 let offsetMs = parseInt(localStorage.getItem(OFFSET_KEY) || '0', 10) || 0;
 let currentAutoAnchor = null; // sidecar's anchorT for the currently-selected song, for the input's placeholder
+let currentLowConfSpans = []; // descriptor.lowConfidenceSpans for the selected song — red scrub-bar markers
 let startAtSec = 0;    // scrub position — where the NEXT "Count in" should start playback from
 let scrubDragging = false; // true while the user is actively dragging the scrub bar
 let performClicks = null;  // full sched.clicks for the active Perform session — reused to rebuild the schedule on a mid-session seek
@@ -57,7 +62,8 @@ export function initPerformPanel(options = {}) {
   listen('clicktrack_error', e => onJobEvent({ ...e.payload, stage: 'error' })).catch(() => {});
   listen('playback_progress', e => {
     if (!performing) return;
-    Metronome.reanchorClickSchedule(getCtx().currentTime, e.payload.position);
+    const pos = e.payload.position;
+    Metronome.reanchorClickSchedule(pos + clockSync.update(getCtx().currentTime, pos), pos);
     if (!scrubDragging) updateScrubPosition(e.payload.position);
   }).catch(() => {});
   listen('playback_ended', () => { if (performing) stopPerform(); }).catch(() => {});
@@ -128,7 +134,8 @@ async function onJobDone(payload) {
 // ─── Processing Queue panel ──────────────────────────────────
 
 const STAGE_LABEL = {
-  queued: 'Queued', decoding: 'Decoding…', analyzing: 'Analyzing…', done: 'Done', error: 'Failed',
+  queued: 'Queued', decoding: 'Decoding…', analyzing: 'Analyzing…',
+  verifying: 'Verifying…', done: 'Done', error: 'Failed',
 };
 
 function renderQueue() {
@@ -145,8 +152,8 @@ function renderQueue() {
   list.innerHTML = entries.map(([id, j]) => {
     const t = tracksById.get(id);
     const name = t?.name || id;
-    const active = j.state === 'decoding' || j.state === 'analyzing';
-    const pct = j.state === 'done' ? 100 : j.state === 'analyzing' ? 66 : j.state === 'decoding' ? 25 : j.state === 'queued' ? 8 : 0;
+    const active = j.state === 'decoding' || j.state === 'analyzing' || j.state === 'verifying';
+    const pct = j.state === 'done' ? 100 : j.state === 'verifying' ? 82 : j.state === 'analyzing' ? 66 : j.state === 'decoding' ? 25 : j.state === 'queued' ? 8 : 0;
     const label = j.state === 'error' ? (j.message || 'Failed') : STAGE_LABEL[j.state] || j.state;
     return `
       <div class="queue-row ${j.state}">
@@ -173,7 +180,7 @@ function renderQueue() {
 function updateBadge() {
   const badge = document.getElementById('queue-badge');
   if (!badge) return;
-  const active = [...jobs.values()].filter(j => j.state === 'queued' || j.state === 'decoding' || j.state === 'analyzing').length;
+  const active = [...jobs.values()].filter(j => j.state === 'queued' || j.state === 'decoding' || j.state === 'analyzing' || j.state === 'verifying').length;
   badge.textContent = String(active);
   badge.classList.toggle('hidden', active === 0);
 }
@@ -236,11 +243,33 @@ function resetScrubBar(track) {
   const timeLabel = document.getElementById('perform-scrub-time');
   if (!bar) return;
   startAtSec = 0;
-  const duration = track?.duration || 0;
+  // Use the decoded-precise length the Rust engine reports positions in (beat
+  // times come from that same decode), not the ID3 display value. `bar.max` is
+  // then the single coordinate space for both the scrub thumb and the
+  // low-confidence markers overlaid on it.
+  const duration = track?.nativeDuration || track?.duration || 0;
   bar.max = String(duration);
   bar.value = '0';
   if (durLabel) durLabel.textContent = formatTime(duration);
   if (timeLabel) timeLabel.textContent = formatTime(0);
+  renderLowConfidenceMarkers([]); // clear stale markers from the previous track
+}
+
+/** Overlay red spans on the Perform scrub bar where the beat detector was
+ *  unsure. Positioned as % of `#perform-scrub`'s max — its coordinate space. */
+function renderLowConfidenceMarkers(spans) {
+  const box = document.getElementById('perform-scrub-markers');
+  if (!box) return;
+  box.innerHTML = '';
+  const bar = document.getElementById('perform-scrub');
+  const dur = parseFloat(bar?.max) || 0;
+  if (!dur || !Array.isArray(spans) || !spans.length) return;
+  box.innerHTML = spans.map(s => {
+    const left = Math.max(0, Math.min(100, (s.startT / dur) * 100));
+    const width = Math.max(0.4, Math.min(100 - left, ((s.endT - s.startT) / dur) * 100));
+    const title = `${s.reason || 'low confidence'} · ${formatTime(s.startT)}–${formatTime(s.endT)}`;
+    return `<div class="lc" style="left:${left}%;width:${width}%" title="${escAttr(title)}"></div>`;
+  }).join('');
 }
 
 function updateScrubPosition(sec) {
@@ -256,6 +285,7 @@ async function refreshAnchorControl(track) {
   const resetBtn = document.getElementById('perform-anchor-reset');
   if (!input) return;
   currentAutoAnchor = null;
+  currentLowConfSpans = [];
   input.placeholder = 'auto';
   input.value = '';
   if (resetBtn) resetBtn.classList.remove('active');
@@ -274,6 +304,10 @@ async function refreshAnchorControl(track) {
       currentAutoAnchor = descriptor.anchorT;
       input.placeholder = `auto (${descriptor.anchorT.toFixed(2)})`;
     }
+    currentLowConfSpans = Array.isArray(descriptor?.lowConfidenceSpans) ? descriptor.lowConfidenceSpans : [];
+    // runs after resetScrubBar's sync body (see selectPerform call order), so
+    // bar.max is set and the clear has already happened
+    renderLowConfidenceMarkers(currentLowConfSpans);
   } catch { /* descriptor unavailable — leave generic "auto" placeholder */ }
 }
 
@@ -395,6 +429,9 @@ async function startPerform() {
     deps.notify('Could not read click track data — try regenerating it', 'error');
     return;
   }
+  // Refresh markers in case the click track was regenerated since selection.
+  currentLowConfSpans = Array.isArray(descriptor?.lowConfidenceSpans) ? descriptor.lowConfidenceSpans : [];
+  renderLowConfidenceMarkers(currentLowConfSpans);
   const sched = buildClickSchedule(descriptor, {
     countOffBars: 2,
     anchorOverrideSec: track.clickTrack?.anchorOverrideSec,
@@ -448,6 +485,7 @@ async function startPerform() {
     renderPerformList();
 
     const anchorCtx = ctx.currentTime + 0.2;
+    clockSync.reset();
     Metronome.startClickSchedule(scheduledClicks, {
       anchorCtxTime: anchorCtx,
       anchorSongTime,
@@ -497,6 +535,7 @@ function restartClickScheduleFrom(sec) {
     return;
   }
   Metronome.stopClickSchedule();
+  clockSync.reset();
   Metronome.startClickSchedule(filtered, {
     anchorCtxTime: getCtx().currentTime + 0.05,
     anchorSongTime: sec,

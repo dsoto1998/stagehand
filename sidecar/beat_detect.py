@@ -86,6 +86,60 @@ def trim_lead_silence(input_path, trim_sec):
     return out_path
 
 
+# --- Shared audio / onset helpers -----------------------------------------
+#
+# pick_anchor, refine_weak_attack_beats and the confidence scorer all need the
+# same mono signal and the same amplitude onset-strength curve. Without these
+# they decode args.input three times; memoized per run they decode it once.
+# The caches are never cleared — the sidecar is one-shot per file.
+_MONO_CACHE = {}
+_ONSET_CACHE = {}
+
+
+def load_mono(path):
+    """(y, sr) for `path`, native sample rate, mono. Memoized per run."""
+    hit = _MONO_CACHE.get(path)
+    if hit is not None:
+        return hit
+    import librosa
+    y, sr = librosa.load(path, sr=None, mono=True)
+    _MONO_CACHE[path] = (y, sr)
+    return y, sr
+
+
+def onset_env(path, hop=512):
+    """(env, env_times): amplitude onset-strength curve + per-frame times. Memoized."""
+    key = (path, hop)
+    hit = _ONSET_CACHE.get(key)
+    if hit is not None:
+        return hit
+    import numpy as np
+    import librosa
+    y, sr = load_mono(path)
+    env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=hop)
+    env_times = librosa.frames_to_time(np.arange(len(env)), sr=sr, hop_length=hop)
+    _ONSET_CACHE[key] = (env, env_times)
+    return env, env_times
+
+
+def env_peak(env, env_times, t, half_window=0.05):
+    """Peak onset energy within ±half_window seconds of t (0.0 if no frames)."""
+    import numpy as np
+    lo = np.searchsorted(env_times, t - half_window)
+    hi = np.searchsorted(env_times, t + half_window)
+    seg = env[lo:hi]
+    return float(seg.max()) if len(seg) else 0.0
+
+
+def env_gap(env, env_times, t0, t1):
+    """Median onset energy in [t0, t1] (0.0 if empty)."""
+    import numpy as np
+    lo = np.searchsorted(env_times, t0)
+    hi = np.searchsorted(env_times, t1)
+    seg = env[lo:hi]
+    return float(np.median(seg)) if len(seg) else 0.0
+
+
 def refine_weak_attack_beats(input_path, beats, weak_ratio=0.2, max_nudge_ratio=0.4, min_nudge_sec=0.04):
     """
     Nudge beat times that land on a weak/absent transient (a slide, bend, or
@@ -116,13 +170,12 @@ def refine_weak_attack_beats(input_path, beats, weak_ratio=0.2, max_nudge_ratio=
     intervals = np.diff(times)
 
     try:
-        y, sr = librosa.load(input_path, sr=None, mono=True)
+        y, sr = load_mono(input_path)
+        amp_env, amp_times = onset_env(input_path)
     except Exception as e:  # pragma: no cover
         sys.stderr.write(f"warning: weak-attack refinement unavailable ({e}); skipping\n")
         return beats, 0
 
-    amp_env = librosa.onset.onset_strength(y=y, sr=sr, hop_length=512)
-    amp_times = librosa.frames_to_time(np.arange(len(amp_env)), sr=sr, hop_length=512)
     at_beat = np.interp(times, amp_times, amp_env)
     ref_loud = np.percentile(amp_env, 90)
     weak = at_beat < ref_loud * weak_ratio
@@ -219,7 +272,6 @@ def pick_anchor(input_path, beats, numerator, confirm_bars=2, clarity_threshold=
     not authoritative. Caller should still allow a manual override.
     """
     import numpy as np
-    import librosa
 
     if not beats:
         return None
@@ -231,25 +283,10 @@ def pick_anchor(input_path, beats, numerator, confirm_bars=2, clarity_threshold=
     fallback = times[downbeat_idxs[0]]
 
     try:
-        y, sr = librosa.load(input_path, sr=None, mono=True)
-        env = librosa.onset.onset_strength(y=y, sr=sr)
-        hop = 512  # librosa's onset_strength default
-        env_times = librosa.frames_to_time(np.arange(len(env)), sr=sr, hop_length=hop)
+        env, env_times = onset_env(input_path)
     except Exception as e:  # pragma: no cover - environment/decoding problem
         sys.stderr.write(f"warning: anchor scoring unavailable ({e}); using first downbeat\n")
         return fallback
-
-    def env_at(t, half_window=0.05):
-        lo = np.searchsorted(env_times, t - half_window)
-        hi = np.searchsorted(env_times, t + half_window)
-        seg = env[lo:hi]
-        return float(seg.max()) if len(seg) else 0.0
-
-    def env_between(t0, t1):
-        lo = np.searchsorted(env_times, t0)
-        hi = np.searchsorted(env_times, t1)
-        seg = env[lo:hi]
-        return float(np.median(seg)) if len(seg) else 0.0
 
     n = len(beats)
     span = numerator * confirm_bars
@@ -259,9 +296,9 @@ def pick_anchor(input_path, beats, numerator, confirm_bars=2, clarity_threshold=
         on_beat, between = [], []
         for k in range(di, di + span):
             t = times[k]
-            on_beat.append(env_at(t))
+            on_beat.append(env_peak(env, env_times, t))
             if k + 1 < n:
-                between.append(env_between(t + 0.05, times[k + 1] - 0.02))
+                between.append(env_gap(env, env_times, t + 0.05, times[k + 1] - 0.02))
         on_beat_med = float(np.median(on_beat)) if on_beat else 0.0
         between_med = float(np.median(between)) if between else 0.0
         clarity = on_beat_med / (between_med + 1e-6)
@@ -349,6 +386,32 @@ SEG_MIN_BEATS = 24       # discard segments too short to be a real tempo section
 # detector was originally calibrated against) while scaling sanely either side.
 SEG_CLEAN_RESID_RATIO = 0.045
 SEG_CLEAN_RESID_FLOOR = 0.012  # s — never demand better than BeatNet's own 20ms frame allows
+
+
+# --- Beat confidence (Phase 1: measure only) ------------------------------
+#
+# detect_tempo_segments' `confident` flag is derived purely from how cleanly the
+# beat INTERVALS fit a straight line, so a tracker that confidently slips to
+# half-time (even intervals at the wrong level) reads as confident. These
+# constants drive a score built from evidence OUTSIDE the timing list — onset
+# energy at vs between each beat, and an architecturally independent second
+# tracker (madmom RNN). Phase 1 only marks the low-confidence spans for the
+# Perform UI; it does not change any beat time.
+#
+# Every value here is a first guess anchored to pick_anchor's validated
+# clarity_threshold (1.6) and an 8th-note tolerance. Tune on real tracks before
+# relying on the spans (see the plan's verification step 4).
+CONF_ONSET_LO = 1.05   # onset clarity ratio at/below this -> onset sub-score 0
+CONF_ONSET_HI = 2.2    #   "        "     "  at/above this -> onset sub-score 1
+CONF_MADMOM_TOL_RATIO = 0.30   # |Δt| to nearest 2nd-tracker beat as a fraction of the
+                               # local interval that still scores 1 (~an 8th note)
+CONF_W_ONSET = 0.40    # does the audio have a beat where the click is (onset contrast)
+CONF_W_GRID = 0.35     # is the local index↔time grid coherent (no dropped/extra beat)
+CONF_W_MADMOM = 0.15   # phase corroboration, only where the 2nd tracker agrees on tempo
+CONF_W_FRAME = 0.10    # Beat This! frame activation — Phase 3, not wired yet
+LOW_CONF_THRESH = 0.45   # a smoothed per-beat conf below this is "low confidence"
+SEG_CONF_THRESH = 0.55   # Phase 2 will gate the repairs on segment conf >= this
+CONF_SMOOTH_BEATS = None  # moving-median half-width; None -> numerator (1 bar each side)
 
 
 def fit_run(times):
@@ -680,7 +743,626 @@ def bridge_unreliable_stretches(beats, segments, agree_tol=0.05):
     return [{"t": t, "pos": 0} for t in out], bridged
 
 
-def run_beat_this(path, use_dbn=True):
+# --- Beat confidence scoring ----------------------------------------------
+
+
+def _local_intervals(times):
+    """Per-beat local interval: median of the <=2 adjacent inter-beat gaps."""
+    import numpy as np
+    n = len(times)
+    if n < 2:
+        return np.full(max(n, 1), 0.5)
+    diffs = np.diff(times)
+    med_all = float(np.median(diffs))
+    out = np.empty(n)
+    for i in range(n):
+        near = []
+        if 0 <= i - 1 < len(diffs):
+            near.append(diffs[i - 1])
+        if i < len(diffs):
+            near.append(diffs[i])
+        out[i] = float(np.median(near)) if near else med_all
+    return out
+
+
+def beat_onset_clarity(env, env_times, times, numerator):
+    """
+    Per-beat onset clarity: peak onset energy at the beat over the median onset
+    energy in the surrounding gaps — the same spike-vs-gap contrast pick_anchor
+    scores once for the anchor region, here computed for every beat over a
+    ±numerator-beat window. Returns an np.ndarray (len == len(times)); entries
+    with no usable window are NaN.
+    """
+    import numpy as np
+    n = len(times)
+    out = np.full(n, np.nan)
+    if n < 3:
+        return out
+    gap_energy = np.array([
+        env_gap(env, env_times, times[i] + 0.05, times[i + 1] - 0.02)
+        for i in range(n - 1)
+    ])
+    for i in range(n):
+        lo = max(0, i - numerator)
+        hi = min(n - 1, i + numerator)
+        local = gap_energy[lo:hi]
+        if not len(local):
+            continue
+        floor = float(np.median(local))
+        out[i] = env_peak(env, env_times, times[i]) / (floor + 1e-6)
+    return out
+
+
+def snap_grid_outliers(beats, numerator, dev_lo=0.15, dev_hi=0.40, fit_resid_ratio=0.10):
+    """
+    Correct an isolated timing slip — a beat (or two) nudged off-grid by a
+    syncopated fill or accent that Beat This! briefly mistook for the pulse,
+    with the grid resuming right after — back onto the tempo its neighbours
+    already agree on.
+
+    For each beat, fit a line to the surrounding beats with that beat EXCLUDED,
+    and compare where it actually landed to where the line predicts. Correct it
+    only when ALL of:
+      - the neighbours fit a tight line (fit_resid_ratio of the interval) — i.e.
+        there IS a steady grid here to snap back onto, not a genuine tempo
+        change straddling the window (which fits poorly);
+      - the deviation is in the "real slip, not jitter" band: bigger than
+        dev_lo (ordinary tracking wobble, leave it) and smaller than dev_hi
+        (that large is more likely a deliberate bar/meter event, not a slip);
+      - snapping it does not reorder beats.
+
+    This is deliberately narrow: a genuine tempo or meter change persists (every
+    beat after it keeps the new spacing, so a line fit around it never lands
+    tight) while a slip is a bad measurement or two bracketed by beats that
+    still agree with each other — that difference is what tells them apart, not
+    a bar/time heuristic. The excluded neighbourhood around `i` is 2 beats wide
+    on each side, not just `i` itself: a slip commonly spans 2 consecutive
+    beats (one long fill note misread as the pulse), and excluding only the
+    single beat under test would leave its neighbour still inside the fit,
+    pulling the reference line toward the slip and hiding it.
+
+    Returns (beats, n_corrected).
+    """
+    import numpy as np
+    n = len(beats)
+    excl_radius = 2
+    w = max(4 * numerator, 16)
+    max_run = 2  # a fix touching more than this many CONSECUTIVE beats is not an
+                 # isolated slip anymore — see the guard below.
+    if n < 2 * w:
+        return beats, 0
+    times = np.array([b["t"] for b in beats], dtype=float)
+    out = times.copy()
+    touched = [False] * n
+    for i in range(n):
+        lo, hi = max(0, i - w), min(n, i + w + 1)
+        excl = range(i - excl_radius, i + excl_radius + 1)
+        idxs = np.array([k for k in range(lo, hi) if k not in excl], dtype=float)
+        if len(idxs) < 10:
+            continue
+        ys = times[idxs.astype(int)]
+        slope, intercept = np.polyfit(idxs, ys, 1)
+        if slope <= 0:
+            continue
+        resid = math.sqrt(float(np.mean((ys - (intercept + slope * idxs)) ** 2)))
+        if resid > fit_resid_ratio * slope:
+            continue  # no steady grid here to snap onto (likely a real change)
+        pred = intercept + slope * i
+        adev = abs(times[i] - pred)
+        if adev < dev_lo * slope or adev > dev_hi * slope:
+            continue
+        prev_t = out[i - 1] if i > 0 else -np.inf
+        next_t = out[i + 1] if i + 1 < n else np.inf
+        margin = 0.08 * slope
+        if not (prev_t + margin < pred < next_t - margin):
+            continue  # would reorder beats — reject
+        out[i] = pred
+        touched[i] = True
+
+    # A cluster of more than `max_run` consecutive corrections is not an
+    # isolated slip that snaps back — it is the signature of a genuine, if
+    # small, phase drift (measured on a real track: the "excluded" fit line
+    # ends up blended between the pre- and post-drift phase, so it nudges a
+    # wide neighbourhood toward a compromise line instead of cleanly leaving a
+    # 1-2 beat mistake corrected). Revert those — don't guess at a real
+    # performance nuance.
+    i = 0
+    while i < n:
+        if not touched[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and touched[j + 1]:
+            j += 1
+        if j - i + 1 > max_run:
+            for k in range(i, j + 1):
+                out[k] = times[k]
+                touched[k] = False
+        i = j + 1
+
+    corrected = sum(touched)
+    if not corrected:
+        return beats, 0
+    new_beats = [dict(b) for b in beats]
+    for i in range(n):
+        new_beats[i]["t"] = round(float(out[i]), 4)
+    return new_beats, corrected
+
+
+EXCURSION_RATIOS = (1 / 2, 2 / 3, 3 / 4, 4 / 5, 5 / 4, 4 / 3, 3 / 2, 2)
+
+
+def _fit_line(idx, ts):
+    import numpy as np
+    slope, intercept = np.polyfit(idx, ts, 1)
+    resid = float(np.sqrt(np.mean((ts - (intercept + slope * idx)) ** 2)))
+    return float(slope), float(intercept), resid
+
+
+def bridge_tempo_excursions(beats, dev=0.10, side=16, agree=0.02, phase_tol=0.12,
+                            ref_half=32, max_len=48, ratio_tol=0.05, steady=0.06):
+    """
+    Re-lay the grid across a short stretch where the tracker briefly locked onto
+    a riff's accent pattern instead of the pulse, then came back.
+
+    Measured on a real 5/4 live track: for ~9s the tracker switched from the
+    353ms quarter-note pulse to 440ms spacing — exactly 5/4 of it, i.e. a riff
+    accenting every 5 sixteenths — placing 21 clicks where the band played 26
+    beats, then returned to the original grid in phase. Onset contrast cannot
+    catch this (the riff's accents really ARE at those times, so the wrong grid
+    looks perfectly coherent), and the stretch is shorter than a tempo segment,
+    so neither the confidence layer nor fix_metrical_level sees it.
+
+    What distinguishes it from a real tempo change is that the pulse comes back
+    unchanged. A stretch is re-laid only when ALL of:
+      - its intervals sit > `dev` off the surrounding tempo (a moving median
+        over ±`ref_half` beats), for at most `max_len` beats;
+      - `side` beats either side are steady (line-fit residual < `steady` of an
+        interval) and agree on tempo within `agree`;
+      - the gap between the last on-grid beat before and the first after spans
+        a whole number of beats to within `phase_tol` of a beat — the pulse
+        resumed in phase, so there was no real tempo or bar change inside;
+      - the tracked-to-true beat count ratio is a simple rhythmic ratio
+        (4:5, 2:3, 1:2, ...) within `ratio_tol` — the signature of following a
+        polyrhythmic figure or a half/double-time slip, not random noise.
+    Stretches with the same beat count are left to the other correctors.
+
+    Returns (beats, n_bridged). Positions are left for the caller to renumber.
+    """
+    import numpy as np
+    t = np.array([b["t"] for b in beats], dtype=float)
+    n_iv = len(t) - 1
+    if n_iv < 2 * side + 3:
+        return beats, 0
+    iv = np.diff(t)
+    ref = np.array([np.median(iv[max(0, i - ref_half):i + ref_half + 1]) for i in range(n_iv)])
+    bad = np.abs(iv / ref - 1.0) > dev
+
+    spans = []  # (a0, b0, count) beat-index endpoints kept, count new intervals
+    i = 0
+    while i < n_iv:
+        if not bad[i]:
+            i += 1
+            continue
+        # Grow the run, bridging gaps of up to 3 in-tolerance intervals (a
+        # wrong grid can momentarily look right as it drifts through phase).
+        j = i
+        while True:
+            k = j + 1
+            while k < n_iv and not bad[k] and k - j <= 3:
+                k += 1
+            if k < n_iv and bad[k] and k - j <= 3:
+                j = k
+            else:
+                break
+        a, b = i, j + 1
+        i = j + 1
+        if b - a < 3 or b - a > max_len or a - side < 0 or b + 1 + side > len(t):
+            continue
+        li = np.arange(a - side, a)
+        ri = np.arange(b + 1, b + 1 + side)
+        ls, lb, lr = _fit_line(li, t[li])
+        rs, rb, rr = _fit_line(ri, t[ri])
+        if ls <= 0 or rs <= 0 or lr > steady * ls or rr > steady * rs:
+            continue
+        if abs(ls - rs) / ls > agree:
+            continue
+        # Widen to the nearest beats that actually sit on each side's grid —
+        # the first/last beat of a slip is usually itself half-way off.
+        a0 = a
+        while a0 > a - side // 2 and abs(t[a0] - (lb + ls * a0)) > 0.08 * ls:
+            a0 -= 1
+        b0 = b
+        while b0 < b + side // 2 and abs(t[b0] - (rb + rs * b0)) > 0.08 * rs:
+            b0 += 1
+        s = (ls + rs) / 2.0
+        span = (t[b0] - t[a0]) / s
+        count = int(round(span))
+        if count < 2 or count == b0 - a0 or abs(span - count) > phase_tol:
+            continue
+        ratio = (b0 - a0) / count
+        if min(abs(ratio / r - 1.0) for r in EXCURSION_RATIOS) > ratio_tol:
+            continue
+        spans.append((a0, b0, count))
+
+    if not spans:
+        return beats, 0
+    out = []
+    prev_end = 0
+    applied = 0
+    for a0, b0, count in spans:
+        if a0 < prev_end:
+            continue  # overlapping candidates — keep the first
+        applied += 1
+        out.extend(float(x) for x in t[prev_end:a0])
+        step = (t[b0] - t[a0]) / count
+        out.extend(float(t[a0] + k * step) for k in range(count))
+        prev_end = b0
+    out.extend(float(x) for x in t[prev_end:])
+    return [{"t": round(x, 4), "pos": 0} for x in out], applied
+
+
+TRACKER_FRAME_SEC = 0.02  # Beat This! and BeatNet both emit beats on a 50 fps frame grid
+
+
+def refine_subframe_timing(beats, frame=TRACKER_FRAME_SEC, half=8, cap=0.012,
+                           trim=0.025, exact_tol=0.0005):
+    """
+    Remove the tracker's 20ms frame quantization from beat times.
+
+    The DBN can only place a beat on a 20ms frame, so any tempo whose interval
+    is not an exact multiple of 20ms comes out as a sawtooth: e.g. a real
+    468.8ms interval (128bpm) is emitted as a 460/480ms alternation, and a
+    461.5ms one as a run of 460s with a 20ms catch-up jump every dozen beats.
+    Each beat can sit up to 10ms off where the band played it, and the jumps
+    are audible as the click "wobbling" on a song that holds steady tempo.
+
+    Each beat is replaced by a robust local quadratic fit of time vs index over
+    ±`half` beats (quadratic, not linear, so a gradual accelerando/ritard is
+    followed rather than flattened), with points more than `trim` off the fit
+    excluded so a slip or phase step does not bend the curve. The move is
+    applied only when:
+      - it is at most `cap` (a little over half a frame) — the quantization
+        error this targets can never exceed 10ms, so anything bigger is a real
+        timing event (or a different error) and is left alone;
+      - the local interval is NOT already an exact frame multiple (within
+        `exact_tol`). For, say, a click-recorded 120.0bpm song every raw beat
+        is already exact, and smoothing only adds noise — measured on three
+        such studio tracks.
+
+    Measured against a sharp (2.9ms-hop) spectral-flux onset reference across a
+    16-song library: onset-alignment spread (MAD) 6.31ms -> 5.75ms on average,
+    up to 6.2 -> 3.5ms on a song whose tempo sits between frames; worst single
+    song +0.6ms (inaudible). Runs per contiguous run so a fit never spans a stop.
+
+    Returns (beats, n_moved).
+    """
+    import numpy as np
+    n = len(beats)
+    if n < 2 * half:
+        return beats, 0
+    times = np.array([b["t"] for b in beats], dtype=float)
+    out = times.copy()
+    deg = 2
+    min_pts = deg + 4
+
+    # Run boundaries by index (same rule as contiguous_runs: a gap > 2x the
+    # median interval is a stop, not a slow beat).
+    diffs = np.diff(times)
+    positive = diffs[diffs > 0]
+    med = float(np.median(positive)) if len(positive) else 0.5
+    breaks = [0] + [i + 1 for i, d in enumerate(diffs) if d > 2.0 * med] + [n]
+
+    moved = 0
+    for r0, r1 in zip(breaks, breaks[1:]):
+        for i in range(r0, r1):
+            lo, hi = max(r0, i - half), min(r1, i + half + 1)
+            if hi - lo < min_pts + 2:
+                continue
+            idx = np.arange(lo, hi)
+            x = (idx - i).astype(float)
+            ys = times[idx]
+            mask = np.ones(len(idx), dtype=bool)
+            coeffs = None
+            for _ in range(3):
+                coeffs = np.polyfit(x[mask], ys[mask], deg)
+                keep = np.abs(ys - np.polyval(coeffs, x)) <= trim
+                if (keep == mask).all() or keep.sum() < min_pts:
+                    break
+                mask = keep
+            if mask.sum() < min_pts:
+                continue
+            coeffs = np.polyfit(x[mask], ys[mask], deg)
+            slope = float(np.polyval(np.polyder(coeffs), 0.0))
+            if slope <= 0:
+                continue
+            if abs(slope - round(slope / frame) * frame) < exact_tol:
+                continue  # tempo already lands on the frame grid — raw is exact
+            fit = float(np.polyval(coeffs, 0.0))
+            if abs(times[i] - fit) > cap:
+                continue
+            out[i] = fit
+
+    # Never reorder beats (cannot happen with cap << interval, but be certain).
+    if np.any(np.diff(out) <= 0):
+        return beats, 0
+    new_beats = [dict(b) for b in beats]
+    for i in range(n):
+        if abs(out[i] - times[i]) > 1e-4:
+            new_beats[i]["t"] = round(float(out[i]), 4)
+            moved += 1
+    return new_beats, moved
+
+
+def beat_grid_residual(times, numerator):
+    """
+    Per-beat "is the local grid coherent" score, 0..1.
+
+    Fits a straight line to beat time vs beat index over a window centred on each
+    beat and measures how far that beat sits from the line, as a fraction of the
+    beat interval. A dropped beat, an inserted beat, a phase jump or a metrical
+    slip all break the index↔time line locally and push the deviation toward
+    half a beat or more. This is `fit_run`'s residual idea (see its docstring)
+    applied per beat instead of collapsed into a segment — detect_tempo_segments
+    can merge across a broken stretch when the tempo matches either side, so a
+    "confident" segment is not proof the grid is whole.
+
+    1.0 = beat lands on the local line; 0.0 = off by ≥ ~an 8th note.
+    Returns np.ndarray (len == len(times)); NaN where the window is too short.
+    """
+    import numpy as np
+    n = len(times)
+    out = np.full(n, np.nan)
+    if n < 8:
+        return out
+    w = max(2 * numerator, 8)
+    t = np.asarray(times, float)
+    for i in range(n):
+        lo = max(0, i - w)
+        hi = min(n, i + w + 1)
+        seg = t[lo:hi]
+        if len(seg) < 6:
+            continue
+        idx = np.arange(len(seg))
+        slope, intercept = np.polyfit(idx, seg, 1)
+        if slope <= 0:
+            continue
+        dev = abs(t[i] - (intercept + slope * (i - lo)))
+        out[i] = max(0.0, 1.0 - dev / (0.3 * slope))
+    return out
+
+
+def run_madmom_beats(path):
+    """
+    Independent second beat tracker — madmom's RNN activations + DBN, beat-only
+    (no downbeat). Architecturally unrelated to Beat This! (an 8-model BiLSTM bag
+    vs a transformer, different training data), so agreement within an 8th note
+    is real corroboration and divergence is a real warning. Returns beat times
+    (np.ndarray, seconds) or None on any failure — it is an optional signal and
+    must never fail the analysis.
+    """
+    try:
+        import numpy as np
+        from madmom.features.beats import RNNBeatProcessor, DBNBeatTrackingProcessor
+        act = RNNBeatProcessor()(path)
+        beats = DBNBeatTrackingProcessor(
+            fps=100, min_bpm=55, max_bpm=215, transition_lambda=100,
+        )(act)
+        beats = np.asarray(beats, dtype=float)
+        return beats if len(beats) else None
+    except Exception as e:  # pragma: no cover - optional signal
+        sys.stderr.write(f"warning: second-tracker (madmom) beats unavailable ({e})\n")
+        return None
+
+
+def _moving_median(xs, half):
+    import numpy as np
+    n = len(xs)
+    out = np.empty(n)
+    for i in range(n):
+        out[i] = np.median(xs[max(0, i - half):min(n, i + half + 1)])
+    return out
+
+
+def compute_beat_confidence(beats, numerator, *, clarity, grid=None, madmom_times=None,
+                            frame_act=None, smooth_half=None):
+    """
+    Combine the available per-beat signals into one 0..1 confidence per beat.
+
+    Returns (confs: list[float], parts: list[dict]). parts[i] holds the raw
+    sub-scores {"onset": float|absent, "madmom": float|None, "frame": float|None}
+    for span-reason classification.
+
+    Signals renormalize over whatever is present: with the second tracker off the
+    madmom term is DROPPED (not zeroed); the frame term is absent until Phase 3.
+    """
+    import numpy as np
+    times = [b["t"] for b in beats]
+    n = len(times)
+    if n == 0:
+        return [], []
+
+    local_iv = _local_intervals(times)
+    tarr = np.asarray(times, dtype=float)
+    mt = np.asarray(madmom_times, dtype=float) if madmom_times is not None else None
+    if mt is not None and not len(mt):
+        mt = None
+    if mt is not None:
+        mt = np.sort(mt)
+    dens_w = max(2 * numerator, 8)   # beats each side for the local density ratio
+
+    confs, parts = [], []
+    for i in range(n):
+        p = {}
+        c = clarity[i] if (clarity is not None and i < len(clarity)) else float("nan")
+        if not math.isnan(c):
+            p["onset"] = min(1.0, max(0.0,
+                (c - CONF_ONSET_LO) / (CONF_ONSET_HI - CONF_ONSET_LO)))
+        g = grid[i] if (grid is not None and i < len(grid)) else float("nan")
+        if not math.isnan(g):
+            p["grid"] = min(1.0, max(0.0, float(g)))
+        p["madmom"] = None
+        if mt is not None:
+            # madmom is only a useful *phase* reference where it agrees with the
+            # primary on TEMPO. It frequently octave-slips (tracks a slow song at
+            # 2x, a busy one at 0.5x) — measured on real tracks — and when it
+            # does, its beats say nothing about whether the primary grid is
+            # right. So: compare local tempos first; use the phase signal only
+            # when they match, otherwise drop madmom for this beat entirely
+            # (renormalize onto onset). Deciding half/double-time is
+            # fix_metrical_level's job, not this blend's.
+            lo_t = times[max(0, i - dens_w)]
+            hi_t = times[min(n - 1, i + dens_w)]
+            md_here = mt[(mt >= lo_t) & (mt <= hi_t)]
+            if len(md_here) >= 3 and local_iv[i] > 0:
+                md_iv = float(np.median(np.diff(md_here)))
+                r = md_iv / local_iv[i]
+                if 0.90 <= r <= 1.11:
+                    j = int(np.argmin(np.abs(mt - times[i])))
+                    dt = abs(float(mt[j]) - times[i])
+                    tol = CONF_MADMOM_TOL_RATIO * local_iv[i]
+                    p["madmom"] = 0.0 if (tol <= 0 or dt > 2.0 * tol) else \
+                        min(1.0, max(0.0, 1.0 - dt / tol))
+        if frame_act is not None and i < len(frame_act):
+            p["frame"] = min(1.0, max(0.0, (float(frame_act[i]) - 0.3) / 0.3))
+        else:
+            p["frame"] = None
+
+        num = den = 0.0
+        if "onset" in p:
+            num += CONF_W_ONSET * p["onset"]; den += CONF_W_ONSET
+        if "grid" in p:
+            num += CONF_W_GRID * p["grid"]; den += CONF_W_GRID
+        if p["madmom"] is not None:
+            num += CONF_W_MADMOM * p["madmom"]; den += CONF_W_MADMOM
+        if p["frame"] is not None:
+            num += CONF_W_FRAME * p["frame"]; den += CONF_W_FRAME
+        confs.append(num / den if den > 0 else float("nan"))
+        parts.append(p)
+
+    # Sectional smoothing — the failure mode is a whole passage; a lone low beat
+    # must not fragment a span nor a lone good beat split one.
+    half = smooth_half or CONF_SMOOTH_BEATS or max(numerator, 3)
+    arr = np.array([0.5 if math.isnan(x) else x for x in confs], dtype=float)
+    if len(arr):
+        arr = _moving_median(arr, int(half))
+    return [float(x) for x in arr], parts
+
+
+def _abutting_confident_bpm(segments, start_t, end_t):
+    """tempoBpm of a confident segment covering or touching [start_t, end_t], else 0.0."""
+    best = 0.0
+    for s in segments or []:
+        if not s.get("confident"):
+            continue
+        if s.get("endT", -1e18) >= start_t - 1e-6 and s.get("startT", 1e18) <= end_t + 1e-6:
+            bpm = float(s.get("tempoBpm") or 0.0)
+            if bpm > 0:
+                best = bpm
+    return best
+
+
+def low_confidence_spans(beats, confs, parts, numerator, segments=None,
+                         thresh=LOW_CONF_THRESH):
+    """
+    Contiguous runs of low-confidence beats, each >= one bar, merged when closer
+    than a bar apart. Returns [{startT, endT, reason}] on the beats[].t timeline,
+    sorted by startT. Every signal-specific reason branch is guarded on that
+    signal being PRESENT, so the second-tracker-off case cannot raise.
+    """
+    import numpy as np
+    n = len(beats)
+    if n == 0 or not confs or len(confs) != n:
+        return []
+    times = [b["t"] for b in beats]
+    diffs = np.diff(times) if n > 1 else np.array([0.5])
+    local_iv = _local_intervals(times)
+
+    low = [(not math.isnan(c)) and c < thresh for c in confs]
+    runs = []
+    i = 0
+    while i < n:
+        if not low[i]:
+            i += 1
+            continue
+        j = i
+        while j + 1 < n and low[j + 1]:
+            j += 1
+        runs.append([i, j])
+        i = j + 1
+
+    # Keep a run if it is at least a bar long, OR short but severe — a dropped or
+    # doubled beat is a 1-2 beat defect the user still wants marked (e.g. a
+    # double-click on a section entry).
+    def keep(r):
+        if (r[1] - r[0] + 1) >= numerator:
+            return True
+        return min(confs[r[0]:r[1] + 1]) < 0.20
+    runs = [r for r in runs if keep(r)]
+    if not runs:
+        return []
+    merged = [runs[0]]
+    for a, b in runs[1:]:
+        if a - merged[-1][1] <= numerator:
+            merged[-1][1] = b
+        else:
+            merged.append([a, b])
+
+    spans = []
+    for a, b in merged:
+        start_t = times[a] - 0.5 * local_iv[a]
+        end_t = times[b] + 0.5 * local_iv[b]
+        mad = [parts[k]["madmom"] for k in range(a, b + 1) if parts[k].get("madmom") is not None]
+        ons = [parts[k]["onset"] for k in range(a, b + 1) if "onset" in parts[k]]
+        grd = [parts[k]["grid"] for k in range(a, b + 1) if "grid" in parts[k]]
+        frm = [parts[k]["frame"] for k in range(a, b + 1) if parts[k].get("frame") is not None]
+
+        reason = "mixed"
+        span_iv = float(np.median(diffs[a:b])) if b > a else local_iv[a]
+        ref_bpm = _abutting_confident_bpm(segments, start_t, end_t)
+        if ref_bpm > 0 and span_iv > 0:
+            r = (60.0 / span_iv) / ref_bpm
+            if abs(r - 0.5) < 0.12 or abs(r - 2.0) < 0.24:
+                reason = "half-time-suspected"
+        if reason == "mixed":
+            # grid-broken (dropped/extra beat, phase jump) and onset-weak (no
+            # real beat where the click is — noise or a phase error) are the
+            # actionable calls. A bare 2nd-tracker disagreement is often just an
+            # octave slip, so it ranks last.
+            if grd and statistics.median(grd) < 0.35:
+                reason = "grid-broken"
+            elif ons and statistics.median(ons) < 0.35:
+                reason = "onset-weak"
+            elif mad and statistics.median(mad) < 0.35:
+                reason = "tracker-disagree"
+            elif frm and statistics.median(frm) < 0.35:
+                reason = "frame-weak"
+        spans.append({"startT": round(start_t, 4), "endT": round(end_t, 4), "reason": reason})
+    return spans
+
+
+def annotate_segments_with_confidence(segments, beats, confs):
+    """
+    Add `conf` (median member-beat confidence) and `gridClean` (the prior
+    regression-residual `confident` value, preserved for A/B) to each segment.
+    Phase 1 does NOT change `confident` itself.
+    """
+    if not segments or not beats or not confs or len(confs) != len(beats):
+        return segments
+    times = [b["t"] for b in beats]
+    for s in segments:
+        lo = s.get("startT", 0.0) - 1e-6
+        hi = s.get("endT", 0.0) + 1e-6
+        members = [
+            confs[i] for i, t in enumerate(times)
+            if lo <= t <= hi and not math.isnan(confs[i])
+        ]
+        s["gridClean"] = bool(s.get("confident"))
+        s["conf"] = round(statistics.median(members), 3) if members else None
+    return segments
+
+
+def run_beat_this(path, use_dbn=True, device="cpu"):
     """
     Analyze with Beat This! (CPJKU transformer) and return rows of
     [time_seconds, position_in_bar] — the same shape BeatNet's DBN returns, so
@@ -721,7 +1403,7 @@ def run_beat_this(path, use_dbn=True):
                 "falling back to the network/cache copy\n"
             )
 
-    beats, downbeats = File2Beats(checkpoint_path=checkpoint, device="cpu", dbn=use_dbn)(path)
+    beats, downbeats = File2Beats(checkpoint_path=checkpoint, device=device, dbn=use_dbn)(path)
     beats = np.asarray(beats, dtype=float)
     downbeats = np.asarray(downbeats, dtype=float)
     if len(beats) == 0:
@@ -824,6 +1506,52 @@ def main():
             "legato intros. See run_beat_this() for the measurements."
         ),
     )
+    ap.add_argument(
+        "--device",
+        choices=["auto", "cpu", "cuda"],
+        default="auto",
+        help=(
+            "Torch device for Beat This! inference. 'auto' uses CUDA when a GPU "
+            "is available, else CPU. Only the Beat This! transformer benefits — "
+            "the second confidence tracker (madmom RNN) is CPU-only. The frozen "
+            "build ships CPU-only torch, so 'auto' resolves to CPU there."
+        ),
+    )
+    ap.add_argument(
+        "--no-second-tracker",
+        action="store_true",
+        help=(
+            "Skip the independent madmom RNN beat pass used only to score "
+            "confidence (see run_madmom_beats / compute_beat_confidence). "
+            "Halves analysis time; lowConfidenceSpans then rely on onset "
+            "energy alone and miss a confident half-time slip."
+        ),
+    )
+    ap.add_argument(
+        "--no-excursion-fix",
+        action="store_true",
+        help=(
+            "Leave short stretches where the tracker followed a riff's accent "
+            "pattern instead of the pulse — see bridge_tempo_excursions()."
+        ),
+    )
+    ap.add_argument(
+        "--no-subframe",
+        action="store_true",
+        help=(
+            "Keep the tracker's raw 20ms-quantized beat times instead of "
+            "removing the frame sawtooth — see refine_subframe_timing()."
+        ),
+    )
+    ap.add_argument(
+        "--conf-smooth-beats",
+        type=int,
+        default=0,
+        help=(
+            "Moving-median half-width (in beats) for per-beat confidence "
+            "smoothing. 0 -> default of max(numerator, 6)."
+        ),
+    )
     args = ap.parse_args()
 
     log(stage="loading")
@@ -893,11 +1621,19 @@ def main():
             sys.stderr.write(f"warning: lead-silence trim failed ({e}); using untrimmed audio\n")
             lead_trim = 0.0
 
+    device = args.device
+    if device == "auto":
+        try:
+            import torch
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except Exception:
+            device = "cpu"
+
     log(stage="analyzing")
     t0 = time.time()
     try:
         if engine == "beat_this":
-            out = run_beat_this(analyze_path, use_dbn=True)
+            out = run_beat_this(analyze_path, use_dbn=True, device=device)
         else:
             out = run_dbn(analyze_path)
     except Exception as e:
@@ -962,6 +1698,14 @@ def main():
         except Exception as e:  # pragma: no cover
             sys.stderr.write(f"warning: tempo-refine pass failed ({e}); keeping pass 1\n")
 
+    # Independent second tracker (madmom RNN), used only to score confidence.
+    # Runs here — main tracking done, analyze_path (possibly the trimmed temp)
+    # still on disk. Its beats are on the analyzed timeline; shifted back below.
+    madmom_beats = None
+    if not args.no_second_tracker:
+        log(stage="verifying")
+        madmom_beats = run_madmom_beats(analyze_path)
+
     if trimmed_tmp:
         try:
             os.remove(trimmed_tmp)
@@ -985,6 +1729,9 @@ def main():
         sys.stderr.write("analysis produced too few beats\n")
         sys.exit(4)
 
+    # Second-tracker beats onto the same (original-file) timeline as `beats`.
+    madmom_orig = (madmom_beats + lead_trim) if madmom_beats is not None else None
+
     # Nudge beats that land on a weak/absent transient (slides, bends, legato
     # note changes) toward an independent pitch-change-tracked estimate —
     # amplitude-based tracking has little to grab onto there. Small, targeted;
@@ -995,6 +1742,21 @@ def main():
     except Exception as e:  # pragma: no cover
         sys.stderr.write(f"warning: weak-attack refinement failed ({e}); using raw beat times\n")
         weak_attack_refined = 0
+
+    # Correct isolated slips — a syncopated fill or accent briefly mistaken for
+    # the pulse, with the grid resuming right after (e.g. a beat landing ~40%
+    # of an interval late for one or two beats, then locking straight back to
+    # the same phase it held before). Snaps only a beat bracketed by neighbours
+    # that already agree tightly on tempo — never a sustained tempo/meter change,
+    # which fits no such tight line across it. See snap_grid_outliers().
+    grid_snapped = 0
+    try:
+        pre_numerator = derive_numerator(positions)
+        beats, grid_snapped = snap_grid_outliers(beats, pre_numerator)
+        times = [b["t"] for b in beats]
+    except Exception as e:  # pragma: no cover
+        sys.stderr.write(f"warning: grid-outlier snap failed ({e}); using unsnapped beat times\n")
+        grid_snapped = 0
 
     numerator = derive_numerator(positions)
     tempo_bpm = derive_tempo(times)
@@ -1049,15 +1811,80 @@ def main():
             sys.stderr.write(f"warning: bridging failed ({e}); leaving beats as tracked\n")
             bridged = 0
 
+    # Re-lay short stretches where the tracker followed a riff's accents (e.g.
+    # 4 clicks per 5 beats) and then returned to the pulse in phase.
+    excursions = 0
+    if not args.no_excursion_fix:
+        try:
+            first_downbeat_t = next((b["t"] for b in beats if b["pos"] == 1), None)
+            fixed, excursions = bridge_tempo_excursions(beats)
+            if excursions:
+                beats = renumber_positions(fixed, numerator, first_downbeat_t)
+                times = [b["t"] for b in beats]
+                tempo_bpm = derive_tempo(times)
+                tempo_segments = detect_tempo_segments(times)
+                sys.stderr.write(f"note: bridged {excursions} tempo excursion(s)\n")
+        except Exception as e:  # pragma: no cover
+            sys.stderr.write(f"warning: excursion fix failed ({e}); leaving beats as tracked\n")
+            excursions = 0
+
+    # Remove the 20ms frame sawtooth last, after every edit that adds, drops or
+    # re-lays beats, so it smooths the final grid. Moves are capped at 12ms —
+    # it never changes which beat is which, only where inside its frame it sits.
+    subframe_refined = 0
+    if not args.no_subframe:
+        try:
+            beats, subframe_refined = refine_subframe_timing(beats)
+            times = [b["t"] for b in beats]
+        except Exception as e:  # pragma: no cover
+            sys.stderr.write(f"warning: sub-frame refinement failed ({e}); using frame-quantized beats\n")
+            subframe_refined = 0
+
     try:
         anchor_t = pick_anchor(args.input, beats, numerator)
     except Exception as e:  # pragma: no cover
         sys.stderr.write(f"warning: anchor scoring failed ({e}); omitting anchorT\n")
         anchor_t = None
 
+    # Beat confidence — Phase 1: measure only, no beat times change. Scored on
+    # the FINAL beat list (after any level-fix / bridge above) so the spans line
+    # up with beats[].t. Signals: onset-energy contrast at each beat, plus the
+    # independent madmom tracker where available. Never fails the analysis.
+    confidence = None
+    low_conf_spans = []
+    try:
+        env, env_times = onset_env(args.input)
+        clarity = beat_onset_clarity(env, env_times, times, numerator)
+        grid_res = beat_grid_residual(times, numerator)
+        confs, parts = compute_beat_confidence(
+            beats, numerator, clarity=clarity, grid=grid_res, madmom_times=madmom_orig,
+            smooth_half=(args.conf_smooth_beats or None),
+        )
+        tempo_segments = annotate_segments_with_confidence(tempo_segments, beats, confs)
+        low_conf_spans = low_confidence_spans(beats, confs, parts, numerator, tempo_segments)
+        for i, b in enumerate(beats):
+            if i < len(confs) and not math.isnan(confs[i]):
+                b["conf"] = round(confs[i], 3)
+        valid = [c for c in confs if not math.isnan(c)]
+        confidence = {
+            "method": "onset+madmom" if madmom_orig is not None else "onset",
+            "secondTracker": "madmom-rnn-dbn" if madmom_orig is not None else None,
+            "weights": {
+                "onset": CONF_W_ONSET, "grid": CONF_W_GRID,
+                "madmom": CONF_W_MADMOM, "frames": CONF_W_FRAME,
+            },
+            "meanConf": round(sum(valid) / len(valid), 3) if valid else None,
+            "minConf": round(min(valid), 3) if valid else None,
+        }
+    except Exception as e:  # pragma: no cover - never fail analysis for confidence
+        sys.stderr.write(f"warning: confidence scoring failed ({e})\n")
+        confidence = None
+        low_conf_spans = []
+
     descriptor = {
-        "version": 1,
+        "version": 2,
         "engine": "beat-this-dbn" if engine == "beat_this" else "beatnet-dbn",
+        "device": device if engine == "beat_this" else "cpu",
         "beats": beats,
         "numerator": numerator,
         "tempoBpm": tempo_bpm,
@@ -1066,15 +1893,20 @@ def main():
         "leadInTrimSec": lead_trim,
         "anchorT": anchor_t,
         "weakAttackRefined": weak_attack_refined,
+        "gridSnapped": grid_snapped,
+        "subframeRefined": subframe_refined,
+        "excursionsBridged": excursions,
         "tempoSegments": tempo_segments,
         "levelCorrected": level_corrected,
         "bridgedStretches": bridged,
+        "confidence": confidence,
+        "lowConfidenceSpans": low_conf_spans,
     }
 
     with open(args.output, "w", encoding="utf-8") as f:
         json.dump(descriptor, f)
 
-    log(stage="done", beats=len(beats), numerator=numerator, tempoBpm=tempo_bpm)
+    log(stage="done", beats=len(beats), numerator=numerator, tempoBpm=tempo_bpm, device=descriptor["device"])
 
 
 if __name__ == "__main__":

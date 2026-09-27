@@ -31,20 +31,40 @@ set STAGEHAND_BEAT_DETECT=python:F:\Claude\stagehand\sidecar\.venv\Scripts\pytho
   `{"stage":"done", ...}`. The backend re-emits these as `clicktrack_progress` events.
 - exit 0 + the `--output` file written on success; non-zero + stderr message on failure.
 
-Descriptor shape:
+Descriptor shape (abridged — the analysis also writes `analysisSeconds`,
+`leadInTrimSec`, `anchorT`, `weakAttackRefined`, `tempoSegments`, `levelCorrected`,
+`bridgedStretches`):
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "engine": "beat-this-dbn",
-  "beats": [{ "t": 0.51, "pos": 1 }, { "t": 1.0, "pos": 2 }, ...],
+  "beats": [{ "t": 0.51, "pos": 1, "conf": 0.93 }, ...],
   "numerator": 4,
   "tempoBpm": 120.0,
-  "generatedAt": 1730000000000
+  "generatedAt": 1730000000000,
+  "confidence": {
+    "method": "onset+madmom", "secondTracker": "madmom-rnn-dbn",
+    "weights": { "onset": 0.35, "madmom": 0.5, "frames": 0.15 },
+    "meanConf": 0.87, "minConf": 0.21
+  },
+  "lowConfidenceSpans": [
+    { "startT": 41.7, "endT": 49.2, "reason": "tracker-disagree" }
+  ]
 }
 ```
 
 `pos` is the 1-indexed beat position within the bar (`1` = downbeat).
+
+`beats[].conf` (0..1) and `confidence` / `lowConfidenceSpans` are Phase 1 of
+evidence-based confidence scoring (`compute_beat_confidence`): a per-beat blend of
+onset-energy contrast and agreement with an independent second tracker
+(madmom RNN, run unless `--no-second-tracker`). Phase 1 **measures only** — it
+changes no beat time; the Perform panel draws `lowConfidenceSpans` as markers on
+the scrub bar. `confidence` is `null` and `lowConfidenceSpans` `[]` if scoring
+failed. `reason` ∈ `tracker-disagree | onset-weak | frame-weak |
+half-time-suspected | mixed`. The second tracker roughly doubles analysis time
+(a `{"stage":"verifying"}` line marks it).
 
 ## Local development
 
@@ -63,6 +83,17 @@ Run it directly:
 
 ```sh
 sidecar/.venv/Scripts/python sidecar/beat_detect.py --input some.wav --output out.json
+```
+
+### Tests
+
+`sidecar/tests/` holds pure-Python tests (no torch / librosa / madmom needed —
+every heavy import in `beat_detect.py` is deferred). They run in CI on numpy +
+pytest alone:
+
+```sh
+sidecar/.venv/Scripts/pip install -r sidecar/requirements-dev.txt
+sidecar/.venv/Scripts/python -m pytest sidecar/tests -q
 ```
 
 ### Building the frozen binary

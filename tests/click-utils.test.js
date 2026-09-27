@@ -5,6 +5,8 @@ import {
   openingInterval,
   buildClickSchedule,
   applyTempoChangeCountOffs,
+  dedupeClicks,
+  createClockSync,
 } from '../renderer/js/click-utils.js';
 
 /**
@@ -226,6 +228,63 @@ describe('buildClickSchedule', () => {
     const ts = s.clicks.map(c => c.songT);
     expect(ts).toEqual([...ts].sort((a, b) => a - b));
   });
+
+  it('ignores confidence descriptor fields (lowConfidenceSpans, beats[].conf)', () => {
+    const base = grid(4, 24, 0.5, 1.0);
+    const plain = buildClickSchedule(base, { countOffBars: 2 });
+    const withConf = buildClickSchedule({
+      ...base,
+      version: 2,
+      beats: base.beats.map((b, i) => ({ ...b, conf: 0.5 + 0.01 * i })),
+      confidence: { method: 'onset+madmom', meanConf: 0.8 },
+      lowConfidenceSpans: [{ startT: 3.0, endT: 5.0, reason: 'tracker-disagree' }],
+    }, { countOffBars: 2 });
+    expect(withConf.clicks).toEqual(plain.clicks);
+    expect(withConf.countOffCount).toBe(plain.countOffCount);
+  });
+});
+
+// ─── dedupeClicks ────────────────────────────────────────────
+
+describe('dedupeClicks', () => {
+  it('collapses a near-coincident pair, keeping the count-off click', () => {
+    const clicks = [
+      { songT: 0.0, accent: true, countOff: false },
+      { songT: 0.5, accent: false, countOff: false },
+      { songT: 0.95, accent: false, countOff: false }, // stray real beat
+      { songT: 1.0, accent: true, countOff: true },    // count-off click
+      { songT: 1.5, accent: false, countOff: true },
+      { songT: 2.0, accent: true, countOff: true },
+    ];
+    const out = dedupeClicks(clicks);
+    expect(out).toHaveLength(5);
+    expect(out.some(c => Math.abs(c.songT - 0.95) < 1e-9)).toBe(false);
+    expect(out.find(c => Math.abs(c.songT - 1.0) < 1e-9).countOff).toBe(true);
+  });
+
+  it('leaves a clean evenly spaced schedule untouched', () => {
+    const clicks = Array.from({ length: 8 }, (_, i) => (
+      { songT: i * 0.5, accent: i % 4 === 0, countOff: false }
+    ));
+    expect(dedupeClicks(clicks)).toEqual(clicks);
+  });
+
+  it('buildClickSchedule output has no double-clicks across a tempo change', () => {
+    const beats = makeBeats([{ bpm: 120, bars: 6, from: 0 }, { bpm: 144, bars: 6 }]);
+    const changeT = beats[24].t;
+    const d = {
+      beats, numerator: 4, anchorT: beats[0].t,
+      tempoSegments: [
+        { startT: 0, endT: beats[23].t, tempoBpm: 120, confident: true },
+        { startT: changeT, endT: beats[47].t, tempoBpm: 144, confident: true },
+      ],
+    };
+    const s = buildClickSchedule(d, { countOffBars: 2 });
+    const ts = s.clicks.map(c => c.songT).sort((a, b) => a - b);
+    const gaps = ts.slice(1).map((t, i) => t - ts[i]).filter(g => g > 1e-6);
+    const minGap = Math.min(...gaps);
+    expect(minGap).toBeGreaterThan(0.15); // no ~0ms flam
+  });
 });
 
 // ─── applyTempoChangeCountOffs ───────────────────────────────
@@ -296,5 +355,69 @@ describe('applyTempoChangeCountOffs', () => {
     const s = buildClickSchedule(d, { countOffBars: 2 });
     const mid = s.clicks.filter(c => c.countOff && c.songT > beats[8].t);
     expect(mid.length).toBeGreaterThan(0);
+  });
+});
+
+
+describe('createClockSync', () => {
+  // Deterministic PRNG so the noise is the same every run.
+  function rng(seed) {
+    let x = seed >>> 0;
+    return () => ((x = (x * 1664525 + 1013904223) >>> 0) / 4294967296);
+  }
+
+  /** Simulate playback_progress: true offset `trueOff` (ctx - song), frame
+   * counter advancing in `chunk`-second bursts, IPC delay 0-`maxDelay`. */
+  function feed(sync, { from, to, trueOff, chunk = 0.02, maxDelay = 0.02, seed = 1, hz = 60 }) {
+    const r = rng(seed);
+    const out = [];
+    for (let t = from; t < to; t += 1 / hz) {
+      const song = Math.floor((t - trueOff) / chunk) * chunk + chunk; // pulled ahead in bursts
+      const ctxNow = t + r() * maxDelay;
+      out.push({ t, est: sync.update(ctxNow, song), raw: ctxNow - song });
+    }
+    return out;
+  }
+
+  const spread = xs => Math.max(...xs) - Math.min(...xs);
+
+  it('holds a steady mapping where raw samples jitter', () => {
+    const sync = createClockSync();
+    const out = feed(sync, { from: 10, to: 40, trueOff: 5 });
+    const settled = out.filter(o => o.t > 13);
+    expect(spread(settled.map(o => o.raw))).toBeGreaterThan(0.03);
+    expect(spread(settled.map(o => o.est))).toBeLessThan(0.006);
+    // what a listener hears: how far the mapping moves between nearby beats
+    for (let i = 30; i < settled.length; i++) {
+      expect(Math.abs(settled[i].est - settled[i - 30].est)).toBeLessThan(0.0025);
+    }
+  });
+
+  it('follows a real jump after the hold time (stall / resync)', () => {
+    const sync = createClockSync();
+    feed(sync, { from: 10, to: 20, trueOff: 5 });
+    const before = sync.update(20, 15 - 0.02); // one late straggler is ignored
+    expect(Math.abs(before - 5)).toBeLessThan(0.02);
+    const out = feed(sync, { from: 20, to: 22, trueOff: 5.1, seed: 2 });
+    const last = out[out.length - 1].est;
+    expect(Math.abs(last - 5.1)).toBeLessThan(0.02);
+    // adopted within ~hold time, not after a full window
+    const adopted = out.find(o => Math.abs(o.est - 5.1) < 0.03);
+    expect(adopted.t - 20).toBeLessThan(0.5);
+  });
+
+  it('shakes off a stale first sample quickly after reset', () => {
+    const sync = createClockSync();
+    sync.update(100, 30); // stale pre-seek event: offset 70
+    const out = feed(sync, { from: 100.01, to: 101, trueOff: 40 });
+    const ok = out.find(o => Math.abs(o.est - 40) < 0.03);
+    expect(ok.t - 100).toBeLessThan(0.15);
+  });
+
+  it('reset() forgets the old mapping', () => {
+    const sync = createClockSync();
+    feed(sync, { from: 0, to: 5, trueOff: 1 });
+    sync.reset();
+    expect(sync.update(50, 10)).toBeCloseTo(40, 6);
   });
 });

@@ -23,6 +23,7 @@ hiddenimports += collect_submodules("madmom")
 hiddenimports += [
     "madmom.processors",
     "madmom.ml.hmm",
+    "madmom.ml.nn",
     "madmom.features.beats",
     "madmom.features.beats_hmm",
     "madmom.features.downbeats",
@@ -32,6 +33,15 @@ hiddenimports += [
     "madmom.audio.stft",
 ]
 datas += collect_data_files("madmom")
+# The second confidence tracker (run_madmom_beats) uses madmom's PRETRAINED RNN
+# models under madmom/models/ — a git submodule that collect_data_files can miss.
+# Beat This!'s own DBN only touches madmom's HMM code, so this repo has not
+# needed the .pkl weights before. Pull them in explicitly; if the build warns
+# they are absent, the submodule was not checked out (`git -C <madmom> submodule
+# update --init`) or the models must be vendored and added here as a (src, dst).
+datas += collect_data_files(
+    "madmom", includes=["models/**/*", "**/*.pkl", "**/*.npz"]
+)
 
 # BeatNet is an optional local-only engine (not installable on Python 3.10 — it
 # pins numba==0.54.1). Bundle its weights + submodules only if it happens to be

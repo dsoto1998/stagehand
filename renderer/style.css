@@ -3975,6 +3975,19 @@
 }
 .perform-scrub-bar { flex: 1; }
 
+/* Low-confidence beat-detection spans, overlaid on the Perform scrub bar. */
+.perform-scrub-wrap { position: relative; flex: 1; display: flex; align-items: center; }
+.perform-scrub-wrap .perform-scrub-bar { width: 100%; flex: none; position: relative; z-index: 1; background: transparent; }
+.perform-scrub-markers {
+  position: absolute; left: 0; right: 0; top: 50%;
+  height: 6px; transform: translateY(-50%);
+  pointer-events: none; z-index: 0;
+}
+.perform-scrub-markers .lc {
+  position: absolute; top: 0; bottom: 0;
+  background: var(--red); opacity: 0.45; border-radius: 1px;
+}
+
 .queue-row {
   display: grid;
   grid-template-columns: 1fr 120px 90px 20px;

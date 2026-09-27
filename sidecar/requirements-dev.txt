@@ -1,0 +1,9 @@
+# Dev/test-only deps for the beat-detection sidecar.
+#
+#   sidecar/.venv/Scripts/pip install -r sidecar/requirements-dev.txt
+#
+# The pure-Python sidecar tests (sidecar/tests/test_beat_detect.py) run without
+# torch / librosa / madmom — but the confidence scorer (compute_beat_confidence,
+# beat_onset_clarity) uses numpy, so the CI "no torch install" job still needs it.
+pytest>=7,<9
+numpy<1.24
